@@ -16,7 +16,7 @@ import { sendError, sendJson } from './errors.js';
 import { createUserReader, defaultClaudeJsonPath } from './identity.js';
 import { buildHostPolicy, checkRequest, type HostPolicy } from './middleware.js';
 import { parseTokensQuery } from './query.js';
-import { healthBody, limitsBody, summaryBody, type SnapshotDeps } from './snapshot.js';
+import { healthBody, limitsBody, summaryBody, type SnapshotDeps, type UpdateStateProvider } from './snapshot.js';
 import { zeroTotals, type TokensSource } from './types.js';
 import type { SessionsSubsystem } from '../sessions/index.js';
 
@@ -46,6 +46,8 @@ export interface ServerOptions {
   /** Sessions/pause subsystem; when absent those routes simply 404. */
   sessions?: SessionsSubsystem | null;
   // ------------------------------------------------------------------------
+  /** W8: live auto-update state for `/health.update` and the SSE snapshot (§15, §20). */
+  update?: UpdateStateProvider;
   version?: string;
   startedAt?: number;
   /** Extra Host names to allow (e.g. the MagicDNS name — §16). */
@@ -144,6 +146,7 @@ export function createServer(opts: ServerOptions): UsageServer {
     limits: opts.limits,
     tokens: () => tokens,
     user: readUser,
+    ...(opts.update === undefined ? {} : { update: opts.update }),
     version,
     startedAt,
     now,

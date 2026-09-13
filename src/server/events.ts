@@ -22,7 +22,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { BusEvents, EventBus } from '../events/bus.js';
 import type { LimitsSnapshot } from '../limits/types.js';
 import { sendError } from './errors.js';
-import { limitsLiteBody, summaryBody, todayBody, updateBody, type SnapshotDeps } from './snapshot.js';
+import { limitsLiteBody, summaryBody, todayBody, updateStatusOf, type SnapshotDeps } from './snapshot.js';
 import type { TokenTotals, TokensSource } from './types.js';
 
 export const EVENTS_PATH = '/v1/events';
@@ -184,7 +184,7 @@ export function createEventsEndpoint(opts: EventsOptions): EventsEndpoint {
       summary: summaryBody(deps),
       sessions: provider.sessions(),
       rules: provider.rules(),
-      update: updateBody(deps.version),
+      update: updateStatusOf(deps),
       rev: bus.rev,
     };
   }

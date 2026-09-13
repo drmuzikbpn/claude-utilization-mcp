@@ -11,6 +11,7 @@ import { startBusPublishers } from './server/events.js';
 import { createSessionsSubsystem, type SessionsSubsystem } from './sessions/index.js';
 import { createServer, type UsageServer } from './server/index.js';
 import type { TokensSource } from './server/types.js';
+import { createUpdater, UPDATE_RESTART_EXIT_CODE, type UpdaterHandle } from './update/index.js';
 import { getVersion } from './version.js';
 
 /**
@@ -51,6 +52,8 @@ export interface DaemonOptions {
   sessions?: boolean;
   /** W5: tailnet resolution seam (§16). */
   network?: NetworkResolver;
+  /** W8: the auto-updater. Pass one to inject fakes; `null` leaves `/health.update` disabled. */
+  updater?: UpdaterHandle | null;
 }
 
 export interface DaemonHandle {
@@ -62,6 +65,8 @@ export interface DaemonHandle {
   /** Shared bus: `/v1/events` streams it, the daemon and W3 publish onto it (§19). */
   readonly bus: EventBus;
   readonly sessions: SessionsSubsystem | null;
+  /** W8: the auto-updater feeding `/health.update`, or `null` when none runs (§20). */
+  readonly updater: UpdaterHandle | null;
   /** The addresses currently listened on, in bind order. */
   readonly addresses: readonly string[];
   /** The MagicDNS name currently accepted in `Host`, or `null`. */
@@ -144,10 +149,36 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   let magicDnsName = wantsTailnet ? await network.magicDnsName() : null;
   if (magicDnsName !== null) debug(`net: MagicDNS name ${magicDnsName}`);
 
+  // --- §20: the auto-updater ------------------------------------------------
+  // Built before the server so `/health.update` reads live state from the first
+  // request; started after the listener is up so the first check never races boot.
+  // `stopEverything` is filled in below — the updater restarts the process, and a
+  // restart must run the same shutdown path as SIGTERM (SIGCONT'd pids, daemon.json).
+  let stopEverything: () => Promise<void> = async () => {};
+  const updater =
+    opts.updater === undefined
+      ? createUpdater({
+          config,
+          currentVersion: version,
+          bus,
+          log,
+          debug,
+          // §20: a hard freeze blocks the restart, so it blocks the update.
+          hardFrozen: () => sessions?.registry.list().some((s) => s.pause?.mode === 'hard') ?? false,
+          restart: async () => {
+            await stopEverything();
+            // Non-zero on purpose: launchd's `SuccessfulExit: false` and systemd's
+            // `Restart=on-failure` both relaunch this, and neither relaunches exit 0.
+            process.exit(UPDATE_RESTART_EXIT_CODE);
+          },
+        })
+      : opts.updater;
+
   const server = createServer({
     config,
     limits: poller,
     tokens: tokensSource,
+    ...(updater === null ? {} : { update: () => updater.status() }),
     version,
     bus,
     sessions,
@@ -196,6 +227,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     poller.start();
     debug(`limits: polling every ${config.pollIntervalMs}ms`);
   }
+
+  // §20: disables itself when `autoUpdate.enabled` is false or we are not running out
+  // of the `current` symlink, and schedules nothing in that case.
+  updater?.start();
 
   // Token store last: HTTP is already answering, and the store reports ready:false
   // until its initial scan finishes.
@@ -257,6 +292,24 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     }
   }
 
+  async function stop(): Promise<void> {
+    if (stopped) return;
+    stopped = true;
+    // §18.3: SIGCONT every hard-frozen pid before anything else shuts down.
+    sessions?.stop();
+    updater?.stop();
+    stopPublishers();
+    poller.stop();
+    await server.close();
+    try {
+      rmSync(daemonFilePath(configDir), { force: true });
+    } catch {
+      // best effort
+    }
+    debug('daemon: stopped');
+  }
+  stopEverything = stop;
+
   return {
     port: bound,
     config,
@@ -265,6 +318,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     poller,
     bus,
     sessions,
+    updater,
     get addresses() {
       return boundHosts;
     },
@@ -272,21 +326,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
       return magicDnsName;
     },
     reload,
-    async stop() {
-      if (stopped) return;
-      stopped = true;
-      // §18.3: SIGCONT every hard-frozen pid before anything else shuts down.
-      sessions?.stop();
-      stopPublishers();
-      poller.stop();
-      await server.close();
-      try {
-        rmSync(daemonFilePath(configDir), { force: true });
-      } catch {
-        // best effort
-      }
-      debug('daemon: stopped');
-    },
+    stop,
   };
 }
 
