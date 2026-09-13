@@ -4,3 +4,9 @@ ktlint_code_style = android_studio
 max_line_length = 120
 indent_size = 4
 insert_final_newline = true
+# Composable functions are PascalCase by convention.
+ktlint_function_naming_ignore_when_annotated_with = Composable
+
+# The theme files are named for their role (Color/Type/Theme), not for the single object each holds.
+[**/ui/theme/*.kt]
+ktlint_standard_filename = disabled

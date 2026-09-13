@@ -83,6 +83,7 @@ dependencies {
     implementation(libs.zxing.embedded)
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.ext)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.turbine)
     androidTestImplementation(libs.androidx.test.ext)

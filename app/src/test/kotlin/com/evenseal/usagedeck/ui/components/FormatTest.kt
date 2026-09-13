@@ -1,0 +1,112 @@
+package com.evenseal.usagedeck.ui.components
+
+import java.time.Instant
+import java.time.ZoneId
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class FormatTest {
+    private val zone: ZoneId = ZoneId.of("Europe/London")
+
+    /** 2026-09-13 is a Sunday; 14:02 local (BST = UTC+1). */
+    private val now: Instant = Instant.parse("2026-09-13T13:02:00Z")
+
+    @Test
+    fun `tokens uses plain digits below a thousand`() {
+        assertEquals("0", Format.tokens(0))
+        assertEquals("999", Format.tokens(999))
+    }
+
+    @Test
+    fun `tokens abbreviates thousands and millions`() {
+        assertEquals("4.2k", Format.tokens(4_200))
+        assertEquals("1.2M", Format.tokens(1_200_000))
+        assertEquals("12.4M", Format.tokens(12_400_000))
+    }
+
+    @Test
+    fun `tokens drops a trailing zero decimal`() {
+        assertEquals("38k", Format.tokens(38_000))
+        assertEquals("1k", Format.tokens(1_000))
+        assertEquals("2M", Format.tokens(2_000_000))
+    }
+
+    @Test
+    fun `tokens promotes to millions rather than printing a four digit k`() {
+        assertEquals("1M", Format.tokens(999_999))
+    }
+
+    @Test
+    fun `ratePerMin suffixes the abbreviated rate`() {
+        assertEquals("38k/min", Format.ratePerMin(38_000.0))
+        assertEquals("0/min", Format.ratePerMin(0.0))
+        assertEquals("412/min", Format.ratePerMin(412.0))
+    }
+
+    @Test
+    fun `ratePerMin rounds to the nearest token`() {
+        assertEquals("413/min", Format.ratePerMin(412.6))
+        assertEquals("0/min", Format.ratePerMin(-3.0))
+    }
+
+    @Test
+    fun `resets renders unknown when the daemon has no reset time`() {
+        assertEquals("resets: unknown", Format.resets(null, now, zone))
+    }
+
+    @Test
+    fun `resets inside a day shows the local time and the remaining span`() {
+        val at = Instant.parse("2026-09-13T15:35:00Z") // 16:35 London, 2 h 33 min away
+        assertEquals("resets 16:35 · 2h33", Format.resets(at, now, zone))
+    }
+
+    @Test
+    fun `resets under an hour shows only minutes`() {
+        val at = Instant.parse("2026-09-13T13:09:00Z") // 14:09 London, 7 min away
+        assertEquals("resets 14:09 · 7m", Format.resets(at, now, zone))
+    }
+
+    @Test
+    fun `resets beyond a day shows the weekday`() {
+        val at = Instant.parse("2026-09-17T08:00:00Z") // Thursday 09:00 London
+        assertEquals("resets Thu 09:00", Format.resets(at, now, zone))
+    }
+
+    @Test
+    fun `resets in the past clamps the remaining span to zero`() {
+        val at = Instant.parse("2026-09-13T12:00:00Z") // 13:00 London, already gone
+        assertEquals("resets 13:00 · 0m", Format.resets(at, now, zone))
+    }
+
+    @Test
+    fun `countdown is minutes and padded seconds`() {
+        assertEquals("0:42", Format.countdown(now.plusSeconds(42), now))
+        assertEquals("12:05", Format.countdown(now.plusSeconds(725), now))
+    }
+
+    @Test
+    fun `countdown floors at zero once the deadline has passed`() {
+        assertEquals("0:00", Format.countdown(now.minusSeconds(5), now))
+        assertEquals("0:00", Format.countdown(now, now))
+    }
+
+    @Test
+    fun `shortId keeps the first four characters`() {
+        assertEquals("a1b2…", Format.shortId("a1b2c3d4-e5f6"))
+        assertEquals("abc…", Format.shortId("abc"))
+    }
+
+    @Test
+    fun `age steps from seconds to days`() {
+        assertEquals("4s ago", Format.age(now.minusSeconds(4), now))
+        assertEquals("3m ago", Format.age(now.minusSeconds(180), now))
+        assertEquals("2h ago", Format.age(now.minusSeconds(7_200), now))
+        assertEquals("3d ago", Format.age(now.minusSeconds(3 * 86_400), now))
+    }
+
+    @Test
+    fun `age of nothing is never and the future reads as now`() {
+        assertEquals("never", Format.age(null, now))
+        assertEquals("0s ago", Format.age(now.plusSeconds(30), now))
+    }
+}
