@@ -21,7 +21,7 @@ export interface CliIO {
 }
 
 /** Subcommands other waves own; they exist so `help` is honest about the surface. */
-const PLANNED = ['mcp'];
+const PLANNED: string[] = [];
 
 const HELP = `claude-usage — local usage service for Claude Code sessions
 
@@ -37,12 +37,12 @@ Usage: claude-usage <command> [options]
           [--no-hook] [--no-mcp] [--statusline] [--tailscale] [--linger]
   configure [<setting> <on|off>]    interactive menu, or a scriptable setting
   uninstall [--purge]               remove everything install added
+  mcp                               MCP server over stdio (stdout is JSON-RPC only)
   hook                              UserPromptSubmit hook (always exits 0)
   statusline                        one-line status for statusLine.command
   --version                         print the version
   help                              print this help
 
-Not implemented yet: ${PLANNED.join(', ')}
 
 Docs: https://github.com/drmuzikbpn/claude-utilization-mcp
 Works with Claude Code. Not affiliated with, endorsed by, or sponsored by Anthropic.
@@ -395,6 +395,14 @@ export async function run(argv: readonly string[], io: CliIO = {}): Promise<numb
       return cmdPause(rest, base);
     case 'resume':
       return cmdResume(rest, base);
+    case 'mcp': {
+      // Lazily imported: the SDK must never be loaded by `serve`, `hook` or `statusline`.
+      const { runMcp } = await import('./mcp.js');
+      return runMcp({
+        stderr,
+        ...(io.configDir === undefined ? {} : { configDir: io.configDir }),
+      });
+    }
     case 'hook': {
       const hookIo = {
         stdin: io.stdin ?? (await readStdin()),
