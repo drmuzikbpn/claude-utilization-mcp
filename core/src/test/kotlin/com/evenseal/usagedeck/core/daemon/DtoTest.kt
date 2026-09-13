@@ -13,22 +13,37 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DtoTest {
-    private fun fixture(name: String) = javaClass.getResource("/fixtures/$name")!!.readText()
+    private fun fixture(name: String) = Fixtures.text(name)
 
     @Test
     fun `sessions fixture maps three sessions with pause and lastTool`() {
         val dto = DaemonJson.decodeFromString<SessionsDto>(fixture("sessions.json"))
-        assertEquals(42L, dto.rev)
+        assertEquals(812L, dto.rev)
         val s = dto.sessions.map { it.toModel() }
         assertEquals(3, s.size)
-        assertEquals("calendarpa", s[0].projectName)
-        assertEquals("/Users/alan/code/calendarpa/.git", s[0].projectKey)
-        assertEquals(LastTool("Read", Instant.parse("2026-09-13T14:01:58Z")), s[0].lastTool)
-        assertEquals("billing", s[1].worktree)
-        assertEquals(PauseMode.SOFT, s[1].pause!!.mode)
+
+        // worktree of a repo: the project key is the shared gitCommonDir, not the worktree cwd
+        assertEquals("foo", s[0].projectName)
+        assertEquals("/Users/alan/code/foo/.git", s[0].projectKey)
+        assertEquals("foo-wt2", s[0].worktree)
+        assertEquals(LastTool("Bash", Instant.parse("2026-09-13T14:02:50Z")), s[0].lastTool)
+        assertEquals(PauseMode.HARD, s[0].pause!!.mode)
+        assertEquals("r_k3m7qz4ub2ah6ptc", s[0].pause!!.ruleId)
+        assertEquals(listOf(4242, 4251, 4252), s[0].pause!!.frozenPids)
+        assertEquals(Instant.parse("2026-09-13T14:03:10Z"), s[0].pause!!.since)
+        assertTrue(s[0].canHardPause)
+
+        // the main worktree of the same repo groups under the same key
+        assertEquals("/Users/alan/code/foo/.git", s[1].projectKey)
+        assertNull(s[1].worktree)
+        assertNull(s[1].pause)
+        assertNull(s[1].lastTool)
+
         assertEquals(Discovered.TRANSCRIPT, s[2].discovered)
+        assertFalse(s[2].alive)
         assertFalse(s[2].canHardPause)
-        assertEquals("/Users/alan/code/audioleveler", s[2].projectKey) // null gitCommonDir falls back to cwd
+        assertEquals("/Users/alan/code/notes", s[2].projectKey) // null gitCommonDir falls back to cwd
+        assertEquals("notes", s[2].projectName)
     }
 
     @Test
@@ -68,17 +83,65 @@ class DtoTest {
 
     @Test
     fun `error envelope parses`() {
-        val e = DaemonJson.decodeFromString<ErrorEnvelopeDto>(fixture("error-401.json")).error
+        val e = DaemonJson.decodeFromString<ErrorEnvelopeDto>(Fixtures.errorBody("unauthorized")).error
         assertEquals("unauthorized", e.code)
-        assertTrue(e.hint!!.startsWith("Re-run"))
+        assertEquals(401, Fixtures.errorStatus("unauthorized"))
+        assertTrue(e.message!!.startsWith("a valid Authorization"))
+        assertTrue(e.hint!!.startsWith("mutating requests"))
+    }
+
+    @Test
+    fun `every documented error case carries a code and a non-empty message`() {
+        listOf("unauthorized", "untrusted_pid", "foreign_uid", "dead_session", "unknown_rule", "unknown_session")
+            .forEach { name ->
+                val e = DaemonJson.decodeFromString<ErrorEnvelopeDto>(Fixtures.errorBody(name)).error
+                assertTrue(name, e.code.isNotBlank())
+                assertTrue(name, e.message!!.isNotBlank())
+            }
+        assertEquals(409, Fixtures.errorStatus("untrusted_pid"))
+        assertEquals(410, Fixtures.errorStatus("dead_session"))
+        assertEquals(404, Fixtures.errorStatus("unknown_rule"))
+        assertEquals(
+            "conflict",
+            DaemonJson.decodeFromString<ErrorEnvelopeDto>(Fixtures.errorBody("untrusted_pid")).error.code
+        )
+        assertEquals(
+            "gone",
+            DaemonJson.decodeFromString<ErrorEnvelopeDto>(Fixtures.errorBody("dead_session")).error.code
+        )
     }
 
     @Test
     fun `pause response and tokens groups parse`() {
-        val p = DaemonJson.decodeFromString<PauseResponseDto>(fixture("pause-rule.json"))
-        assertEquals("usage-deck:abc", p.rule.toModel().reason)
+        val p = DaemonJson.decodeFromString<PauseResponseDto>(fixture("pause-response.json"))
+        assertEquals("usage-deck:9f21c4ab", p.rule.toModel().reason)
+        assertEquals(PauseMode.HARD, p.rule.toModel().mode)
+        assertEquals("session:3f1c0a52-9d64-4f2e-8b71-2c5a0d9e4411", p.rule.toModel().scope)
+        assertEquals(listOf("3f1c0a52-9d64-4f2e-8b71-2c5a0d9e4411"), p.affected)
+
         val t = DaemonJson.decodeFromString<TokensDto>(fixture("tokens-project.json"))
         assertEquals("/Users/alan/code/calendarpa", t.groups.single().toModel().label)
+    }
+
+    @Test
+    fun `pause rules and resume response parse the three scope shapes`() {
+        val rules = DaemonJson.decodeFromString<RulesDto>(fixture("pause-rules.json"))
+        assertEquals(814L, rules.rev)
+        assertEquals(
+            listOf(
+                "session:3f1c0a52-9d64-4f2e-8b71-2c5a0d9e4411",
+                "project:/Users/alan/code/foo/.git",
+                "all"
+            ),
+            rules.rules.map { it.toModel().scope }
+        )
+        assertEquals(PauseMode.HARD, rules.rules[0].toModel().mode)
+        assertEquals("cli", rules.rules[1].toModel().createdBy)
+        assertEquals("", rules.rules[2].toModel().reason)
+
+        val resume = DaemonJson.decodeFromString<ResumeResponseDto>(fixture("resume-response.json"))
+        assertEquals(listOf("r_k3m7qz4ub2ah6ptc"), resume.removed)
+        assertEquals(listOf("3f1c0a52-9d64-4f2e-8b71-2c5a0d9e4411"), resume.resumed)
     }
 
     @Test

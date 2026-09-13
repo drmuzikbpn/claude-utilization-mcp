@@ -261,6 +261,28 @@ class MachineClientTest {
     }
 
     @Test
+    fun `limits and spend never move the sessions revision`() = runTest {
+        val f = fixture()
+        f.api.sessionsDto = SessionsDto(rev = 813, sessions = listOf(sessionDto("s1", 1_000)))
+        f.events.emit(Connection.Open)
+        f.events.emit(snapshot(rev = 812))
+        runCurrent()
+        assertEquals(812L, f.client.state.value.rev)
+
+        f.events.emit(DaemonEvent.Limits(listOf(LimitDto(id = "session", kind = "session", percent = 99)), null, false))
+        f.events.emit(DaemonEvent.Spend(TokensCountsDto(input = 99), TokensCountsDto(input = 9)))
+        runCurrent()
+        assertEquals("rev only moves on session or pause changes", 812L, f.client.state.value.rev)
+        assertEquals(99, f.client.state.value.limits.single().percent)
+        assertEquals(99L, f.client.state.value.today.input)
+
+        // a pause does change it, via the sessions re-read it triggers
+        f.events.emit(DaemonEvent.Pause(listOf(rule("all")), listOf("s1")))
+        runCurrent()
+        assertEquals(813L, f.client.state.value.rev)
+    }
+
+    @Test
     fun `update event replaces update state`() = runTest {
         val f = fixture()
         f.events.emit(Connection.Open)

@@ -181,6 +181,27 @@ class PauseControllerTest {
     }
 
     @Test
+    fun `a project scope carries the gitCommonDir when there is one and the cwd otherwise`() = runTest {
+        // Session.projectKey is gitCommonDir ?: cwd, and that is what the scope string carries,
+        // so a `project:<path>` rule matches the daemon's gitCommonDir, main worktree or cwd.
+        val repo = session("s1", projectKey = "/Users/alan/code/foo/.git")
+        val loose = session("s2", projectKey = "/Users/alan/code/notes")
+        val f = fixture(listOf(machine("m1", sessions = listOf(repo, loose))))
+        f.controller.start()
+        runCurrent()
+
+        f.controller.soft(PauseTarget.Project("m1", repo.projectKey))
+        f.controller.soft(PauseTarget.Project("m1", loose.projectKey))
+        assertEquals(
+            listOf(
+                "pause:project:/Users/alan/code/foo/.git:soft:$reason",
+                "pause:project:/Users/alan/code/notes:soft:$reason"
+            ),
+            f.api("m1").calls
+        )
+    }
+
+    @Test
     fun `soft schedules escalation and hard fires after 90s`() = runTest {
         val f = fixture(listOf(machine("m1", sessions = listOf(session("s1")))))
         f.controller.start()

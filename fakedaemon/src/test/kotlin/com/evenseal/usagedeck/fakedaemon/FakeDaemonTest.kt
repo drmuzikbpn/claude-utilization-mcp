@@ -83,7 +83,7 @@ class FakeDaemonTest {
     fun `sessions carries a weak etag and answers 304 when it matches`() {
         val etag = get("/v1/sessions").use { r ->
             assertEquals(200, r.code)
-            assertEquals(3, Regex("\"sessionId\"").findAll(r.body!!.string()).count())
+            assertEquals(4, Regex("\"sessionId\"").findAll(r.body!!.string()).count())
             r.header("ETag")
         }
         assertNotNull(etag)
@@ -161,19 +161,45 @@ class FakeDaemonTest {
 
     @Test
     fun `hard pause on a transcript-discovered session is a 409`() {
-        val transcript = daemon.state.sessions.first { it.discovered == "transcript" }
+        val transcript = daemon.state.sessions.first { it.discovered == "transcript" && it.alive }
         post("/v1/pause", """{"scope":"session:${transcript.sessionId}","mode":"hard","reason":"x"}""").use { r ->
             assertEquals(409, r.code)
             assertTrue(r.body!!.string().contains("\"code\":\"conflict\""))
         }
+        assertTrue("no rule is created for a refused hard pause", daemon.state.rules.isEmpty())
+
+        // the same session accepts a soft pause
+        post("/v1/pause", """{"scope":"session:${transcript.sessionId}","mode":"soft","reason":"x"}""").use { r ->
+            assertEquals(200, r.code)
+        }
     }
 
     @Test
-    fun `pause on an unknown session is a 410`() {
+    fun `pause on an unknown or exited session is a 410 and creates no rule`() {
         post("/v1/pause", """{"scope":"session:nope","mode":"soft","reason":"x"}""").use { r ->
             assertEquals(410, r.code)
             assertTrue(r.body!!.string().contains("\"code\":\"gone\""))
         }
+        val dead = daemon.state.sessions.first { !it.alive }
+        post("/v1/pause", """{"scope":"session:${dead.sessionId}","mode":"soft","reason":"x"}""").use { r ->
+            assertEquals(410, r.code)
+        }
+        assertTrue(daemon.state.rules.isEmpty())
+    }
+
+    @Test
+    fun `rev moves on pause and resume but never on a limits change`() {
+        val start = daemon.state.rev
+        val d = daemon
+        Scenarios.warnCrossing.init(d.state)
+        repeat(3) { Scenarios.warnCrossing.step(d.state, it + 1) { _, _ -> } }
+        assertEquals("limits never move the sessions revision", start, d.state.rev)
+
+        post("/v1/pause", """{"scope":"all","mode":"soft","reason":"x"}""").use { r -> assertEquals(200, r.code) }
+        val afterPause = daemon.state.rev
+        assertTrue(afterPause > start)
+        post("/v1/resume", """{"scope":"all"}""").use { r -> assertEquals(200, r.code) }
+        assertTrue(daemon.state.rev > afterPause)
     }
 
     @Test
