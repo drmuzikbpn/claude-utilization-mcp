@@ -275,3 +275,209 @@ token refresh; any write to Anthropic APIs.
 ## 14. Open item to resolve first in implementation
 Verify the OAuth usage endpoint response shape with a live read-only GET; capture a
 redacted fixture; adjust §4 `windows` normalization to the verified field names.
+
+---
+
+# Part II — remote dashboard scope (approved 2026-09-13)
+
+Added after the Android kiosk dashboard ("Jamie" session, repo `../android-project`) was
+scoped. The dashboard consumes this daemon over Tailscale from a Nexus 5X, aggregates two
+daemons (Alan + teammate) itself, and needs to see and pause live sessions. Sections 15–21
+extend Part I; where they conflict, Part II wins. Implementation order: core daemon (Part I)
+→ sessions/pause → events → network/auth → auto-update.
+
+## 15. Identity & host metadata
+
+`GET /health` gains:
+```json
+{ "name": "alans-mbp", "version": "0.1.417+3f9c2ab",
+  "user": { "emailAddress": "…", "accountUuid": "…", "organizationUuid": "…", "displayName": "…" },
+  "update": { "channel": "stable", "current": "0.1.417+3f9c2ab", "available": null,
+              "state": "idle|checking|downloading|verifying|ready|deferred|disabled",
+              "deferredReason": null } }
+```
+- `user` is read from `~/.claude.json → oauthAccount` (verified keys: `emailAddress`,
+  `accountUuid`, `organizationUuid`, `displayName`, `organizationName`). Missing file/keys →
+  `user: null`. Re-read every 10 min (the account can change on re-login).
+- `name` defaults to `os.hostname()`, overridable in config.
+
+## 16. Network binding & authentication
+
+**Binding.** `config.bind` is a list, default `["127.0.0.1"]`; `install` offers to add
+`"tailscale"`. Each entry is an IP literal or the keyword `tailscale`, resolved at startup to
+the first IPv4 interface address inside `100.64.0.0/10` (falls back to `tailscale ip -4` if the
+CLI exists). No Tailscale interface → log a warning, bind the rest. One `http.Server` per
+address, same handler. Re-resolve on `SIGHUP`.
+
+**Auth model.** Threat model: anything on the tailnet, plus any process/browser on the local
+machine (DNS rebinding, `localhost` fetches from web pages).
+- A 32-byte random **bearer token** is generated at install, stored in `config.json`
+  (`auth.token`, file mode `0600`). `claude-usage configure rotate-token` regenerates it.
+- **Loopback + safe method (GET/HEAD) → no token required.** Keeps hook, statusline and
+  `curl localhost` zero-config. `/v1/events` from loopback is also exempt.
+- **Everything else requires `Authorization: Bearer <token>`** — every non-loopback request
+  and every mutating request (POST/DELETE) regardless of source. Missing/wrong → `401`
+  `{ error: { code: "unauthorized" } }`, constant-time compare.
+- **Host allowlist:** `Host` must be one of the bound addresses (with port), `localhost`, or
+  the machine's Tailscale MagicDNS name (from `tailscale status --json`, if available);
+  otherwise `421`. No CORS headers are ever sent (browsers can't read responses).
+- Loopback is determined from the socket's remote address, never from headers.
+
+**Pairing.** `claude-usage configure pairing` prints
+`{ "v": 1, "name": "alans-mbp", "addr": "100.68.121.23", "port": 47291, "token": "…" }`
+as JSON and as a terminal QR code (single small dependency for QR rendering, CLI-only —
+the daemon never loads it). `--json` suppresses the QR.
+
+## 17. Sessions
+
+### 17.1 Discovery — via our own hooks, not process scraping
+| Hook event | Action |
+| --- | --- |
+| `SessionStart` | `POST /v1/sessions/register` `{ sessionId, pid, cwd, transcriptPath, gitCommonDir, source }` — `pid` = the hook process's `ppid` (the `claude` process); `gitCommonDir` = `git rev-parse --git-common-dir` resolved to an absolute path, run once in `cwd` (null if not a repo). |
+| `UserPromptSubmit` | heartbeat (`lastActivityAt`) + soft-pause gate (§18) + limits nudge (§7.1). |
+| `PreToolUse` | soft-pause gate only (§18). |
+| `SessionEnd` | `POST /v1/sessions/{id}/end`. |
+Registration is idempotent (`claude --resume` re-registers the same `sessionId` with a new
+pid). `install` adds all four hook entries; `configure hook off` removes them together.
+
+### 17.2 Liveness & reconciliation
+- Every 15 s the daemon `kill(pid, 0)`s each registered pid; dead → mark `alive: false`,
+  drop after 5 min (so the dashboard sees the exit).
+- Sessions the hooks never saw (daemon was down at their start) are back-filled from the spend
+  scanner: a `sessionId` with a fresh assistant message but no registration appears with
+  `pid: null`, `discovered: "transcript"`. Hard pause is refused (`409`) for those.
+- `model`, `tokens` (input/output/cacheCreate/cacheRead/messages) and `startedAt` come from
+  the spend store, keyed by `sessionId`.
+
+### 17.3 `GET /v1/sessions`
+```json
+{ "rev": 812, "sessions": [ {
+  "sessionId": "…", "pid": 4242, "alive": true, "discovered": "hook",
+  "cwd": "/Users/alan/code/foo-wt2", "transcriptPath": "…",
+  "project": { "gitCommonDir": "/Users/alan/code/foo/.git", "name": "foo" },
+  "worktree": "foo-wt2",
+  "model": "claude-opus-5", "startedAt": "…", "lastActivityAt": "…",
+  "tokens": { "input": 0, "output": 0, "cacheCreate": 0, "cacheRead": 0, "messages": 0 },
+  "pause": null
+} ] }
+```
+- `rev` is a monotonic counter bumped on any sessions/pause change; sent as `ETag: W/"812"`,
+  `If-None-Match` → `304`.
+- `project.name` = basename of the main worktree (parent of `gitCommonDir`); `worktree` =
+  basename of `cwd` when it differs from the main worktree, else `null`. Sessions with
+  `gitCommonDir: null` group under `project: { gitCommonDir: null, name: <basename(cwd)> }`.
+- `pause` when paused: `{ "mode": "soft|hard", "ruleId": "…", "scope": "…", "since": "…",
+  "frozenPids": [4242, 4251] }`.
+
+## 18. Pause & resume
+
+### 18.1 Rules, not flags
+```json
+{ "id": "r_01H…", "scope": "all" | "project:<gitCommonDir>" | "session:<sessionId>",
+  "mode": "soft" | "hard", "reason": "…", "createdAt": "…", "createdBy": "dashboard|cli" }
+```
+- Rules are persisted in `state.json` and survive daemon restarts.
+- A session's **effective** pause = most specific matching rule (session > project > all);
+  `hard` beats `soft` at the same specificity. Rules apply to sessions that register **after**
+  the rule was created (a new worktree session in a paused project comes up paused).
+- Same `(scope, mode)` posted twice → `200` with the existing rule (idempotent).
+
+### 18.2 Soft pause (stop at the next boundary)
+- `UserPromptSubmit` and `PreToolUse` hooks call `GET /v1/sessions/{id}/gate` →
+  `{ "paused": true, "mode": "soft", "ruleId": "…", "reason": "…" }`. While `paused`, the hook
+  sleeps and re-polls every 1 s (loopback GET, no token). When cleared it exits 0 and the
+  session continues. Daemon unreachable → not paused (fail open, never wedge a session).
+- Hook entries are installed with `"timeout": 86400` (Claude Code's default 60 s would kill
+  the sleeping hook and let the session continue).
+- While soft-paused the hook writes `~/.config/claude-usage/paused/<sessionId>` so the
+  statusline can show `⏸ paused from dashboard`; removed on resume.
+
+### 18.3 Hard freeze (SIGSTOP)
+- Resolve `pid` → the full descendant tree (`ps -axo pid=,ppid=` walk; Linux may use
+  `/proc/*/stat`), `SIGSTOP` children first then the parent; record `frozenPids` on the session.
+- Resume → `SIGCONT` parent first then children; ignore `ESRCH`.
+- **Safety invariants**
+  - Clean shutdown (`SIGTERM`), `uninstall`, and `configure service off` → `SIGCONT`
+    every recorded `frozenPids` first.
+  - Startup → for every persisted hard rule, re-resolve pids and re-freeze **only** if the
+    session is still alive; any `frozenPids` recorded in state whose session no longer
+    matches a rule are `SIGCONT`ed (orphan sweep).
+  - `claude-usage resume --all` works **without a running daemon**: reads `state.json`,
+    `SIGCONT`s everything recorded, clears the rules. This is the documented escape hatch.
+  - Hard freeze is refused (`409`) for `discovered: "transcript"` sessions (no trusted pid) and
+    for pids not owned by the daemon's uid.
+- A hard request for a `session:<id>` whose pid is gone → rule not created, `410`.
+
+### 18.4 Endpoints (all mutating → token required)
+| Method & path | Body → response |
+| --- | --- |
+| `POST /v1/pause` | `{ scope, mode, reason? }` → `200 { rule, affected: [sessionId…] }`; `409` untrusted pid; `410` dead session |
+| `POST /v1/resume` | `{ scope }` → `200 { removed: [ruleId…], resumed: [sessionId…] }` (empty arrays if nothing matched — idempotent) |
+| `GET /v1/pause/rules` | `{ rev, rules: […] }` |
+| `DELETE /v1/pause/rules/{id}` | `204`; `404` unknown |
+| `POST /v1/sessions/{id}/pause` | `{ mode, reason? }` — sugar for `scope: "session:<id>"` |
+| `POST /v1/sessions/{id}/resume` | sugar for `scope: "session:<id>"` |
+| `GET /v1/sessions/{id}/gate` | `{ paused, mode, ruleId, reason }` — loopback, polled by hooks |
+CLI mirrors: `claude-usage sessions`, `claude-usage pause <all|project:<path>|session:<id>> [--hard]`,
+`claude-usage resume <scope>|--all`.
+
+## 19. Events — `GET /v1/events` (SSE)
+- `text/event-stream`, `id:` = current `rev`, `retry: 3000`.
+- On connect (and on any reconnect, regardless of `Last-Event-ID` — simplest correct
+  behaviour): one `snapshot` event `{ limits, summary, sessions, rules, update, rev }`.
+- Then: `limits` (each successful poll where anything changed), `spend` (`{ today, delta }`,
+  coalesced to ≤ 1/s), `session` (`{ type: "start|end|update", session }`), `pause`
+  (`{ rules, affected }`), `update` (`/health.update` object), `heartbeat` every 15 s.
+- Back-pressure: if a client's socket buffer is full for > 30 s, close it (it reconnects and
+  gets a snapshot). Max 16 concurrent SSE clients.
+- No WebSocket in v1 (would require a dependency; SSE is one-directional and sufficient).
+- Polling fallback documented for clients: `/v1/summary` + `/v1/sessions` (with
+  `If-None-Match`) at ≥ 2 s intervals.
+
+## 20. Auto-update
+- **Versioning:** `MAJOR.MINOR.<commit-count>+<short-sha>` computed in CI from
+  `git rev-list --count HEAD` on `main` — monotonic, commit-stamped, valid semver.
+- **Release:** every green CI run on `main` tags `v<version>` and publishes a GitHub Release
+  with `claude-usage-<version>.tgz` (the `npm pack` output) and `SHA256SUMS`. npm publish
+  happens from the same job; the tarball on GitHub is what the updater consumes.
+- **Layout:** `~/.local/share/claude-usage/versions/<version>/` + `current` symlink. The
+  launchd/systemd unit runs `<XDG_DATA_HOME>/claude-usage/current/bin/claude-usage serve`.
+  `install` copies the running package into this layout first, whether it came from npm or a
+  tarball — after install, the install method no longer matters.
+- **Loop:** every `autoUpdate.intervalMs` (default 10 min, jittered ±10 %) `GET
+  https://api.github.com/repos/<owner>/<repo>/releases/latest` (repo pinned in code, overridable
+  in config for forks). Newer → download tarball + `SHA256SUMS` to a temp dir, verify sha256,
+  extract into `versions/<v>/`, run `node bin/claude-usage --version` from it as a smoke test,
+  atomically repoint `current`, then `process.exit(0)` → `KeepAlive`/`Restart=always` relaunches.
+  Keeps the previous 2 versions; `claude-usage rollback` repoints `current` to the previous one.
+- **Deferral:** never restart while any session has a hard freeze (`state: "deferred"`,
+  `deferredReason: "hard_frozen_sessions"`); re-check every 30 s. Soft pauses don't defer.
+- **Off switch:** `autoUpdate.enabled=false` (`configure autoupdate off`); when the daemon
+  wasn't installed via `install` (no `current` symlink) the updater is disabled automatically.
+- **Integrity:** sha256 from `SHA256SUMS` on the same release; download over TLS only; a
+  failed verify deletes the download and reports `update.state: "error"`. Signature
+  verification (minisign) is a follow-up, tracked in the README.
+
+## 21. Config additions
+```json
+{ "name": "alans-mbp",
+  "bind": ["127.0.0.1", "tailscale"],
+  "auth": { "token": "…" },
+  "autoUpdate": { "enabled": true, "intervalMs": 600000, "repo": "<owner>/claude-utilization-mcp" },
+  "events": { "maxClients": 16 } }
+```
+`config.json` is written with mode `0600` because it now holds the token.
+
+## 22. Testing additions
+- `sessions`: register/heartbeat/end fixtures; liveness marking; transcript back-fill; worktree
+  grouping from `gitCommonDir` (fixtures with two worktrees of one repo); `rev`/ETag/304.
+- `pause`: rule specificity resolution; later-registering sessions inherit rules; idempotent
+  POSTs; 409/410 paths; gate polling in the hook (fake daemon, fake timers); hard freeze against
+  a spawned child process tree (`sleep` processes) — asserts `T` state via `ps`, SIGCONT on
+  resume, on shutdown, and via `resume --all` with no daemon; orphan sweep on startup.
+- `auth`: loopback GET exempt, loopback POST requires token, non-loopback GET requires token,
+  wrong token 401 in constant time, Host allowlist 421.
+- `events`: snapshot on connect, event ordering, coalescing, heartbeat, slow-client eviction.
+- `update`: fake release server (port 0) — version compare, sha mismatch → error and cleanup,
+  smoke-test failure → no repoint, deferral while hard-frozen, rollback.
+- CI can't run launchd/systemd/Tailscale; those stay in `docs/smoke-test.md`.
