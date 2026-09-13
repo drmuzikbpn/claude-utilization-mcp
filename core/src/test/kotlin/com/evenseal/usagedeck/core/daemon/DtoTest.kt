@@ -44,11 +44,26 @@ class DtoTest {
     @Test
     fun `unknown limit status defaults to OK and unknown keys are ignored`() {
         val json =
-            """{"limits":[{"id":"x","kind":"x","group":"g","percent":1,"severity":"weird","resetsAt":null,""" +
-                """"scope":null,"isActive":false,"future":1}],"status":{"byId":{},"overall":"ok"},""" +
+            """{"limits":{"limits":[{"id":"x","kind":"x","group":"g","percent":1,"severity":"weird",""" +
+                """"resetsAt":null,"scope":null,"isActive":false,"future":1}],""" +
+                """"fetchedAt":null,"stale":false,"error":null,""" +
+                """"legacyWindows":{},"raw":{}},"status":{"byId":{},"overall":"ok"},""" +
                 """"today":{"input":0,"output":0,"cacheCreate":0,"cacheRead":0,"messages":0},"extra":true}"""
         val dto = DaemonJson.decodeFromString<SummaryDto>(json)
         assertEquals(LimitStatus.OK, dto.toLimits().single().status)
+    }
+
+    @Test
+    fun `status falls back to thresholds when no status map covers the id`() {
+        val warn = LimitDto(id = "weekly_all", kind = "weekly_all", percent = 81)
+        val critical = LimitDto(id = "session", kind = "session", percent = 96)
+        val ok = LimitDto(id = "weekly_scoped:fable", kind = "weekly_scoped", percent = 10)
+        val odd = LimitDto(id = "odd", kind = "session", percent = 1, severity = "elevated")
+        val t = ThresholdsDto()
+        assertEquals(LimitStatus.WARN, statusFor(warn, t))
+        assertEquals(LimitStatus.CRITICAL, statusFor(critical, t))
+        assertEquals(LimitStatus.OK, statusFor(ok, t))
+        assertEquals(LimitStatus.WARN, statusFor(odd, t))
     }
 
     @Test

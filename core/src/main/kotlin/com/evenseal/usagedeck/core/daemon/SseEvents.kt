@@ -14,6 +14,7 @@ sealed interface DaemonEvent {
         val user: UserDto?,
         val limits: List<LimitDto>,
         val status: StatusDto,
+        val thresholds: ThresholdsDto,
         val today: TokensCountsDto,
         val sessions: List<SessionDto>,
         val rules: List<PauseRuleDto>,
@@ -21,7 +22,11 @@ sealed interface DaemonEvent {
         val rev: Long
     ) : DaemonEvent
 
-    data class Limits(val limits: List<LimitDto>, val status: StatusDto) : DaemonEvent
+    /**
+     * The `/v1/limits` body minus `raw`. It carries no status map — the client keeps the last
+     * one it saw from a `snapshot` and falls back to thresholds for ids it has never seen.
+     */
+    data class Limits(val limits: List<LimitDto>, val fetchedAt: String?, val stale: Boolean) : DaemonEvent
 
     data class Spend(val today: TokensCountsDto, val delta: TokensCountsDto) : DaemonEvent
 
@@ -37,13 +42,19 @@ sealed interface DaemonEvent {
     data class Unknown(val event: String) : DaemonEvent
 }
 
+/**
+ * `snapshot` payload. `summary` is byte-for-byte the `/v1/summary` body; `limits` is the
+ * `/v1/limits` body minus `raw`; `rules` is the `/v1/pause/rules` body.
+ */
 @Serializable
 internal data class SnapshotDto(
     val name: String? = null,
     val version: String? = null,
     val user: UserDto? = null,
     val summary: SummaryDto = SummaryDto(),
+    val limits: LimitsBodyDto = LimitsBodyDto(),
     val sessions: SessionsDto = SessionsDto(),
+    /** Either the `/v1/pause/rules` body or a bare array of rules; both are accepted. */
     val rules: JsonElement? = null,
     val update: UpdateDto? = null,
     val rev: Long = 0
@@ -72,8 +83,8 @@ object SseParser {
         return runCatching {
             when (name) {
                 "snapshot" -> snapshot(DaemonJson.decodeFromString<SnapshotDto>(data))
-                "limits" -> DaemonJson.decodeFromString<SummaryDto>(data)
-                    .let { DaemonEvent.Limits(it.limits, it.status) }
+                "limits" -> DaemonJson.decodeFromString<LimitsBodyDto>(data)
+                    .let { DaemonEvent.Limits(it.limits, it.fetchedAt, it.stale) }
                 "spend" -> DaemonJson.decodeFromString<SpendEventDto>(data)
                     .let { DaemonEvent.Spend(it.today, it.delta) }
                 "session" -> DaemonJson.decodeFromString<SessionEventDto>(data)
@@ -90,8 +101,9 @@ object SseParser {
         name = dto.name,
         version = dto.version,
         user = dto.user,
-        limits = dto.summary.limits,
+        limits = dto.summary.limits.limits.ifEmpty { dto.limits.limits },
         status = dto.summary.status,
+        thresholds = dto.summary.thresholds,
         today = dto.summary.today,
         sessions = dto.sessions.sessions,
         rules = rulesOf(dto.rules),
@@ -99,9 +111,7 @@ object SseParser {
         rev = dto.rev
     )
 
-    /** The daemon sends `rules` either as a bare array or wrapped in `{ rev, rules }`. */
     private fun rulesOf(element: JsonElement?): List<PauseRuleDto> = when (element) {
-        null -> emptyList()
         is JsonArray -> DaemonJson.decodeFromJsonElement(ListSerializer(PauseRuleDto.serializer()), element)
         is JsonObject -> DaemonJson.decodeFromJsonElement(RulesDto.serializer(), element).rules
         else -> emptyList()

@@ -1,6 +1,7 @@
 package com.evenseal.usagedeck.core.daemon
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -30,14 +31,15 @@ class SseEventsTest {
     }
 
     @Test
-    fun `limits event parses limits and status`() {
+    fun `limits event parses the flat limits body`() {
         val e = SseParser.parse(
             "limits",
             """{"limits":[{"id":"weekly_all","kind":"weekly_all","percent":96}],""" +
-                """"status":{"byId":{"weekly_all":"critical"},"overall":"critical"}}"""
+                """"fetchedAt":"2026-09-13T14:00:00Z","stale":false,"error":null}"""
         ) as DaemonEvent.Limits
         assertEquals(96, e.limits.single().percent)
-        assertEquals("critical", e.status.byId["weekly_all"])
+        assertEquals("2026-09-13T14:00:00Z", e.fetchedAt)
+        assertFalse(e.stale)
     }
 
     @Test
@@ -65,7 +67,9 @@ class SseEventsTest {
     @Test
     fun `snapshot parses nested summary and sessions and rules array`() {
         val json = """{"name":"alans-mbp","version":"0.1.5+abc","user":{"emailAddress":"a@b"},
-          "summary":{"limits":[{"id":"session","kind":"session","percent":42}],"status":{"byId":{"session":"ok"},"overall":"ok"},"today":{"input":1}},
+          "summary":{"limits":{"limits":[{"id":"session","kind":"session","percent":42}],"fetchedAt":"2026-09-13T14:00:00Z","stale":false,"error":null},
+                     "status":{"byId":{"session":"ok"},"overall":"ok"},"thresholds":{"warn":80,"critical":95},"today":{"ready":true,"input":1}},
+          "limits":{"limits":[{"id":"session","kind":"session","percent":42}],"fetchedAt":"2026-09-13T14:00:00Z","stale":false,"error":null},
           "sessions":{"rev":7,"sessions":[]},"rules":[{"id":"r","scope":"all","mode":"soft","createdAt":"2026-09-13T00:00:00Z"}],"update":{"state":"idle"},"rev":7}"""
         val s = SseParser.parse("snapshot", json) as DaemonEvent.Snapshot
         assertEquals("alans-mbp", s.name)
@@ -76,6 +80,7 @@ class SseEventsTest {
         assertEquals(1L, s.today.input)
         assertEquals("a@b", s.user!!.emailAddress)
         assertEquals("idle", s.update!!.state)
+        assertEquals(95, s.thresholds.critical)
     }
 
     @Test

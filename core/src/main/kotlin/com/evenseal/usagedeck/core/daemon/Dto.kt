@@ -16,7 +16,9 @@ data class TokensCountsDto(
     val output: Long = 0,
     val cacheCreate: Long = 0,
     val cacheRead: Long = 0,
-    val messages: Long = 0
+    val messages: Long = 0,
+    /** `summary.today` carries this; session/spend counts omit it and default to true. */
+    val ready: Boolean = true
 )
 
 @Serializable
@@ -65,14 +67,31 @@ data class LimitDto(
 @Serializable
 data class StatusDto(val byId: Map<String, String> = emptyMap(), val overall: String = "ok")
 
+/**
+ * The normalized limits body. It is the whole of `GET /v1/limits` and is nested under
+ * `limits` in `GET /v1/summary`. `legacyWindows` and `extraUsage` are deliberately ignored.
+ */
+@Serializable
+data class LimitsBodyDto(
+    val limits: List<LimitDto> = emptyList(),
+    val fetchedAt: String? = null,
+    val stale: Boolean = false,
+    val error: ErrorBodyDto? = null
+)
+
+@Serializable
+data class ThresholdsDto(val warn: Int = 80, val critical: Int = 95)
+
 @Serializable
 data class SummaryDto(
-    val limits: List<LimitDto> = emptyList(),
+    val limits: LimitsBodyDto = LimitsBodyDto(),
     val status: StatusDto = StatusDto(),
-    val today: TokensCountsDto = TokensCountsDto(),
-    val fetchedAt: String? = null,
-    val stale: Boolean = false
-)
+    val thresholds: ThresholdsDto = ThresholdsDto(),
+    val today: TokensCountsDto = TokensCountsDto()
+) {
+    val fetchedAt: String? get() = limits.fetchedAt
+    val stale: Boolean get() = limits.stale
+}
 
 @Serializable
 data class ProjectRefDto(val gitCommonDir: String? = null, val name: String = "")

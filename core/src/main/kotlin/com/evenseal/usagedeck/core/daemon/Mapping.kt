@@ -32,10 +32,26 @@ fun statusOf(s: String?): LimitStatus = when (s?.lowercase()) {
     else -> LimitStatus.OK
 }
 
+private val CRITICAL_SEVERITIES = setOf("critical", "exceeded", "blocked")
+
+/**
+ * Status for a limit the daemon's `status.byId` map does not cover (a bare `limits` event).
+ * Mirrors daemon spec §23.3: critical on percent or a critical-like severity, warn on percent
+ * or any non-`normal` severity.
+ */
+fun statusFor(limit: LimitDto, thresholds: ThresholdsDto): LimitStatus {
+    val severity = limit.severity.lowercase()
+    return when {
+        limit.percent >= thresholds.critical || severity in CRITICAL_SEVERITIES -> LimitStatus.CRITICAL
+        limit.percent >= thresholds.warn || severity != "normal" -> LimitStatus.WARN
+        else -> LimitStatus.OK
+    }
+}
+
 fun LimitDto.toModel(status: LimitStatus) =
     Limit(id, kind, group, percent, severity, resetsAt.toInstantOrNull(), scope?.model, isActive, status)
 
-fun SummaryDto.toLimits(): List<Limit> = limits.map { it.toModel(statusOf(status.byId[it.id])) }
+fun SummaryDto.toLimits(): List<Limit> = limits.limits.map { it.toModel(statusOf(status.byId[it.id])) }
 
 fun PauseStateDto.toModel() = PauseState(
     if (mode == "hard") PauseMode.HARD else PauseMode.SOFT,
