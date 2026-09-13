@@ -234,7 +234,7 @@ No tailnet → a warning and loopback only. `SIGHUP` re-resolves without a resta
 The pairing payload:
 
 ```json
-{ "v": 1, "name": "adams-mbp", "addr": "100.64.12.23", "port": 47291, "token": "…" }
+{ "v": 1, "name": "adams-mbp", "addr": "100.101.102.103", "port": 47291, "token": "…" }
 ```
 
 ### Security model in five bullets
