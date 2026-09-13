@@ -20,7 +20,7 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { BusEvents, EventBus } from '../events/bus.js';
-import type { LimitsSnapshot, LimitsSnapshotLite } from '../limits/types.js';
+import type { LimitsSnapshot } from '../limits/types.js';
 import { sendError } from './errors.js';
 import { limitsLiteBody, summaryBody, todayBody, updateBody, type SnapshotDeps } from './snapshot.js';
 import type { TokenTotals, TokensSource } from './types.js';
@@ -351,25 +351,18 @@ function isZero(totals: TokenTotals): boolean {
   return TOTAL_KEYS.every((key) => totals[key] === 0);
 }
 
-/** A cheap change signature for the limits snapshot — `raw` is deliberately excluded. */
-export function limitsSignature(snapshot: LimitsSnapshotLite): string {
-  return JSON.stringify([
-    snapshot.fetchedAt,
-    snapshot.stale,
-    snapshot.error?.code ?? null,
-    snapshot.limits.map((l) => [l.id, l.percent, l.severity, l.resetsAt, l.isActive]),
-    snapshot.extraUsage,
-  ]);
+/** What the publisher needs from the limits poller: a snapshot, and word when it changed. */
+export interface LimitsObservable {
+  snapshot(): LimitsSnapshot;
+  onChange(cb: () => void): () => void;
 }
 
 export interface PublisherOptions {
   bus: EventBus;
-  limits: { snapshot(): LimitsSnapshot };
+  limits: LimitsObservable;
   /** Live getter: the token store is attached after the HTTP server starts (§6). */
   tokens(): TokensSource | null;
   now?: () => number;
-  /** How often the limits snapshot is sampled for changes. */
-  sampleMs?: number;
   /** `spend` is published at most once per this window (§19). */
   coalesceMs?: number;
   timers?: EventTimers;
@@ -379,18 +372,16 @@ export interface PublisherOptions {
  * Wire the daemon's own sources onto the bus: `limits` whenever a poll changed anything,
  * and machine-wide `spend` whenever the token store changes (§19, §23.13).
  *
- * The poller has no change callback, so its snapshot is sampled — comparing a small
- * signature once a second is far cheaper than plumbing an observer through W2's poller.
+ * Both sides are observers — nothing here polls. The poller decides what counts as a
+ * changed body (`snapshotSignature`), so an unchanged re-fetch never reaches a client.
  * Returns a stop function.
  */
 export function startBusPublishers(opts: PublisherOptions): () => void {
   const now = opts.now ?? Date.now;
   const timers = opts.timers ?? realEventTimers;
-  const sampleMs = opts.sampleMs ?? SWEEP_MS;
   const coalesceMs = opts.coalesceMs ?? SPEND_COALESCE_MS;
 
   const deps = { limits: opts.limits, tokens: opts.tokens, now };
-  let lastSignature = limitsSignature(limitsLiteBody(deps));
   let lastTotals: TokenTotals | null = null;
   let spendTimer: unknown = null;
   let unsubscribeTokens: (() => void) | null = null;
@@ -418,25 +409,16 @@ export function startBusPublishers(opts: PublisherOptions): () => void {
     spendTimer = timers.setTimeout(publishSpend, coalesceMs);
   };
 
-  const sample = (): void => {
-    const lite = limitsLiteBody(deps);
-    const signature = limitsSignature(lite);
-    if (signature !== lastSignature) {
-      lastSignature = signature;
-      opts.bus.publish('limits', lite);
-    }
-    if (unsubscribeTokens === null) {
-      const tokens = opts.tokens();
-      if (tokens !== null) unsubscribeTokens = tokens.onChange(onTokensChanged);
-    }
+  const onLimitsChanged = (): void => {
+    opts.bus.publish('limits', limitsLiteBody(deps));
   };
 
   const tokens = opts.tokens();
   if (tokens !== null) unsubscribeTokens = tokens.onChange(onTokensChanged);
-  const sampleHandle = timers.setInterval(sample, sampleMs);
+  const unsubscribeLimits = opts.limits.onChange(onLimitsChanged);
 
   return () => {
-    timers.clearInterval(sampleHandle);
+    unsubscribeLimits();
     if (spendTimer !== null) {
       timers.clearTimeout(spendTimer);
       spendTimer = null;
