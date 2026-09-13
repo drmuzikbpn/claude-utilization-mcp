@@ -13,7 +13,7 @@ import { currentLink, versionDir, versionsDir } from '../paths.js';
  */
 
 /** Never copied into a version directory. */
-export const COPY_EXCLUDES = ['node_modules', '.git'];
+export const COPY_EXCLUDES = ['node_modules', '.git', '.claude', 'src', 'test', 'docs', 'skill-observations', 'coverage'];
 
 /**
  * Walk up from `startDir` to the directory holding the `package.json` that declares
