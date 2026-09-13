@@ -20,6 +20,7 @@ export function createSpendTokensSource(options: SpendStoreOptions): TokensSourc
         scan: { filesDone: s.filesDone, filesTotal: s.filesTotal, bytesDone: s.bytesDone, bytesTotal: s.bytesTotal },
       };
     },
+    listSessions: () => store.listSessions(),
     sessionTotals: (id) => store.sessionTotals(id),
     sessionModel: (id) => store.sessionModel(id),
     sessionStartedAt: (id) => store.sessionStartedAt(id),

@@ -5,6 +5,7 @@ import { LimitsPoller } from './limits/poller.js';
 import { ensureConfigDir, expandHome, loadConfig, resolveConfigDir, writeJsonFile, type Config } from './config.js';
 import { daemonFilePath } from './clients/http.js';
 import { startBusPublishers } from './server/events.js';
+import { createSessionsSubsystem, type SessionsSubsystem } from './sessions/index.js';
 import { createServer, type UsageServer } from './server/index.js';
 import type { TokensSource } from './server/types.js';
 import { getVersion } from './version.js';
@@ -25,6 +26,10 @@ export interface DaemonOptions {
   /** Start the limits poller (off in tests that do not want network timers). */
   poll?: boolean;
   port?: number;
+  /** W3: shared event bus; created here when omitted. */
+  bus?: EventBus;
+  /** W3: start the sessions/pause subsystem (default `true`). */
+  sessions?: boolean;
 }
 
 export interface DaemonHandle {
@@ -35,6 +40,7 @@ export interface DaemonHandle {
   readonly poller: LimitsPoller;
   /** Shared bus: `/v1/events` streams it, the daemon and W3 publish onto it (§19). */
   readonly bus: EventBus;
+  readonly sessions: SessionsSubsystem | null;
   stop(): Promise<void>;
 }
 
@@ -91,9 +97,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     log: debug,
   });
 
-  // W4: one bus per daemon — the SSE endpoint consumes it, sessions/pause publish onto it.
-  const bus = new EventBus();
+  // One bus per daemon: the SSE endpoint consumes it, sessions/pause + the daemon publish onto it (§19).
+  const bus = opts.bus ?? new EventBus();
   let tokensSource: TokensSource | null = opts.tokens ?? null;
+  // W3: sessions/pause subsystem — loads sessions.json / pause.json, runs the §18.3 orphan sweep,
+  // starts the 15 s liveness timer. Token source is attached once the store is ready (below).
+  const sessions = opts.sessions === false ? null : createSessionsSubsystem({ configDir, bus, tokens: tokensSource });
+  sessions?.start();
 
   const server = createServer({
     config,
@@ -101,6 +111,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     tokens: tokensSource,
     version,
     bus,
+    sessions,
+    // §19: SSE snapshot carries the live sessions + pause rules.
+    ...(sessions ? { snapshots: { sessions: () => sessions.registry.list(), rules: () => sessions.rules.list() } } : {}),
   });
 
   const port = opts.port ?? config.port;
@@ -132,6 +145,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     const source = await make(config);
     if (source !== null) {
       server.setTokensSource(source);
+      sessions?.setTokensSource(source);
       tokensSource = source;
       debug('spend: store attached');
     }
@@ -149,9 +163,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     server,
     poller,
     bus,
+    sessions,
     async stop() {
       if (stopped) return;
       stopped = true;
+      // §18.3: SIGCONT every hard-frozen pid before anything else shuts down.
+      sessions?.stop();
       stopPublishers();
       poller.stop();
       await server.close();
