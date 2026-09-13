@@ -56,6 +56,16 @@ class KioskManager(private val context: Context) {
         }
         policy("setStatusBarDisabled") { dpm.setStatusBarDisabled(admin, true) }
         policy("disallowSafeBoot") { dpm.addUserRestriction(admin, UserManager.DISALLOW_SAFE_BOOT) }
+        RUNTIME_PERMISSIONS.forEach { permission ->
+            policy("grant $permission") {
+                dpm.setPermissionGrantState(
+                    admin,
+                    context.packageName,
+                    permission,
+                    DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED
+                )
+            }
+        }
         policy("persistentHome") {
             dpm.addPersistentPreferredActivity(
                 admin,
@@ -113,6 +123,17 @@ class KioskManager(private val context: Context) {
 
     companion object {
         const val TAILSCALE_PACKAGE = "com.tailscale.ipn"
+
+        /**
+         * Android 10 refuses `getScanResults` and `getConfiguredNetworks` without location
+         * permission, and silently returns an empty list rather than throwing — so on the real
+         * phone the wifi screen was simply blank. Device Owner can grant these outright; there is
+         * nobody standing at a docked kiosk to answer a runtime prompt.
+         */
+        val RUNTIME_PERMISSIONS = listOf(
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+            android.Manifest.permission.CAMERA
+        )
 
         /** `STAY_ON_WHILE_PLUGGED_IN` bitmask for AC + USB + wireless. */
         const val STAY_ON_ALL_SOURCES = "7"

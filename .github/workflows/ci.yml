@@ -1,0 +1,50 @@
+name: ci
+on: { push: { branches: [main] }, pull_request: {} }
+permissions: { contents: write }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew ktlintCheck :core:test :fakedaemon:test :app:testDebugUnitTest
+      - name: Instrumented tests (API 29)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          target: default
+          script: ./gradlew :app:connectedDebugAndroidTest
+      - name: Decode keystore
+        if: github.ref == 'refs/heads/main'
+        run: echo "$SIGNING_KEYSTORE_B64" | base64 -d > /tmp/release.jks
+        env: { SIGNING_KEYSTORE_B64: "${{ secrets.SIGNING_KEYSTORE_B64 }}" }
+      - name: Assemble release
+        if: github.ref == 'refs/heads/main'
+        run: ./gradlew :app:assembleRelease
+        env:
+          SIGNING_KEYSTORE_PATH: /tmp/release.jks
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+      - name: Version
+        if: github.ref == 'refs/heads/main'
+        id: v
+        run: echo "version=0.1.$(git rev-list --count HEAD)+$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Package
+        if: github.ref == 'refs/heads/main'
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk "usage-deck-${{ steps.v.outputs.version }}.apk"
+          sha256sum "usage-deck-${{ steps.v.outputs.version }}.apk" > SHA256SUMS
+      - name: Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.v.outputs.version }}
+          files: |
+            usage-deck-${{ steps.v.outputs.version }}.apk
+            SHA256SUMS

@@ -30,9 +30,9 @@ class MainActivity : ComponentActivity() {
         if (graph.kiosk.isDeviceOwner) {
             graph.kiosk.applyPolicies()
             graph.kiosk.startLockTask(this)
-        }
-        if (!graph.kiosk.dozeExempt) {
-            graph.kiosk.requestDozeExemption(this)
+            // One tap, on first launch only, and only on a provisioned kiosk: Device Owner cannot
+            // write the battery whitelist itself on API 29 (spec §4).
+            if (!graph.kiosk.dozeExempt) graph.kiosk.requestDozeExemption(this)
         }
         when (val imported = PairingImport(filesDir, graph.machineStore).consume()) {
             is PairingImport.Result.Imported -> Log.i(TAG, "paired ${imported.name} from import file")
