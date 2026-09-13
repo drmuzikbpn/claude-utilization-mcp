@@ -44,23 +44,16 @@ export class PortInUseError extends Error {
   }
 }
 
-/**
- * Load `SpendStore` from W1's module if it is present. The dynamic specifier keeps
- * `tsc` happy while `src/spend/**` is owned by another branch; a missing module simply
- * means `/v1/tokens` answers `ready: false`.
- */
-async function loadSpendStore(config: Config, log: (line: string) => void): Promise<TokensSource | null> {
-  const specifier = './spend/index.js';
+/** Build the real token store (§23.7: the store owns watcher-before-scan ordering). */
+async function loadSpendStore(config: Config, configDir: string, log: (line: string) => void): Promise<TokensSource | null> {
   try {
-    const mod = (await import(specifier as string)) as { SpendStore?: new () => TokensSource & { start(dir: string): Promise<void> } };
-    const Ctor = mod.SpendStore;
-    if (typeof Ctor !== 'function') {
-      log('spend: module present but exports no SpendStore — /v1/tokens will report ready:false');
-      return null;
-    }
-    const store = new Ctor();
-    // The store owns watcher-before-scan ordering (§23.7).
-    await store.start(expandHome(config.projectsDir));
+    const { createSpendTokensSource } = await import('./spend/adapter.js');
+    const store = createSpendTokensSource({
+      projectsDir: expandHome(config.projectsDir),
+      stateDir: configDir,
+      onError: (err: unknown) => log(`spend: ${(err as Error).message ?? String(err)}`),
+    });
+    await store.start();
     return store;
   } catch (err) {
     log(`spend: store unavailable (${(err as Error).message}) — /v1/tokens will report ready:false`);
@@ -126,7 +119,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   // Token store last: HTTP is already answering, and the store reports ready:false
   // until its initial scan finishes.
   if (opts.tokens === undefined) {
-    const make = opts.createTokensSource ?? ((c: Config) => loadSpendStore(c, debug));
+    const make = opts.createTokensSource ?? ((c: Config) => loadSpendStore(c, configDir, debug));
     const source = await make(config);
     if (source !== null) {
       server.setTokensSource(source);
