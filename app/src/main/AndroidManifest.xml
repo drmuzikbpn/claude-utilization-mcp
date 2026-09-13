@@ -45,6 +45,26 @@
             android:label="Pair machine"
             android:screenOrientation="sensor" />
 
+        <service
+            android:name=".service.DeckService"
+            android:exported="false" />
+
+        <receiver
+            android:name=".update.InstallResultReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.evenseal.usagedeck.INSTALL_RESULT" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".kiosk.LockTaskReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.evenseal.usagedeck.RELOCK" />
+            </intent-filter>
+        </receiver>
+
         <receiver
             android:name=".kiosk.DeviceAdminReceiver"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
