@@ -96,8 +96,9 @@ class EndToEndTest {
             PauseButtonDefaults.CONTENT_DESCRIPTION,
             useUnmergedTree = true
         )
-        // [0] is the project header; [1] is the first session under it.
-        controls[1].performClick()
+        // In portrait [0] is the project header and the session is [1]; the wide dock has no header,
+        // so the session control is simply the last one either way.
+        controls[controls.fetchSemanticsNodes().lastIndex].performClick()
 
         awaitUi("the daemon to receive a pause for session:$SESSION_ID") {
             pauseBodies.any { it.contains("session:$SESSION_ID") }
