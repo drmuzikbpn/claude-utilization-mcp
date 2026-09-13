@@ -188,7 +188,11 @@ export function createSessionsRouter(api: SessionsApi): SessionsRouter {
           }
           if (action === 'end') {
             const ended = registry.end(id);
-            if (ended !== null) pause.apply();
+            if (ended !== null) {
+              // A session that ends while hard-frozen must not leave stopped processes.
+              pause.thawSession(ended);
+              pause.apply();
+            }
             // Ending is idempotent: a hook must never see an error it cannot act on.
             sendJson(res, 200, { ok: true, ended: ended !== null, rev: registry.rev });
             return true;

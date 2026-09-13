@@ -141,6 +141,15 @@ export class PauseController {
     return this.apply({ refreeze: true });
   }
 
+  /**
+   * SIGCONT one session's recorded tree — used when a session ends while frozen, so a
+   * stopped process can never outlive the session that owned it (§18.3).
+   */
+  thawSession(session: StoredSession): number[] {
+    if (session.frozenPids.length === 0) return [];
+    return thaw(session.frozenPids, this.#deps);
+  }
+
   /** §18.3: clean shutdown SIGCONTs every recorded pid first. Rules are left alone. */
   thawEverything(): number[] {
     const resumed: number[] = [];

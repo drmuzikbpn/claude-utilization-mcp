@@ -359,6 +359,40 @@ describe('hard-freeze refusals (§18.3)', () => {
       await started.server.close();
     }
   });
+  it('SIGCONTs a frozen tree when the session ends (§18.3)', async () => {
+    const live = makeHarness({
+      table: [
+        { pid: 4242, ppid: 1 },
+        { pid: 4251, ppid: 4242 },
+      ],
+    });
+    const started = await startHarnessServer(live);
+    try {
+      live.alive.add(4242);
+      live.subsystem.registry.register({ sessionId: 'sess-1', pid: 4242, cwd: '/tmp/x/foo' });
+      await fetch(`http://127.0.0.1:${started.port}/v1/sessions/sess-1/pause`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ mode: 'hard' }),
+      });
+      live.signals.length = 0;
+
+      // The SessionEnd hook posts this with no token, from loopback.
+      const ended = await fetch(`http://127.0.0.1:${started.port}/v1/sessions/sess-1/end`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      expect(ended.status).toBe(200);
+      expect(live.signals).toEqual([
+        { pid: 4242, signal: 'SIGCONT' },
+        { pid: 4251, signal: 'SIGCONT' },
+      ]);
+    } finally {
+      live.subsystem.stop();
+      await started.server.close();
+    }
+  });
 });
 
 describe('unknown routes under our prefixes', () => {
