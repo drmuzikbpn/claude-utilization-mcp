@@ -50,6 +50,14 @@
             android:exported="false" />
 
         <receiver
+            android:name=".kiosk.LockTaskReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.evenseal.usagedeck.RELOCK" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
             android:name=".kiosk.DeviceAdminReceiver"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
             android:exported="true">
