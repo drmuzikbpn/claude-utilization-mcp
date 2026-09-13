@@ -179,8 +179,7 @@ PauseRule{ id, scope: all | project:<key> | session:<id>, mode: soft|hard, reaso
 - Team view derives from the union of machines: limits shown **per user**, spend summed. When
   one user is logged into two paired machines, both report the same account-wide limits; the
   copy with the freshest `limitsFetchedAt` wins, and the user block lists both machines.
-- `lastTool` is populated only if the daemon emits it (requested in §17); absent → the row
-  shows `lastActivityAt` instead.
+- `lastTool` may be `null` (no tool call yet); the row then shows `lastActivityAt`.
 
 ## 9. Pause (`pause/`)
 
@@ -332,7 +331,7 @@ of releases beyond sha256; burn history persistence across app restarts.
 ## 17. Dependencies on the daemon (owned by Ethan's spec)
 `/health` §15, bind + bearer + pairing §16, `/v1/sessions` §17, pause rules §18, `/v1/events`
 §19, auto-update deferral state §20, normalized `limits[]` and `/v1/tokens` §23.
-Requested of the daemon 2026-09-13, pending: `session.lastTool {name, at}` from PreToolUse;
-error envelope always carries `message`. Confirmed assumptions: `spend` event is
-machine-wide; `rule.reason` echoes back verbatim. Fixtures for sessions/pause/events to be published in
+All confirmed by the daemon owner 2026-09-13 (daemon spec §23.13): `session.lastTool
+{name, at} | null` from PreToolUse; error envelope always carries non-empty `message`;
+`spend` event is machine-wide; `rule.reason` echoed verbatim (trimmed to 200 chars). Fixtures for sessions/pause/events to be published in
 the daemon repo under `test/fixtures/`; this app's client tests consume them by path.
