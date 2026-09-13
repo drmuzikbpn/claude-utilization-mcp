@@ -49,8 +49,7 @@ One npm package, one CLI (`claude-usage`) with subcommands:
 
 ## 4. HTTP API
 
-Bind `127.0.0.1:<port>` (default `47291`, configurable). Localhost only, no auth —
-the trust boundary is "same user on the same machine"; documented in the README.
+Bind and auth are defined in **§16** (Part II). Even loopback-only deployments enforce the Host allowlist and Origin rejection from §16.
 All responses JSON. 5 s request timeout.
 
 ### `GET /health`
@@ -61,6 +60,8 @@ All responses JSON. 5 s request timeout.
 ```
 
 ### `GET /v1/limits`
+> **Superseded by §23.3** (normalize on upstream `limits[]`). Kept for history.
+
 ```json
 { "fetchedAt": "2026-09-13T14:00:00Z", "stale": false, "error": null,
   "windows": {
@@ -123,6 +124,8 @@ Interface: `getAccessToken(): Promise<string>`; throws `NoCredentialsError`.
   backoff (2× from 60 s, cap 10 min), keep serving last-good with `stale: true`.
 
 ### 5.3 Token spend (`src/spend/`)
+> **Amended by §23.4–23.8** (recursive walk incl. subagent transcripts, line filters, project key, memory bounds, truncation).
+
 - Source: `~/.claude/projects/<encoded-cwd>/*.jsonl`. Lines with `type === "assistant"` →
   `message.usage.{input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens}`,
   `message.model`, `message.id`, `requestId`, `timestamp`, `sessionId`, `cwd`.
@@ -482,3 +485,144 @@ CLI mirrors: `claude-usage sessions`, `claude-usage pause <all|project:<path>|se
 - `update`: fake release server (port 0) — version compare, sha mismatch → error and cleanup,
   smoke-test failure → no repoint, deferral while hard-frozen, rollback.
 - CI can't run launchd/systemd/Tailscale; those stay in `docs/smoke-test.md`.
+
+---
+
+# Part III — Part I amendments from the 2026-09-13 audit
+
+15 findings survived a 3-vote adversarial review (56 unique candidates). Where Part I
+conflicts with this section, this section wins.
+
+## 23.1 Name & trademark
+- `claude-usage` is **taken on npm** (unrelated package, v1.1.0). Publish **scoped**:
+  `@<npm-scope>/claude-usage` (scope to be confirmed by Alan), `bin` stays `claude-usage`. The
+  CLI name, MCP key, config dir `~/.config/claude-usage/`, launchd label
+  `com.github.<owner>.claude-usage` and systemd unit `claude-usage.service` all keep `claude-usage`.
+- README footer: "Works with Claude Code. Not affiliated with, endorsed by, or sponsored by
+  Anthropic. Claude and Claude Code are trademarks of Anthropic."
+
+## 23.2 Local trust boundary (supersedes §4 preamble, §13 "authentication")
+- §16 applies to **all** deployments, including loopback-only: Host allowlist (`421`), any
+  request carrying an `Origin` header → `403`, no CORS headers, token required for every
+  mutating request. Impact being defended: local path/session-id disclosure and
+  attacker-forced upstream fetches — no endpoint ever returns credentials.
+- File modes: `config.json`, `state.json`, `daemon.json`, `hook-state.json` all `0600`; config
+  dir `0700`.
+
+## 23.3 Limits normalization (supersedes §4 `/v1/limits` and the `limits` part of `/v1/summary`)
+```json
+{ "fetchedAt": "…", "stale": false, "error": null,
+  "limits": [
+    { "id": "session",             "kind": "session",       "group": "session", "percent": 5,
+      "severity": "normal", "resetsAt": "2026-09-13T18:00:00Z", "scope": null, "isActive": false },
+    { "id": "weekly_all",          "kind": "weekly_all",    "group": "weekly",  "percent": 13, "…": "…" },
+    { "id": "weekly_scoped:fable", "kind": "weekly_scoped", "group": "weekly",  "percent": 10,
+      "scope": { "model": "Fable", "surface": null }, "…": "…" } ],
+  "legacyWindows": { "five_hour": { "utilization": 5.0, "resetsAt": "…" }, "seven_day": { "…": "…" } },
+  "extraUsage": { "isEnabled": false, "utilization": null, "spendLimitReached": true },
+  "raw": { "…": "…" } }
+```
+- `limits[]` is normalized **1:1 from upstream `limits[]`** — the only authoritative model.
+  `id` = `kind` + (`:` + lower-cased `scope.model.display_name` when present).
+- `percent` is the upstream integer; thresholds are evaluated on `percent` only (the float
+  `utilization` in the legacy windows may differ by rounding).
+- `resetsAt` normalized through `Date` to ISO-8601 `Z`; **may be `null`** — every hook /
+  statusline template must render without it ("resets: unknown").
+- Status per limit = `critical` if `percent ≥ critical` **or** upstream `severity` is a
+  critical-like value; `warn` if `percent ≥ warn` **or** `severity !== "normal"`; else `ok`.
+  `/v1/summary.status = { byId: { "<id>": "ok|warn|critical" }, overall }`. Unknown
+  `severity` strings are passed through, never thrown on.
+- `legacyWindows` is best-effort passthrough of `five_hour`/`seven_day` only; `seven_day_opus`
+  et al. are **not** promised. Unknown top-level keys are ignored; `raw` keeps everything.
+- `/v1/spend` is renamed **`/v1/tokens`** to avoid colliding with upstream's `spend` (dollar)
+  object, which we surface as `extraUsage`/`raw` only. MCP tool becomes `get_tokens`.
+- Beta header is literally `anthropic-beta: oauth-2025-04-20` (see fixture README).
+- On `401`: re-read credentials once, retry; still `401` → `error.code = "unauthorized"`,
+  poll interval backs off to 10 min until a fetch succeeds (no hammering an expired token).
+
+## 23.4 Transcript discovery (amends §5.3 source)
+- Walk **every `*.jsonl` under `~/.claude/projects/` recursively at any depth**. Observed shapes:
+  `<encoded-cwd>/<sessionId>.jsonl` (main thread) and
+  `<encoded-cwd>/<sessionId>/subagents/agent-*.jsonl` (subagent transcripts, `isSidechain: true`,
+  `agentId` present — **~31 % of all tokens on the reference machine**; they are not copied into
+  the parent transcript and must be counted). Non-transcript `.jsonl` files exist in the tree
+  (e.g. `<project>/vercel-plugin/skill-injections.jsonl`) — lines that are not counted assistant
+  lines are skipped silently, **not** counted as `parseErrors`.
+- Subagent lines carry the parent's `sessionId` → tokens roll up to the session.
+
+## 23.5 Line filter & dedup key (amends §5.3)
+A line is counted iff `type === "assistant"` **and** `message.model !== "<synthetic>"` **and**
+`isApiErrorMessage !== true` **and** `message.usage` is an object. Dedup key =
+`message.id + ":" + (requestId ?? "")` — `requestId` is absent on some lines and the key must
+never be built from `undefined`. Duplicates are per-content-block lines sharing one
+`message.id`/`requestId` with identical usage; count once.
+
+## 23.6 Project key (amends §4 `groupBy=project`, §5.3)
+`project` = the `~/.claude/projects/<dir>` directory name the transcript lives under, used
+verbatim as an opaque key (the encoding is lossy — `/` and `-` both become `-` — so it is
+never decoded). Display label = `cwd` of the **first** counted line of the session's top-level
+transcript; per-line `cwd` drifts when subagents run elsewhere and is **not** a key.
+`/v1/tokens` groups carry `{ key, label }`. Part II's `gitCommonDir` grouping (§17) is a
+separate, richer identity available only for hook-registered sessions.
+
+## 23.7 Memory & time budget (amends §5.3 scanner/store, §6)
+- Reference corpus: **492 MB, 355 files, largest transcript 130 MB, ~29 k dedup keys.**
+- Scanner reads via `fs.open` + positional reads in **1 MB chunks** with a carry-over partial
+  line; a file is never materialized whole; peak memory O(chunk). Yields to the event loop
+  between chunks (`setImmediate`) so HTTP stays responsive; initial scan runs ≤ 4 files in
+  flight; `/health.stats` reports `scan: { filesDone, filesTotal, bytesDone, bytesTotal }`.
+- Snapshot only when dirty; dedup keys stored as a compact array of strings; state file is
+  written atomically (temp + rename). Snapshot `version` mismatch → **background** rescan while
+  the old aggregates keep serving (`stale: true` on `/v1/tokens` meanwhile), not a cold start.
+- Watcher starts **before** the initial scan; events arriving mid-scan queue and are drained
+  after it, so appends during the scan don't wait for the 5-min sweep.
+
+## 23.8 Truncation (amends §5.3)
+If a stored offset exceeds the file's current size, the file was truncated or replaced:
+restart it from 0 **and schedule a full background rescan** — aggregates are pre-summed
+counters not attributable to one file, so no per-file rollback is attempted.
+
+## 23.9 launchd / systemd details (amends §6 logging, §8 service)
+- launchd does **not** capture stderr by default. Plist sets `StandardOutPath` /
+  `StandardErrorPath` to `~/Library/Logs/claude-usage/daemon.{out,err}.log` (dir created
+  `0700`), `ProgramArguments` with the **absolute resolved node binary** (nvm/volta/fnm paths
+  are not on launchd's PATH), `EnvironmentVariables.PATH` = the install-time PATH,
+  `RunAtLoad`, `KeepAlive: { SuccessfulExit: false }` — so `process.exit(0)` from the
+  auto-updater/`configure service off` is honoured. Logs are truncated at install when > 10 MB;
+  no rotation otherwise (documented). `status` prints the last 20 stderr lines when the daemon
+  is down.
+- systemd user unit: absolute `ExecStart`, `Environment=PATH=…`, `Restart=on-failure`,
+  `[Install] WantedBy=default.target`, `daemon-reload` after writing. Logs go to the journal
+  (no file paths). The unit lives for the login session; `install --linger` runs
+  `loginctl enable-linger` and reports (not fails) if unavailable. Uninstall never touches linger.
+
+## 23.10 `~/.claude.json` is Claude Code's live state file (amends §7.2, §8 step 3)
+- It is `0600` and rewritten by running Claude Code sessions. **Primary path:** delegate the
+  write — `claude mcp add --scope user claude-usage -- <abs path>/claude-usage mcp`
+  (and `claude mcp remove --scope user claude-usage` on uninstall).
+- **Fallback** (no `claude` on PATH): re-read → merge → write a `0600` temp file in the same
+  directory → `rename(2)`; **no `.bak`** for this file (a `.bak` would leak `0600` content at
+  `0644`); warn the user to quit running sessions first. Entry includes `"type": "stdio"`.
+- `~/.claude/settings.json` keeps the Part I protocol; its `.bak` is written **once**
+  (`settings.json.claude-usage.bak`, never overwritten on re-run) and copies the source mode.
+
+## 23.11 Hook registration shape (amends §7.1, §8)
+`hooks.<Event>` is an array of matcher-groups. Install **appends** one group per event with no
+`matcher` key: `{ "hooks": [ { "type": "command", "command": "<abs path>/claude-usage hook",
+"timeout": <seconds> } ] }` — `timeout` is **seconds**; `5` for `SessionStart`/`SessionEnd`,
+`86400` for `UserPromptSubmit`/`PreToolUse` (the soft-pause gate, §18.2). §7.1's 200 ms is the
+hook's own internal HTTP deadline. Idempotency/uninstall key on the command string matching
+our resolved binary path. Install fixture must include a `settings.json` that already has
+several groups per event (Alan's has `PreToolUse`, `PostToolUse`, `SessionStart` populated and
+a custom `statusLine` — §7.3's "print the snippet" path is the normal case, not the edge).
+`statusLine` when we do set it: `{ "type": "command", "command": "<abs path>/claude-usage statusline" }`.
+
+## 23.12 Additional tests (amends §11)
+`spend/watcher` (debounce coalescing, sweep catches missed file, mid-scan queueing);
+`daemon` (temp `XDG_CONFIG_HOME`, startup order, `daemon.json` lifecycle, stale pid, port in
+use → exit 1, SIGCONT-on-shutdown); `config` (defaults, unknown-key round-trip, invalid value
+names key, modes); `mcp` (each tool, daemon-down text, stdout reserved for JSON-RPC);
+`statusline` (ok/warn/critical/paused/unreachable, `resetsAt: null`); **`uninstall`/`configure
+off` round-trip**: fixture settings → install → uninstall → byte-identical to fixture except
+our once-written `.bak`; `limits` normalizer against the fixture incl. `unknown_window_example`,
+`resetsAt: null`, unknown `severity`.
