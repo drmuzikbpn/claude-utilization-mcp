@@ -1,6 +1,7 @@
 package com.evenseal.usagedeck
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
@@ -10,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evenseal.usagedeck.kiosk.LockTaskReceiver
+import com.evenseal.usagedeck.pairing.PairingImport
 import com.evenseal.usagedeck.service.DeckService
 import com.evenseal.usagedeck.ui.DeckNav
 import com.evenseal.usagedeck.ui.alerts.AlertOverlay
@@ -31,6 +33,11 @@ class MainActivity : ComponentActivity() {
         }
         if (!graph.kiosk.dozeExempt) {
             graph.kiosk.requestDozeExemption(this)
+        }
+        when (val imported = PairingImport(filesDir, graph.machineStore).consume()) {
+            is PairingImport.Result.Imported -> Log.i(TAG, "paired ${imported.name} from import file")
+            is PairingImport.Result.Rejected -> Log.w(TAG, "pairing import rejected: ${imported.reason}")
+            PairingImport.Result.Nothing -> Unit
         }
         DeckService.start(this)
 
@@ -81,3 +88,5 @@ class MainActivity : ComponentActivity() {
         var maintenanceUntil: Long = 0L
     }
 }
+
+private const val TAG = "UsageDeck"

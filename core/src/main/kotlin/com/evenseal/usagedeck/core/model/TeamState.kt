@@ -73,15 +73,20 @@ data class TeamState(val machines: List<MachineState> = emptyList()) {
 
     private fun userKey(m: MachineState): String = m.user?.accountUuid ?: m.user?.emailAddress ?: m.config.id
 
-    private fun displayNameOf(m: MachineState): String? =
-        m.user?.displayName ?: m.user?.emailAddress ?: m.name ?: m.config.name
+    /** A bare e-mail is a poor headline; its local part reads like a name and fits the rail. */
+    private fun displayNameOf(m: MachineState): String? = m.user?.displayName?.takeIf { it.isNotBlank() && '@' !in it }
+        ?: m.user?.emailAddress?.substringBefore('@')
+        ?: m.name
+        ?: m.config.name
 
     private fun buildProjects(): List<ProjectView> {
         val live = mutableListOf<ProjectView>()
         val idle = mutableListOf<ProjectView>()
         machines.forEach { m ->
-            val byKey = m.sessions.groupBy { it.projectKey }
-            val liveCwds = m.sessions.map { it.cwd }.toSet()
+            // Only sessions the daemon reports alive make it onto the board; transcript back-fill of
+            // finished sessions is history, and history belongs to the tokens endpoint, not the rows.
+            val byKey = m.sessions.filter { it.alive }.groupBy { it.projectKey }
+            val liveCwds = m.sessions.filter { it.alive }.map { it.cwd }.toSet()
             byKey.forEach { (key, sessions) ->
                 val cwds = sessions.map { it.cwd }.toSet()
                 val today = m.projectTokens
@@ -110,6 +115,8 @@ data class TeamState(val machines: List<MachineState> = emptyList()) {
         }
         val (active, quiet) = live.partition { !it.isIdle }
         return active.sortedByDescending { it.liveTokens.total } +
-            (quiet + idle).sortedByDescending { it.todayTokens?.total ?: 0L }
+            (quiet + idle)
+                .filter { (it.todayTokens?.total ?: 0L) > 0L }
+                .sortedByDescending { it.todayTokens?.total ?: 0L }
     }
 }

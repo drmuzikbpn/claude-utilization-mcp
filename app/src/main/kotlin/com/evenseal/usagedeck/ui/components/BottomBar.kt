@@ -1,9 +1,11 @@
 package com.evenseal.usagedeck.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -31,9 +33,10 @@ import com.evenseal.usagedeck.ui.theme.DeckColors
 import com.evenseal.usagedeck.ui.theme.DeckType
 
 /**
- * The action strip: one primary action plus a handful of destinations. [onPrimaryHold] is the hard
- * variant of the primary action (freeze); when it is null the primary is a plain tap target.
- * [primaryDanger] tints the primary amber-to-red, and the red ring only appears mid-hold.
+ * The action strip, drawn as the mockups' `.btn` buttons: 9 dp corners, a 1 dp border, text on
+ * `surface`. The primary action is amber-bordered (`.btn.warn`) because it pauses something; the
+ * ring goes red only while a hold is in progress. [onPrimaryHold] is the hard variant of the
+ * primary action (freeze); when it is null the primary is a plain tap target.
  */
 @Composable
 fun BottomBar(
@@ -48,7 +51,7 @@ fun BottomBar(
         modifier = modifier
             .fillMaxWidth()
             .background(DeckColors.surface)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -60,19 +63,29 @@ fun BottomBar(
             modifier = Modifier.weight(1f)
         )
         secondary.forEach { (label, action) ->
-            Text(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(DeckColors.surface2)
-                    .clickable(onClick = action)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                text = label,
-                color = DeckColors.fg,
-                fontFamily = DeckType.text,
-                fontWeight = FontWeight.Medium,
-                fontSize = 14.sp
-            )
+            DeckButton(label = label, onClick = action)
         }
+    }
+}
+
+/** A secondary (`.btn.ghost`) button: bordered, transparent, neutral text. */
+@Composable
+fun DeckButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .clip(BUTTON_SHAPE)
+            .border(1.dp, DeckColors.line, BUTTON_SHAPE)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            color = DeckColors.fg,
+            fontFamily = DeckType.text,
+            fontWeight = FontWeight.Medium,
+            fontSize = 14.sp
+        )
     }
 }
 
@@ -94,8 +107,8 @@ private fun PrimaryAction(
     }
     val tint = when {
         holding -> DeckColors.crit
-        danger -> DeckColors.warn
-        else -> DeckColors.fg
+        danger -> DeckColors.crit
+        else -> DeckColors.warn
     }
     val longPress: ((Offset) -> Unit)? = onPrimaryHold?.let { hold ->
         { _: Offset ->
@@ -105,10 +118,11 @@ private fun PrimaryAction(
     }
 
     CompositionLocalProvider(LocalViewConfiguration provides holdConfiguration) {
-        Text(
+        Box(
             modifier = modifier
-                .clip(RoundedCornerShape(6.dp))
-                .background(tint.copy(alpha = 0.15f))
+                .clip(BUTTON_SHAPE)
+                .background(DeckColors.surface2)
+                .border(if (holding) 2.dp else 1.dp, tint.copy(alpha = if (holding) 0.9f else 0.45f), BUTTON_SHAPE)
                 .pointerInput(onPrimaryHold) {
                     detectTapGestures(
                         onPress = {
@@ -120,12 +134,18 @@ private fun PrimaryAction(
                         onLongPress = longPress
                     )
                 }
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            text = label,
-            color = tint,
-            fontFamily = DeckType.text,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 14.sp
-        )
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Text(
+                text = label,
+                color = tint,
+                fontFamily = DeckType.text,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp
+            )
+        }
     }
 }
+
+private val BUTTON_SHAPE = RoundedCornerShape(9.dp)

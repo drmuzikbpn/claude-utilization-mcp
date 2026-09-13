@@ -1,6 +1,7 @@
 package com.evenseal.usagedeck.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.evenseal.usagedeck.core.model.Health
@@ -32,9 +34,9 @@ import java.util.Locale
 private val CLOCK: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.UK)
 
 /**
- * The one-line header every screen carries: wifi chip, clock, one dot per machine, and the alert
- * chip when something needs attention. Alerts appear here rather than as a banner so the wide dock
- * never reflows (spec §11.2).
+ * The one-line header every screen carries, drawn as the mockups' pill chips: wifi (dot + SSID +
+ * bars), the alert chip when something needs attention, one chip per machine (dot + short name),
+ * and the clock. Alerts appear here rather than as a banner so the wide dock never reflows.
  */
 @Composable
 fun StatusBar(
@@ -50,21 +52,34 @@ fun StatusBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(DeckColors.surface)
+            .background(DeckColors.bg)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        WifiChip(wifi = wifi, onClick = onWifi)
+        Chip(
+            text = if (wifi.connected) "${wifi.ssid.orEmpty()} ${bars(wifi.bars)}" else "no wifi",
+            dot = if (wifi.connected) DeckColors.ok else DeckColors.crit,
+            onClick = onWifi
+        )
 
         if (alertChip != null) {
-            Chip(text = alertChip, color = DeckColors.warn)
+            Chip(
+                text = alertChip,
+                dot = DeckColors.warn,
+                tint = DeckColors.warn,
+                modifier = Modifier.weight(1f, fill = false)
+            )
         }
 
         Box(modifier = Modifier.weight(1f))
 
         machines.forEach { machine ->
-            MachineDot(machine = machine, onClick = { onMachine(machine.config.id) })
+            Chip(
+                text = Format.hostShort(machine.name ?: machine.config.name),
+                dot = dotColor(machine.health),
+                onClick = { onMachine(machine.config.id) }
+            )
         }
 
         Text(
@@ -77,58 +92,44 @@ fun StatusBar(
     }
 }
 
+/** A pill: 1 dp `line` border on `surface`, a 7 dp status dot, mono 11 sp text. */
 @Composable
-private fun WifiChip(wifi: WifiStatus, onClick: () -> Unit) {
-    val color = if (wifi.connected) DeckColors.muted else DeckColors.crit
-    val label = if (wifi.connected) {
-        "${wifi.ssid.orEmpty()} ${bars(wifi.bars)}"
-    } else {
-        "no wifi"
+fun Chip(
+    text: String,
+    dot: Color?,
+    modifier: Modifier = Modifier,
+    tint: Color = DeckColors.fg,
+    onClick: (() -> Unit)? = null
+) {
+    val shape = RoundedCornerShape(999.dp)
+    Row(
+        modifier = modifier
+            .clip(shape)
+            .background(DeckColors.surface)
+            .border(1.dp, if (tint == DeckColors.fg) DeckColors.line else tint.copy(alpha = 0.35f), shape)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        if (dot != null) {
+            Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(dot))
+        }
+        Text(
+            text = text,
+            color = tint,
+            fontFamily = DeckType.mono,
+            fontSize = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
-    Text(
-        modifier = Modifier
-            .clip(RoundedCornerShape(4.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-        text = label,
-        color = color,
-        fontFamily = DeckType.text,
-        fontWeight = FontWeight.Medium,
-        fontSize = 12.sp
-    )
 }
 
-@Composable
-private fun Chip(text: String, color: Color) {
-    Text(
-        modifier = Modifier
-            .clip(RoundedCornerShape(4.dp))
-            .background(color.copy(alpha = 0.15f))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-        text = text,
-        color = color,
-        fontFamily = DeckType.text,
-        fontWeight = FontWeight.Medium,
-        fontSize = 12.sp
-    )
-}
-
-@Composable
-private fun MachineDot(machine: MachineState, onClick: () -> Unit) {
-    val color = when (machine.health) {
-        Health.FRESH -> DeckColors.ok
-        Health.STALE -> DeckColors.warn
-        Health.DEAD -> DeckColors.crit
-    }
-    Box(
-        modifier = Modifier
-            .clip(CircleShape)
-            .clickable(onClick = onClick)
-            .padding(3.dp)
-            .size(8.dp)
-            .clip(CircleShape)
-            .background(color)
-    )
+private fun dotColor(health: Health): Color = when (health) {
+    Health.FRESH -> DeckColors.ok
+    Health.STALE -> DeckColors.warn
+    Health.DEAD -> DeckColors.dim
 }
 
 /** Four signal bars as block characters, so the chip needs no icon assets. */

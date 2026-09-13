@@ -35,6 +35,24 @@ object Format {
         return "resets ${HOUR_MINUTE.format(local)} · ${span(remaining)}"
     }
 
+    /** The caption form for a bar row: `2h33 left` inside a day, `Thu 09:00` beyond it, `unknown` without one. */
+    fun resetsShort(at: Instant?, now: Instant, zone: ZoneId): String {
+        if (at == null) return "unknown"
+        val remaining = Duration.between(now, at)
+        if (remaining >= Duration.ofHours(24)) return DAY_HOUR_MINUTE.format(at.atZone(zone))
+        return "${span(remaining)} left"
+    }
+
+    /** `claude-opus-5` → `opus`, `claude-fable-5-1` → `fable`, `claude-haiku-4-5-20251001` → `haiku`; unknown ids pass through. */
+    fun modelShort(model: String?): String? {
+        if (model == null) return null
+        val family = model.removePrefix("claude-").substringBefore('-')
+        return family.ifBlank { model }
+    }
+
+    /** `macbook-pro-10.tail42c6d2.ts.net` → `macbook-pro-10`; a plain hostname is unchanged. */
+    fun hostShort(name: String): String = name.substringBefore('.')
+
     /** `0:42`, `12:05`; a deadline already gone reads `0:00`. */
     fun countdown(until: Instant, now: Instant): String {
         val seconds = Duration.between(now, until).seconds.coerceAtLeast(0)

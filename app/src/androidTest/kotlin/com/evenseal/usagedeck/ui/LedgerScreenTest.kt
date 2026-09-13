@@ -1,12 +1,16 @@
 package com.evenseal.usagedeck.ui
 
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.evenseal.usagedeck.core.model.Health
+import com.evenseal.usagedeck.core.model.MachineConfig
+import com.evenseal.usagedeck.core.model.MachineState
 import com.evenseal.usagedeck.core.model.TeamState
 import com.evenseal.usagedeck.core.pause.Escalation
 import com.evenseal.usagedeck.core.pause.PauseTarget
@@ -40,8 +44,9 @@ class LedgerScreenTest {
     fun showsBothUsersFiveHourPercentages() {
         show(fakeViewModel())
 
-        compose.onNodeWithText("Alan").assertExists()
-        compose.onNodeWithText("Sam").assertExists()
+        // The name appears in the user block and again in the status-bar machine chip.
+        compose.onAllNodesWithText("Alan").assertCountEquals(2)
+        compose.onAllNodesWithText("Sam").assertCountEquals(2)
         compose.onNodeWithText("42%").assertExists()
         compose.onNodeWithText("77%").assertExists()
     }
@@ -106,5 +111,47 @@ class LedgerScreenTest {
         compose.onNodeWithText("Pause all").performClick()
 
         assertEquals(listOf<PauseTarget>(PauseTarget.All), actions.taps)
+    }
+
+    @Test
+    fun noMachinesShowsThePairingPromptInsteadOfABlankList() {
+        var opened: Route? = null
+        compose.setContent {
+            DeckTheme { LedgerScreen(vm = fakeViewModel(team = TeamState(emptyList())), onOpen = { opened = it }) }
+        }
+
+        compose.onNodeWithText("No machines paired").assertExists()
+        compose.onNodeWithText("Pair a machine").performClick()
+        assertEquals(Route.Pairing, opened)
+        compose.onNodeWithText("Pair").assertExists()
+    }
+
+    @Test
+    fun aPairedButUnreachableMachineShowsItsNameAndError() {
+        val waiting = MachineState(
+            config = MachineConfig("m1", "studio.local", "192.168.1.50", 47291, "t"),
+            health = Health.DEAD,
+            lastError = "Token rejected. Re-run pairing on the Mac."
+        )
+        show(fakeViewModel(team = TeamState(listOf(waiting))))
+
+        compose.onNodeWithText("Waiting for machine").assertExists()
+        compose.onNodeWithText("studio.local").assertExists()
+        compose.onNodeWithText("Token rejected. Re-run pairing on the Mac.").assertExists()
+        compose.onNodeWithText("192.168.1.50:47291").assertExists()
+    }
+
+    @Test
+    fun liveMachinesWithNoSessionsShowTheHintNotABlankList() {
+        val quiet = TeamState(
+            listOf(
+                Fx.machine("m1", "alan-mbp", "alan@example.com", fiveHour = 12, sevenDay = 30)
+            )
+        )
+        show(fakeViewModel(team = quiet))
+
+        compose.onNodeWithText("No live sessions").assertExists()
+        compose.onNodeWithText("Sessions · 0 live").assertExists()
+        compose.onNodeWithText("12%").assertExists()
     }
 }

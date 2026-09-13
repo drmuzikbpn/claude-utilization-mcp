@@ -109,4 +109,28 @@ class FormatTest {
         assertEquals("never", Format.age(null, now))
         assertEquals("0s ago", Format.age(now.plusSeconds(30), now))
     }
+
+    @Test
+    fun `resetsShort is a bare span inside a day and a weekday time beyond it`() {
+        val now = Instant.parse("2026-09-13T14:02:00Z")
+        val zone = ZoneId.of("UTC")
+        assertEquals("2h33 left", Format.resetsShort(now.plusSeconds(2 * 3600 + 33 * 60), now, zone))
+        assertEquals("Thu 09:00", Format.resetsShort(Instant.parse("2026-09-17T09:00:00Z"), now, zone))
+        assertEquals("unknown", Format.resetsShort(null, now, zone))
+    }
+
+    @Test
+    fun `model ids shorten to their family`() {
+        assertEquals("opus", Format.modelShort("claude-opus-5"))
+        assertEquals("fable", Format.modelShort("claude-fable-5-1"))
+        assertEquals("haiku", Format.modelShort("claude-haiku-4-5-20251001"))
+        assertEquals("gpt", Format.modelShort("gpt"))
+        assertEquals(null, Format.modelShort(null))
+    }
+
+    @Test
+    fun `host names drop their domain`() {
+        assertEquals("macbook-pro-10", Format.hostShort("macbook-pro-10.tail42c6d2.ts.net"))
+        assertEquals("studio", Format.hostShort("studio"))
+    }
 }

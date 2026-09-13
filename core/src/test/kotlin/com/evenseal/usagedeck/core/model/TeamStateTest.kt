@@ -275,4 +275,26 @@ class TeamStateTest {
         assertEquals(2, team.projects.size)
         assertEquals(setOf("m1", "m2"), team.projects.map { it.machineId }.toSet())
     }
+
+    @Test
+    fun `dead sessions never appear on the board and idle projects need tokens today`() {
+        val liveOne = session("live", "/repo/a", "/repo/a/.git", "a", alive = true)
+        val deadSameProject = session("dead1", "/repo/a", "/repo/a/.git", "a", alive = false)
+        val deadOther = session("dead2", "/repo/old", "/repo/old", "old", alive = false)
+        val m = machine("m1", user = null, sessions = listOf(liveOne, deadSameProject, deadOther))
+        val team = TeamState(listOf(m))
+
+        assertEquals(1, team.liveSessionCount)
+        val a = team.projects.single()
+        assertEquals("a", a.name)
+        assertEquals(listOf("live"), a.sessions.map { it.sessionId })
+        assertEquals(1, a.worktreeCount)
+    }
+
+    @Test
+    fun `an email-only user is headlined by its local part`() {
+        val m = machine("m1", user = User("alan@example.com", "acct-1", null))
+        assertEquals("alan", TeamState(listOf(m)).users.single().displayName)
+        assertEquals("alan@example.com", TeamState(listOf(m)).users.single().emailAddress)
+    }
 }
