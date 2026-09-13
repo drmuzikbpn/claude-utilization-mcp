@@ -71,6 +71,35 @@ class KioskManagerTest {
     }
 
     @Test
+    fun `applyPolicies grants location and camera so the wifi scan is not empty`() {
+        becomeDeviceOwner()
+        kiosk.applyPolicies()
+
+        KioskManager.RUNTIME_PERMISSIONS.forEach { permission ->
+            assertEquals(
+                "$permission should be granted outright",
+                DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED,
+                dpm.getPermissionGrantState(admin, context.packageName, permission)
+            )
+        }
+    }
+
+    @Test
+    fun `permission grants are skipped entirely when not device owner`() {
+        kiosk.applyPolicies()
+
+        // Reading the grant state is itself an owner-only call, so ask only after provisioning:
+        // anything granted by the earlier no-op run would show up here.
+        becomeDeviceOwner()
+        KioskManager.RUNTIME_PERMISSIONS.forEach { permission ->
+            assertEquals(
+                DevicePolicyManager.PERMISSION_GRANT_STATE_DEFAULT,
+                dpm.getPermissionGrantState(admin, context.packageName, permission)
+            )
+        }
+    }
+
+    @Test
     fun `dozeExempt is false before the exemption is granted`() {
         assertFalse(kiosk.dozeExempt)
     }
