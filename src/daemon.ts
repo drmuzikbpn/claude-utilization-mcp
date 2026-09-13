@@ -4,11 +4,30 @@ import { EventBus } from './events/bus.js';
 import { LimitsPoller } from './limits/poller.js';
 import { ensureConfigDir, expandHome, loadConfig, resolveConfigDir, writeJsonFile, type Config } from './config.js';
 import { daemonFilePath } from './clients/http.js';
+import { resolveBindAddresses, TAILSCALE_KEYWORD } from './net/bind.js';
+import { resolveMagicDnsName, resolveTailscaleIPv4 } from './net/tailscale.js';
+import { isLoopbackAddress } from './server/middleware.js';
 import { startBusPublishers } from './server/events.js';
 import { createSessionsSubsystem, type SessionsSubsystem } from './sessions/index.js';
 import { createServer, type UsageServer } from './server/index.js';
 import type { TokensSource } from './server/types.js';
 import { getVersion } from './version.js';
+
+/**
+ * The two tailnet questions the daemon asks at startup and again on `SIGHUP` (§16).
+ * Injected in tests so nothing ever shells out to `tailscale`.
+ */
+export interface NetworkResolver {
+  tailscaleIPv4(): Promise<string | null>;
+  magicDnsName(): Promise<string | null>;
+}
+
+export function defaultNetworkResolver(): NetworkResolver {
+  return {
+    tailscaleIPv4: () => resolveTailscaleIPv4(),
+    magicDnsName: () => resolveMagicDnsName(),
+  };
+}
 
 export interface DaemonOptions {
   configDir?: string;
@@ -30,6 +49,8 @@ export interface DaemonOptions {
   bus?: EventBus;
   /** W3: start the sessions/pause subsystem (default `true`). */
   sessions?: boolean;
+  /** W5: tailnet resolution seam (§16). */
+  network?: NetworkResolver;
 }
 
 export interface DaemonHandle {
@@ -41,6 +62,12 @@ export interface DaemonHandle {
   /** Shared bus: `/v1/events` streams it, the daemon and W3 publish onto it (§19). */
   readonly bus: EventBus;
   readonly sessions: SessionsSubsystem | null;
+  /** The addresses currently listened on, in bind order. */
+  readonly addresses: readonly string[];
+  /** The MagicDNS name currently accepted in `Host`, or `null`. */
+  readonly magicDnsName: string | null;
+  /** `SIGHUP`: re-resolve the tailnet address and MagicDNS name, re-bind what changed (§16). */
+  reload(): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -105,6 +132,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   const sessions = opts.sessions === false ? null : createSessionsSubsystem({ configDir, bus, tokens: tokensSource });
   sessions?.start();
 
+  // --- §16: which addresses, and under which Host names ----------------------
+  const network = opts.network ?? defaultNetworkResolver();
+  // The MagicDNS name only matters when we are actually reachable over the tailnet, so a
+  // loopback-only daemon never shells out to `tailscale` at all.
+  const wantsTailnet = config.bind.some((entry) => entry.trim().toLowerCase() === TAILSCALE_KEYWORD);
+  const addresses = await resolveBindAddresses(config.bind, {
+    resolveTailscale: () => network.tailscaleIPv4(),
+    log,
+  });
+  let magicDnsName = wantsTailnet ? await network.magicDnsName() : null;
+  if (magicDnsName !== null) debug(`net: MagicDNS name ${magicDnsName}`);
+
   const server = createServer({
     config,
     limits: poller,
@@ -112,19 +151,39 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     version,
     bus,
     sessions,
+    extraHostNames: magicDnsName === null ? [] : [magicDnsName],
     // §19: SSE snapshot carries the live sessions + pause rules.
     ...(sessions ? { snapshots: { sessions: () => sessions.registry.list(), rules: () => sessions.rules.list() } } : {}),
   });
 
   const port = opts.port ?? config.port;
+  const boundHosts: string[] = [];
+  // The first address decides the port and is fatal if it cannot be bound; every further
+  // address is best-effort, because a tailnet that is down must not stop the daemon (§16).
+  const [primary, ...secondary] = addresses as [string, ...string[]];
   let bound: number;
   try {
-    bound = await server.listen(port, '127.0.0.1');
+    bound = await server.listen(port, [primary]);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') throw new PortInUseError(port);
     throw err;
   }
-  debug(`http: listening on 127.0.0.1:${bound}`);
+  boundHosts.push(primary);
+
+  for (const host of secondary) {
+    try {
+      await server.bind(host, bound);
+      boundHosts.push(host);
+    } catch (err) {
+      // A loopback alias that is taken means the port itself is contested — still fatal.
+      if (isLoopbackAddress(host) && (err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+        await server.close();
+        throw new PortInUseError(bound);
+      }
+      log(`http: could not bind ${host}:${bound} — ${(err as Error).message}`);
+    }
+  }
+  debug(`http: listening on ${boundHosts.map((h) => `${h}:${bound}`).join(', ')}`);
 
   writeJsonFile(daemonFilePath(configDir), {
     pid: process.pid,
@@ -156,6 +215,48 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   const stopPublishers = startBusPublishers({ bus, limits: poller, tokens: () => tokensSource });
 
   let stopped = false;
+
+  /**
+   * `SIGHUP` (§16): the tailnet address and MagicDNS name can appear, change or vanish
+   * while the daemon runs. Re-resolve both, bind whatever is newly available, drop what is
+   * gone — and never let any of it be fatal. `config.json` itself is not re-read.
+   */
+  async function reload(): Promise<void> {
+    if (stopped) return;
+    let next: string[];
+    try {
+      next = await resolveBindAddresses(config.bind, { resolveTailscale: () => network.tailscaleIPv4(), log });
+    } catch (err) {
+      log(`reload: keeping the current addresses — ${(err as Error).message}`);
+      return;
+    }
+
+    for (const host of next) {
+      if (boundHosts.includes(host)) continue;
+      try {
+        await server.bind(host, bound);
+        boundHosts.push(host);
+        log(`http: now also listening on ${host}:${bound}`);
+      } catch (err) {
+        log(`http: could not bind ${host}:${bound} — ${(err as Error).message}`);
+      }
+    }
+
+    for (const host of [...boundHosts]) {
+      if (next.includes(host)) continue;
+      await server.unbind(host);
+      boundHosts.splice(boundHosts.indexOf(host), 1);
+      log(`http: stopped listening on ${host}:${bound}`);
+    }
+
+    const magic = wantsTailnet ? await network.magicDnsName() : null;
+    if (magic !== magicDnsName) {
+      magicDnsName = magic;
+      server.setExtraHostNames(magic === null ? [] : [magic]);
+      log(magic === null ? 'net: MagicDNS name is no longer available' : `net: MagicDNS name is now ${magic}`);
+    }
+  }
+
   return {
     port: bound,
     config,
@@ -164,6 +265,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     poller,
     bus,
     sessions,
+    get addresses() {
+      return boundHosts;
+    },
+    get magicDnsName() {
+      return magicDnsName;
+    },
+    reload,
     async stop() {
       if (stopped) return;
       stopped = true;
@@ -200,11 +308,24 @@ export async function serve(opts: DaemonOptions = {}): Promise<number> {
     return 1;
   }
 
-  log(`claude-usage ${handle.config.name} listening on http://127.0.0.1:${handle.port}`);
+  for (const address of handle.addresses) {
+    const host = address.includes(':') ? `[${address}]` : address;
+    log(`claude-usage ${handle.config.name} listening on http://${host}:${handle.port}`);
+  }
+
+  // §16: re-resolve the tailnet on SIGHUP; a reload never brings the daemon down.
+  const reload = (): void => {
+    log('claude-usage: SIGHUP received, re-resolving network addresses');
+    void handle.reload().catch((err: unknown) => {
+      log(`claude-usage: reload failed — ${(err as Error).message}`);
+    });
+  };
+  process.on('SIGHUP', reload);
 
   await new Promise<void>((resolve) => {
     const shutdown = (signal: NodeJS.Signals): void => {
       log(`claude-usage: ${signal} received, shutting down`);
+      process.removeListener('SIGHUP', reload);
       void handle.stop().then(resolve, resolve);
     };
     process.once('SIGTERM', shutdown);
