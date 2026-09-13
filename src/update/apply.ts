@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { currentBin, currentLink, versionDir, versionsDir } from '../paths.js';
 import { repointSymlink } from '../install/versions.js';
 import { defaultExec, type ExecRunner } from '../service/index.js';
+import { ensureRuntimeDeps } from '../install/deps.js';
 import { UpdateError } from './download.js';
 import { sortVersionsDesc } from './version.js';
 
@@ -142,6 +143,8 @@ export async function apply(opts: ApplyOptions): Promise<ApplyResult> {
   rmSync(staging, { recursive: true, force: true });
   try {
     await extractTarball(opts.tarballPath, staging, opts.exec ?? defaultExec);
+    // The tarball has no node_modules; `mcp`/`pairing` need them (§20 smoke test runs after).
+    await ensureRuntimeDeps(staging, opts.exec ?? defaultExec);
     const smoke: SmokeOptions = {};
     if (opts.exec !== undefined) smoke.exec = opts.exec;
     if (opts.nodePath !== undefined) smoke.nodePath = opts.nodePath;

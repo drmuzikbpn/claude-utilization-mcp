@@ -21,6 +21,7 @@ import {
 import { preflight, renderPreflight } from './preflight.js';
 import { applySettings } from './settings-merge.js';
 import { installVersion } from './versions.js';
+import { ensureRuntimeDeps } from './deps.js';
 
 /** `claude-usage install` (§8). Returns the process exit code; never calls `process.exit`. */
 export async function runInstall(argv: readonly string[], io: InstallIO): Promise<number> {
@@ -86,8 +87,9 @@ export async function runInstall(argv: readonly string[], io: InstallIO): Promis
     env: ctx.env,
     ...(io.sourceDir === undefined ? {} : { sourceDir: io.sourceDir }),
   });
+  const depsInstalled = await ensureRuntimeDeps(version.versionDir, ctx.exec ?? undefined);
   io.stdout(
-    `package: ${version.versionDir}${version.copied ? '' : ' (already installed)'}\n` +
+    `package: ${version.versionDir}${version.copied ? '' : ' (already installed)'}${depsInstalled ? ' — production deps installed' : ''}\n` +
       `current: ${version.currentLink} -> ${version.versionDir}\n`,
   );
 
