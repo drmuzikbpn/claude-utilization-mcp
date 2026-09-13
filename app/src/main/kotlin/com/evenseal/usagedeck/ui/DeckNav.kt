@@ -7,11 +7,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.evenseal.usagedeck.service.DeckGraph
 import com.evenseal.usagedeck.ui.ledger.LedgerScreen
+import com.evenseal.usagedeck.ui.project.ProjectScreen
+import com.evenseal.usagedeck.ui.projects.ProjectsScreen
 import com.evenseal.usagedeck.ui.theme.DeckTheme
 import com.evenseal.usagedeck.ui.widedock.WideDockScreen
 
@@ -70,6 +74,7 @@ fun DeckNav(graph: DeckGraph, navController: NavHostController = rememberNavCont
         val path = Dest.path(route)
         if (navController.graph.findNode(path) != null) navController.navigate(path)
     }
+    val back: () -> Unit = { navController.popBackStack() }
 
     val dim by vm.dimLevel.collectAsStateWithLifecycle()
 
@@ -79,6 +84,21 @@ fun DeckNav(graph: DeckGraph, navController: NavHostController = rememberNavCont
                 val landscape =
                     LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
                 if (landscape) WideDockScreen(vm, open) else LedgerScreen(vm, open)
+            }
+            composable(Dest.PROJECTS) { ProjectsScreen(vm, open, back) }
+            composable(
+                Dest.PROJECT,
+                arguments = listOf(
+                    navArgument("machineId") { type = NavType.StringType },
+                    navArgument("key") { type = NavType.StringType }
+                )
+            ) { entry ->
+                ProjectScreen(
+                    vm = vm,
+                    machineId = Dest.decode(entry.arguments?.getString("machineId")),
+                    key = Dest.decode(entry.arguments?.getString("key")),
+                    onBack = back
+                )
             }
         }
     }
