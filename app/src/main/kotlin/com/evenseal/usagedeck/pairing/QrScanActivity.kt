@@ -13,6 +13,8 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.content.res.ResourcesCompat
+import com.evenseal.usagedeck.R
 import com.google.zxing.BarcodeFormat
 import com.journeyapps.barcodescanner.BarcodeCallback
 import com.journeyapps.barcodescanner.BarcodeResult
@@ -81,6 +83,7 @@ class QrScanActivity : ComponentActivity() {
     private fun warningView(): TextView = TextView(this).apply {
         text = WARNING
         setTextColor(WARN)
+        typeface = ResourcesCompat.getFont(context, R.font.ibm_plex_sans)
         gravity = Gravity.START
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
         val pad = (16 * resources.displayMetrics.density).toInt()
