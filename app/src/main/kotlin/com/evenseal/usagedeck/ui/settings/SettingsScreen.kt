@@ -14,6 +14,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,7 +51,9 @@ fun SettingsScreen(
     onUpdate: ((Settings) -> Settings) -> Unit,
     onSetPin: (String) -> Unit,
     onCheckUpdate: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    wifiLabel: String = "",
+    onWifi: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -75,6 +79,53 @@ fun SettingsScreen(
                 fontSize = 16.sp
             )
         }
+
+        Section("Network")
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onWifi)
+                .padding(horizontal = 10.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Wifi",
+                color = DeckColors.fg,
+                fontFamily = DeckType.text,
+                fontSize = 14.sp,
+                modifier = Modifier.weight(1f)
+            )
+            Text(text = wifiLabel, color = DeckColors.muted, fontFamily = DeckType.mono, fontSize = 12.sp)
+            Text(text = "  ›", color = DeckColors.accent, fontFamily = DeckType.text, fontSize = 18.sp)
+        }
+
+        Section("Display")
+        ToggleRow(
+            label = "Keep screen on",
+            description = "Hold the screen on even when unplugged.",
+            checked = settings.keepScreenOn,
+            onChange = { on -> onUpdate { it.copy(keepScreenOn = on) } }
+        )
+        ToggleRow(
+            label = "Auto-dim at night",
+            description = "Dim to the night level during quiet hours.",
+            checked = settings.autoDim,
+            onChange = { on -> onUpdate { it.copy(autoDim = on) } }
+        )
+        ToggleRow(
+            label = "24-hour clock",
+            description = "Off shows 6:21 PM instead of 18:21.",
+            checked = settings.clock24h,
+            onChange = { on -> onUpdate { it.copy(clock24h = on) } }
+        )
+
+        Section("Alerts")
+        ToggleRow(
+            label = "Alert sound",
+            description = "A soft chime when an alert shows. Quiet hours still silence it.",
+            checked = settings.sound,
+            onChange = { on -> onUpdate { it.copy(sound = on) } }
+        )
 
         Section("Thresholds")
         SliderRow(
@@ -150,6 +201,32 @@ fun SettingsScreen(
             color = DeckColors.dim,
             fontFamily = DeckType.mono,
             fontSize = 11.sp
+        )
+    }
+}
+
+@Composable
+private fun ToggleRow(label: String, description: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onChange(!checked) }
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = label, color = DeckColors.fg, fontFamily = DeckType.text, fontSize = 14.sp)
+            Text(text = description, color = DeckColors.dim, fontFamily = DeckType.text, fontSize = 11.sp)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = DeckColors.fg,
+                checkedTrackColor = DeckColors.accent,
+                uncheckedThumbColor = DeckColors.muted,
+                uncheckedTrackColor = DeckColors.surface2
+            )
         )
     }
 }

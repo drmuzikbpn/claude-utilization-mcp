@@ -139,4 +139,11 @@ class FormatTest {
         assertEquals("3.1B", Format.tokens(3_055_500_000))
         assertEquals("999.9M", Format.tokens(999_940_000))
     }
+
+    @Test
+    fun `the clock renders 24-hour or 12-hour`() {
+        val at = Instant.parse("2026-09-13T22:21:00Z")
+        assertEquals("18:21", Format.clock(at, ZoneId.of("America/New_York"), use24h = true))
+        assertEquals("6:21 PM", Format.clock(at, ZoneId.of("America/New_York"), use24h = false))
+    }
 }

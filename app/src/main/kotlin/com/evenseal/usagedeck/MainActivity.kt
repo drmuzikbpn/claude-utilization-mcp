@@ -2,6 +2,7 @@ package com.evenseal.usagedeck
 
 import android.os.Bundle
 import android.util.Log
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
@@ -10,12 +11,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import com.evenseal.usagedeck.kiosk.LockTaskReceiver
 import com.evenseal.usagedeck.pairing.PairingImport
 import com.evenseal.usagedeck.service.DeckService
 import com.evenseal.usagedeck.ui.DeckNav
 import com.evenseal.usagedeck.ui.alerts.AlertOverlay
 import com.evenseal.usagedeck.ui.kiosk.ExitGate
+import kotlinx.coroutines.launch
 
 /**
  * The whole app is one activity: it is the launcher, the kiosk and the dashboard. Lock task is
@@ -36,6 +39,15 @@ class MainActivity : ComponentActivity() {
         }
         consumePairingImport()
         DeckService.start(this)
+        lifecycleScope.launch {
+            graph.settings.settings.collect { prefs ->
+                if (prefs.keepScreenOn) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+            }
+        }
 
         setContent {
             Box(modifier = Modifier.fillMaxSize()) {

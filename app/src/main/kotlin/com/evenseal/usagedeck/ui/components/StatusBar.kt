@@ -28,10 +28,6 @@ import com.evenseal.usagedeck.ui.theme.DeckType
 import com.evenseal.usagedeck.wifi.WifiStatus
 import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
-
-private val CLOCK: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.UK)
 
 /**
  * The one-line header every screen carries, drawn as the mockups' pill chips: wifi (dot + SSID +
@@ -47,7 +43,8 @@ fun StatusBar(
     onWifi: () -> Unit,
     onMachine: (String) -> Unit,
     modifier: Modifier = Modifier,
-    zone: ZoneId = ZoneId.systemDefault()
+    zone: ZoneId = ZoneId.systemDefault(),
+    use24h: Boolean = true
 ) {
     Row(
         modifier = modifier
@@ -83,7 +80,7 @@ fun StatusBar(
         }
 
         Text(
-            text = CLOCK.format(clock.atZone(zone)),
+            text = Format.clock(clock, zone, use24h),
             color = DeckColors.fg,
             fontFamily = DeckType.numeral,
             fontWeight = FontWeight.Medium,
