@@ -39,6 +39,22 @@ export interface PollerOptions {
   log?: (line: string) => void;
 }
 
+/**
+ * Change signature of a snapshot for `onChange` (§19).
+ *
+ * `fetchedAt` and `raw` are deliberately excluded: a poll that re-fetched the same numbers
+ * is not news, and waking every SSE client once a minute to say so would defeat the point.
+ */
+export function snapshotSignature(snapshot: LimitsSnapshot): string {
+  return JSON.stringify([
+    snapshot.stale,
+    snapshot.error === null ? null : [snapshot.error.code, snapshot.error.message],
+    snapshot.limits.map((l) => [l.id, l.kind, l.group, l.percent, l.severity, l.resetsAt, l.isActive]),
+    snapshot.legacyWindows,
+    snapshot.extraUsage,
+  ]);
+}
+
 function toErrorInfo(err: unknown): LimitsErrorInfo {
   if (err instanceof LimitsError) return err.toInfo();
   const code = (err as { code?: unknown }).code;
@@ -76,6 +92,8 @@ export class LimitsPoller {
   private running = false;
   private inFlight: Promise<LimitsSnapshot> | null = null;
   private lastRefreshAt: number | null = null;
+  private readonly listeners = new Set<() => void>();
+  private lastSignature: string = snapshotSignature(emptySnapshot());
 
   constructor(opts: PollerOptions) {
     this.getToken = opts.getToken;
@@ -92,6 +110,32 @@ export class LimitsPoller {
   /** The current `/v1/limits` body. */
   snapshot(): LimitsSnapshot {
     return this.current;
+  }
+
+  /**
+   * Subscribe to changes: fires after any poll — successful or failed — whose body
+   * differs from the last one (§19). Returns an unsubscribe function.
+   */
+  onChange(cb: () => void): () => void {
+    this.listeners.add(cb);
+    return () => {
+      this.listeners.delete(cb);
+    };
+  }
+
+  /** Called once per completed poll, after `this.current` has been replaced. */
+  private notifyIfChanged(): void {
+    const signature = snapshotSignature(this.current);
+    if (signature === this.lastSignature) return;
+    this.lastSignature = signature;
+    for (const cb of [...this.listeners]) {
+      try {
+        cb();
+      } catch (err) {
+        // A subscriber must never break polling.
+        this.log(`limits: onChange listener threw — ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   }
 
   /** Delay until the next scheduled poll, reflecting backoff. */
@@ -192,6 +236,7 @@ export class LimitsPoller {
       ...normalized,
       raw: payload,
     };
+    this.notifyIfChanged();
     return this.current;
   }
 
@@ -203,6 +248,7 @@ export class LimitsPoller {
       stale: this.current.fetchedAt !== null,
       error,
     };
+    this.notifyIfChanged();
     return this.current;
   }
 }

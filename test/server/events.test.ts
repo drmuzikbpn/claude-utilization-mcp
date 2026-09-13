@@ -693,3 +693,73 @@ describe('bus publishers (what the daemon wires up)', () => {
     expect(seen).toHaveLength(2);
   });
 });
+
+describe('bus publishers observe the poller instead of sampling it (§19)', () => {
+  it('publishes the moment the poller reports a change, with no timer tick', async () => {
+    const limits = new FakeLimitsProvider();
+    const seen: unknown[] = [];
+    bus.subscribe('limits', (payload) => seen.push(payload));
+    const stop = startBusPublishers({ bus, limits, tokens: () => null, timers, now: () => T0 + timers.clock });
+
+    limits.set(snapshotWithPercents({ session: 77 }));
+    // No `timers.advance` — a sampling publisher would still be waiting for its interval.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toEqual(stripRaw(snapshotWithPercents({ session: 77 })));
+
+    stop();
+  });
+
+  it('schedules no polling timers at all', async () => {
+    const stop = startBusPublishers({
+      bus,
+      limits: new FakeLimitsProvider(),
+      tokens: () => null,
+      timers,
+      now: () => T0 + timers.clock,
+    });
+    expect(timers.pendingCount).toBe(0);
+    await timers.advance(60_000);
+    expect(timers.pendingCount).toBe(0);
+    stop();
+  });
+
+  it('publishes nothing for a snapshot that changed without a notification', async () => {
+    const limits = new FakeLimitsProvider();
+    const seen: unknown[] = [];
+    bus.subscribe('limits', (payload) => seen.push(payload));
+    const stop = startBusPublishers({ bus, limits, tokens: () => null, timers, now: () => T0 + timers.clock });
+
+    // The real poller only notifies when the normalized body moved; silence means silence.
+    await timers.advance(10_000);
+    expect(seen).toHaveLength(0);
+    stop();
+  });
+
+  it('unsubscribes from the poller on stop', () => {
+    const limits = new FakeLimitsProvider();
+    const seen: unknown[] = [];
+    bus.subscribe('limits', (payload) => seen.push(payload));
+    const stop = startBusPublishers({ bus, limits, tokens: () => null, timers, now: () => T0 + timers.clock });
+
+    limits.set(snapshotWithPercents({ session: 51 }));
+    stop();
+    limits.set(snapshotWithPercents({ session: 52 }));
+    expect(seen).toHaveLength(1);
+  });
+
+  it('drives the SSE `limits` event end to end from a poller change', async () => {
+    const limits = new FakeLimitsProvider();
+    const { port } = await start({ limits });
+    const stop = startBusPublishers({ bus, limits, tokens: () => null, timers, now: () => T0 + timers.clock });
+    const client = await connect(port);
+    await client.waitFor('snapshot');
+
+    limits.set(snapshotWithPercents({ session: 64 }));
+    const event = await client.waitFor('limits');
+    expect((event.json as { limits: Array<{ id: string; percent: number }> }).limits[0]).toMatchObject({
+      id: 'session',
+      percent: 64,
+    });
+    stop();
+  });
+});
