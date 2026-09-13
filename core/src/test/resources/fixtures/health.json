@@ -1,0 +1,5 @@
+{ "ok": true, "name": "alans-mbp", "version": "0.1.417+3f9c2ab", "uptimeMs": 864000, "pid": 4242,
+  "user": { "emailAddress": "alan@evensealproductions.com", "accountUuid": "11111111-2222-4333-8444-555555555555",
+            "organizationUuid": "99999999-8888-4777-8666-555555555555", "displayName": "Alan" },
+  "update": { "channel": "stable", "current": "0.1.417+3f9c2ab", "available": "0.1.418+9d1e0aa",
+              "state": "deferred", "deferredReason": "hard_frozen_sessions" } }

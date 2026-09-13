@@ -1,0 +1,4 @@
+{ "ready": true, "since": "today", "groupBy": "project",
+  "totals": { "input": 1600000, "output": 142000, "cacheCreate": 90000, "cacheRead": 4000000, "messages": 312 },
+  "groups": [
+    { "key": "-Users-alan-code-calendarpa", "label": "/Users/alan/code/calendarpa", "input": 1600000, "output": 142000, "cacheCreate": 90000, "cacheRead": 4000000, "messages": 312 } ] }

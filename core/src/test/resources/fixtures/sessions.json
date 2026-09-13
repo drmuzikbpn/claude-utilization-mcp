@@ -1,0 +1,20 @@
+{ "rev": 42, "sessions": [
+  { "sessionId": "7f3a9c2e-1111-4b2b-9c1d-000000000001", "pid": 48211, "alive": true, "discovered": "hook",
+    "cwd": "/Users/alan/code/calendarpa", "transcriptPath": "/Users/alan/.claude/projects/-Users-alan-code-calendarpa/7f3a.jsonl",
+    "project": { "gitCommonDir": "/Users/alan/code/calendarpa/.git", "name": "calendarpa" }, "worktree": null,
+    "model": "claude-opus-5", "startedAt": "2026-09-13T11:20:00Z", "lastActivityAt": "2026-09-13T14:01:58Z",
+    "tokens": { "input": 1200000, "output": 48000, "cacheCreate": 90000, "cacheRead": 3100000, "messages": 210 },
+    "pause": null, "lastTool": { "name": "Read", "at": "2026-09-13T14:01:58Z" } },
+  { "sessionId": "c21e0000-2222-4b2b-9c1d-000000000002", "pid": 48990, "alive": true, "discovered": "hook",
+    "cwd": "/Users/alan/code/calendarpa-wt/billing", "transcriptPath": null,
+    "project": { "gitCommonDir": "/Users/alan/code/calendarpa/.git", "name": "calendarpa" }, "worktree": "billing",
+    "model": "claude-sonnet-5", "startedAt": "2026-09-13T13:05:00Z", "lastActivityAt": "2026-09-13T14:01:40Z",
+    "tokens": { "input": 410000, "output": 20000, "cacheCreate": 0, "cacheRead": 900000, "messages": 80 },
+    "pause": { "mode": "soft", "ruleId": "r-1", "scope": "session:c21e0000-2222-4b2b-9c1d-000000000002", "since": "2026-09-13T13:58:00Z", "frozenPids": [] },
+    "lastTool": null },
+  { "sessionId": "4d090000-3333-4b2b-9c1d-000000000003", "pid": null, "alive": true, "discovered": "transcript",
+    "cwd": "/Users/alan/code/audioleveler", "transcriptPath": "/Users/alan/.claude/projects/-Users-alan-code-audioleveler/4d09.jsonl",
+    "project": { "gitCommonDir": null, "name": "audioleveler" }, "worktree": null,
+    "model": null, "startedAt": "2026-09-13T09:00:00Z", "lastActivityAt": "2026-09-13T09:40:00Z",
+    "tokens": { "input": 520000, "output": 9000, "cacheCreate": 0, "cacheRead": 0, "messages": 30 }, "pause": null, "lastTool": null }
+] }
