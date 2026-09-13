@@ -34,11 +34,7 @@ class MainActivity : ComponentActivity() {
             // write the battery whitelist itself on API 29 (spec §4).
             if (!graph.kiosk.dozeExempt) graph.kiosk.requestDozeExemption(this)
         }
-        when (val imported = PairingImport(filesDir, graph.machineStore).consume()) {
-            is PairingImport.Result.Imported -> Log.i(TAG, "paired ${imported.name} from import file")
-            is PairingImport.Result.Rejected -> Log.w(TAG, "pairing import rejected: ${imported.reason}")
-            PairingImport.Result.Nothing -> Unit
-        }
+        consumePairingImport()
         DeckService.start(this)
 
         setContent {
@@ -65,6 +61,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        consumePairingImport()
         // Coming back from the captive portal or the QR scanner must re-pin the deck, unless a
         // maintenance window is deliberately open.
         if (graph.kiosk.isDeviceOwner && System.currentTimeMillis() >= maintenanceUntil) {
@@ -86,6 +83,18 @@ class MainActivity : ComponentActivity() {
         /** Process-wide, so a config change cannot reopen the kiosk by accident. */
         @Volatile
         var maintenanceUntil: Long = 0L
+    }
+
+    /**
+     * A sideloaded pairing file is picked up on every resume, not only at process start: the
+     * kiosk process is protected and cannot be force-stopped, so "relaunch" often means resume.
+     */
+    private fun consumePairingImport() {
+        when (val imported = PairingImport(filesDir, graph.machineStore).consume()) {
+            is PairingImport.Result.Imported -> Log.i(TAG, "paired ${imported.name} from import file")
+            is PairingImport.Result.Rejected -> Log.w(TAG, "pairing import rejected: ${imported.reason}")
+            PairingImport.Result.Nothing -> Unit
+        }
     }
 }
 

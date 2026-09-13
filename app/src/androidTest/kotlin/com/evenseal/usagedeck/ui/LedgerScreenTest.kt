@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -40,6 +41,14 @@ class LedgerScreenTest {
         compose.setContent { DeckTheme { LedgerScreen(vm = vm, onOpen = {}) } }
     }
 
+    /** Projects start collapsed; the tests that look at session rows open them first. */
+    private fun expand(vararg projects: String) {
+        projects.forEach { name ->
+            val headers = compose.onAllNodesWithContentDescription("expand $name")
+            if (headers.fetchSemanticsNodes().isNotEmpty()) headers[0].performClick()
+        }
+    }
+
     @Test
     fun showsBothUsersFiveHourPercentages() {
         show(fakeViewModel())
@@ -65,6 +74,7 @@ class LedgerScreenTest {
             escalations = mapOf(scope to Escalation("m1", scope, Fx.NOW.plusSeconds(42)))
         )
         show(fakeViewModel(actions = actions))
+        expand("calendarpa", "audioleveler")
 
         compose.onNodeWithText("0:42").assertExists()
     }
@@ -85,6 +95,7 @@ class LedgerScreenTest {
             )
         )
         show(fakeViewModel(team = team))
+        expand("calendarpa", "audioleveler")
 
         val controls = pauseControls()
         val count = controls.fetchSemanticsNodes().size
@@ -96,6 +107,7 @@ class LedgerScreenTest {
     fun tappingASessionPauseCallsTapWithThatSessionsTarget() {
         val actions = RecordingPauseActions()
         show(fakeViewModel(actions = actions))
+        expand("calendarpa", "audioleveler")
 
         // [0] is the first project header, [1] is that project's only session.
         pauseControls()[1].performClick()
@@ -164,8 +176,21 @@ class LedgerScreenTest {
             )
         )
         show(fakeViewModel(team = team))
+        expand("calendarpa")
 
         compose.onNodeWithText("Jamie - Android OS").assertExists()
         compose.onNodeWithText("a1b2… · 1.9M today", substring = true).assertExists()
+    }
+
+    @Test
+    fun projectsStartCollapsedWithASummaryAndExpandOnTap() {
+        show(fakeViewModel())
+
+        // Both fixture projects burn 1.9M, so each collapsed header carries the summary line.
+        compose.onAllNodesWithText("1.9M today").assertCountEquals(2)
+        compose.onAllNodesWithText("a1b2…").assertCountEquals(0)
+        expand("calendarpa")
+        compose.onNodeWithText("a1b2…").assertExists()
+        compose.onNodeWithContentDescription("collapse calendarpa").assertExists()
     }
 }

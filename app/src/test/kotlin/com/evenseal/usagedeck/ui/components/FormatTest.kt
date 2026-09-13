@@ -133,4 +133,10 @@ class FormatTest {
         assertEquals("macbook-pro-10", Format.hostShort("macbook-pro-10.tail42c6d2.ts.net"))
         assertEquals("studio", Format.hostShort("studio"))
     }
+
+    @Test
+    fun `billions get their own suffix instead of thousands of M`() {
+        assertEquals("3.1B", Format.tokens(3_055_500_000))
+        assertEquals("999.9M", Format.tokens(999_940_000))
+    }
 }

@@ -143,6 +143,22 @@ class DeckViewModel(
     fun projectSeries(machineId: String, key: String): List<Double> =
         burn.series(BurnKeys.project(machineId, key), _now.value, Duration.ofHours(5), PROJECT_BUCKETS)
 
+    /** The Ledger header's 30-minute sparkline for a whole project. */
+    fun projectSparkline(machineId: String, key: String, minutes: Int = 30, buckets: Int = 16): List<Double> =
+        burn.series(BurnKeys.project(machineId, key), _now.value, Duration.ofMinutes(minutes.toLong()), buckets)
+
+    private val _expanded = MutableStateFlow<Set<String>>(emptySet())
+
+    /** Projects the user has opened on the Ledger, keyed `machineId|projectKey`. Collapsed by default. */
+    val expanded: StateFlow<Set<String>> = _expanded.asStateFlow()
+
+    fun isExpanded(machineId: String, key: String) = "$machineId|$key" in _expanded.value
+
+    fun toggleExpanded(machineId: String, key: String) {
+        val id = "$machineId|$key"
+        _expanded.value = if (id in _expanded.value) _expanded.value - id else _expanded.value + id
+    }
+
     fun machineToday(machineId: String) = team.value.machine(machineId)?.today
 
     /**
