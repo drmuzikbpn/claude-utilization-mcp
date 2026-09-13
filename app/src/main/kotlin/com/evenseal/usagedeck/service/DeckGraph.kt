@@ -2,6 +2,7 @@ package com.evenseal.usagedeck.service
 
 import android.app.Application
 import android.content.Context
+import com.evenseal.usagedeck.BuildConfig
 import com.evenseal.usagedeck.UsageDeckApp
 import com.evenseal.usagedeck.alerts.Notifier
 import com.evenseal.usagedeck.core.Clock
@@ -15,6 +16,8 @@ import com.evenseal.usagedeck.core.model.BurnHistory
 import com.evenseal.usagedeck.core.model.MachineConfig
 import com.evenseal.usagedeck.core.model.TeamState
 import com.evenseal.usagedeck.core.pause.PauseController
+import com.evenseal.usagedeck.core.update.ReleaseChecker
+import com.evenseal.usagedeck.core.update.Version
 import com.evenseal.usagedeck.kiosk.ExitPin
 import com.evenseal.usagedeck.kiosk.KioskManager
 import com.evenseal.usagedeck.kiosk.ModeController
@@ -22,7 +25,10 @@ import com.evenseal.usagedeck.pairing.MachineStore
 import com.evenseal.usagedeck.pairing.encryptedPrefs
 import com.evenseal.usagedeck.pause.PrefsEscalationStore
 import com.evenseal.usagedeck.settings.SettingsStore
+import com.evenseal.usagedeck.update.ApkInstaller
+import com.evenseal.usagedeck.update.Updater
 import com.evenseal.usagedeck.wifi.WifiRepository
+import java.io.File
 import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -96,8 +102,29 @@ class DeckGraph(private val app: Application) {
 
     val notifier: Notifier = Notifier(app, scope)
 
+    val updater: Updater = Updater(
+        checker = ReleaseChecker(BuildConfig.RELEASE_REPO, http),
+        installed = Version.parse(BuildConfig.VERSION_NAME) ?: Version(0, 0, 0, ""),
+        installer = ApkInstaller(app),
+        cacheDir = File(app.cacheDir, "updates"),
+        client = http,
+        deferWhile = ::updateDeferralReason,
+        clock = clock,
+        scope = scope
+    )
+
     /** Filled in by [DeckService]; null while no service is running. */
     var updateChecks: UpdateChecks? = null
+
+    /**
+     * Spec §12: never swap the APK out from under a gesture or an armed escalation — the user
+     * would lose the hold they are halfway through, or the freeze they are counting on.
+     */
+    private fun updateDeferralReason(): String? = when {
+        pause.inFlight.value.isNotEmpty() -> "gesture"
+        pause.pending.value.isNotEmpty() -> "escalation_pending"
+        else -> null
+    }
 
     /** Keeps one [MachineClient] per paired machine, following [MachineStore] as it changes. */
     fun startClients() {

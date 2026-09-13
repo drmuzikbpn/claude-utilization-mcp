@@ -50,6 +50,14 @@
             android:exported="false" />
 
         <receiver
+            android:name=".update.InstallResultReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.evenseal.usagedeck.INSTALL_RESULT" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
             android:name=".kiosk.LockTaskReceiver"
             android:exported="false">
             <intent-filter>
