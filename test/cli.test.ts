@@ -66,15 +66,8 @@ describe('dispatch', () => {
     expect(r.out).toBe('');
   });
 
-  // sessions/pause/resume (W3) and install/configure/uninstall (W6) are covered by their own suites.
-  it.each(['mcp'])(
-    'exits 1 with "not implemented yet" for %s',
-    async (cmd) => {
-      const r = await cli([cmd]);
-      expect(r.code).toBe(1);
-      expect(r.err).toContain('not implemented yet');
-    },
-  );
+  // sessions/pause/resume (W3), install/configure/uninstall (W6) and mcp (W7) are
+  // covered by their own suites. Every subcommand is implemented; nothing is PLANNED.
 });
 
 describe('status', () => {
