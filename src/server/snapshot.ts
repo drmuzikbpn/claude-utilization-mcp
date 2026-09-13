@@ -86,7 +86,7 @@ export function limitsBody(d: SnapshotDeps): LimitsSnapshot {
 }
 
 /** `/v1/limits` minus `raw` — what `/v1/summary` embeds and what SSE sends (§4, §19). */
-export function limitsLiteBody(d: SnapshotDeps): LimitsSnapshotLite {
+export function limitsLiteBody(d: Pick<SnapshotDeps, 'limits'>): LimitsSnapshotLite {
   return stripRaw(d.limits.snapshot());
 }
 
@@ -96,7 +96,7 @@ export function startOfDayIso(now: number): string {
 }
 
 /** Machine-wide totals since local midnight; also the `today` of the SSE `spend` event. */
-export function todayBody(d: SnapshotDeps): TodayTotals {
+export function todayBody(d: Pick<SnapshotDeps, 'tokens' | 'now'>): TodayTotals {
   const tokens = d.tokens();
   const ready = tokens?.ready ?? false;
   const totals = ready && tokens !== null

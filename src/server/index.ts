@@ -1,8 +1,17 @@
 import { createServer as createHttpServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { redactConfig, type Config } from '../config.js';
+import { EventBus } from '../events/bus.js';
 import type { LimitsSnapshot } from '../limits/types.js';
 import { getVersion } from '../version.js';
+import {
+  createEventsEndpoint,
+  EVENTS_PATH,
+  isEventsRequest,
+  type EventsEndpoint,
+  type EventsTuning,
+  type SnapshotProvider,
+} from './events.js';
 import { sendError, sendJson } from './errors.js';
 import { createUserReader, defaultClaudeJsonPath } from './identity.js';
 import { buildHostPolicy, checkRequest, type HostPolicy } from './middleware.js';
@@ -16,6 +25,7 @@ export * from './middleware.js';
 export * from './query.js';
 export * from './identity.js';
 export * from './snapshot.js';
+export * from './events.js';
 
 /** 5 s request timeout (§4). */
 export const REQUEST_TIMEOUT_MS = 5_000;
@@ -38,6 +48,11 @@ export interface ServerOptions {
   claudeJsonPath?: string;
   now?: () => number;
   requestTimeoutMs?: number;
+  /** Shared event bus for `GET /v1/events`; one is created when omitted (§19). */
+  bus?: EventBus;
+  /** Sessions and pause rules for the SSE `snapshot` event; defaults to empty arrays. */
+  snapshots?: SnapshotProvider | undefined;
+  eventsTuning?: EventsTuning;
 }
 
 export interface BoundAddress {
@@ -48,6 +63,9 @@ export interface BoundAddress {
 export interface UsageServer {
   readonly http: Server;
   readonly addresses: readonly BoundAddress[];
+  /** The bus `GET /v1/events` streams; the daemon publishes onto it (§19). */
+  readonly bus: EventBus;
+  readonly events: EventsEndpoint;
   /** Attach the tokens source once it exists (daemon startup order, §6). */
   setTokensSource(source: TokensSource | null): void;
   handle(req: IncomingMessage, res: ServerResponse): void;
@@ -68,6 +86,7 @@ const ROUTES: readonly RouteKey[] = [
   { method: 'GET', path: '/v1/tokens' },
   { method: 'POST', path: '/v1/refresh' },
   { method: 'GET', path: '/v1/config' },
+  { method: 'GET', path: EVENTS_PATH },
 ];
 
 function allowedMethodsFor(path: string): string[] {
@@ -104,6 +123,16 @@ export function createServer(opts: ServerOptions): UsageServer {
     startedAt,
     now,
   };
+
+  const bus = opts.bus ?? new EventBus();
+  const events = createEventsEndpoint({
+    bus,
+    deps: snapshotDeps,
+    provider: opts.snapshots,
+    maxClients: opts.config.events.maxClients,
+    ...(opts.eventsTuning ?? {}),
+    ...(opts.now === undefined ? {} : { now: opts.now }),
+  });
 
   function tokensBody(url: URL, res: ServerResponse): void {
     const parsed = parseTokensQuery(url.searchParams, now());
@@ -146,15 +175,18 @@ export function createServer(opts: ServerOptions): UsageServer {
   // --- request pipeline -----------------------------------------------------
 
   function handle(req: IncomingMessage, res: ServerResponse): void {
-    const timer = setTimeout(() => {
-      if (!res.writableEnded) {
-        sendError(res, 500, 'internal_error', 'request timed out');
-        res.destroy();
-      }
-    }, requestTimeoutMs);
-    if (typeof timer.unref === 'function') timer.unref();
+    // SSE streams are long-lived by design — they must not hit the request timeout (§19).
+    const timer = isEventsRequest(req)
+      ? null
+      : setTimeout(() => {
+          if (!res.writableEnded) {
+            sendError(res, 500, 'internal_error', 'request timed out');
+            res.destroy();
+          }
+        }, requestTimeoutMs);
+    if (timer !== null && typeof timer.unref === 'function') timer.unref();
     res.on('close', () => {
-      clearTimeout(timer);
+      if (timer !== null) clearTimeout(timer);
     });
 
     void dispatch(req, res).catch((err: unknown) => {
@@ -206,6 +238,9 @@ export function createServer(opts: ServerOptions): UsageServer {
       case '/v1/config':
         sendJson(res, 200, redactConfig(opts.config));
         return;
+      case EVENTS_PATH:
+        events.handle(req, res);
+        return;
       default:
         sendError(res, 404, 'not_found', `no route for ${path}`);
     }
@@ -217,6 +252,8 @@ export function createServer(opts: ServerOptions): UsageServer {
 
   return {
     http,
+    bus,
+    events,
     get addresses() {
       return bound;
     },
@@ -246,6 +283,7 @@ export function createServer(opts: ServerOptions): UsageServer {
     },
     close() {
       return new Promise<void>((resolve) => {
+        events.close();
         http.closeAllConnections();
         http.close(() => {
           resolve();
