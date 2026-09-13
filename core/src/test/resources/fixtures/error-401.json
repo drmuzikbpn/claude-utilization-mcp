@@ -1,1 +1,0 @@
-{ "error": { "code": "unauthorized", "message": "Bearer token missing or invalid", "hint": "Re-run `claude-usage configure pairing` and scan again" } }

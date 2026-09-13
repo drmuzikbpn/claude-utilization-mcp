@@ -1,20 +1,59 @@
-{ "rev": 42, "sessions": [
-  { "sessionId": "7f3a9c2e-1111-4b2b-9c1d-000000000001", "pid": 48211, "alive": true, "discovered": "hook",
-    "cwd": "/Users/alan/code/calendarpa", "transcriptPath": "/Users/alan/.claude/projects/-Users-alan-code-calendarpa/7f3a.jsonl",
-    "project": { "gitCommonDir": "/Users/alan/code/calendarpa/.git", "name": "calendarpa" }, "worktree": null,
-    "model": "claude-opus-5", "startedAt": "2026-09-13T11:20:00Z", "lastActivityAt": "2026-09-13T14:01:58Z",
-    "tokens": { "input": 1200000, "output": 48000, "cacheCreate": 90000, "cacheRead": 3100000, "messages": 210 },
-    "pause": null, "lastTool": { "name": "Read", "at": "2026-09-13T14:01:58Z" } },
-  { "sessionId": "c21e0000-2222-4b2b-9c1d-000000000002", "pid": 48990, "alive": true, "discovered": "hook",
-    "cwd": "/Users/alan/code/calendarpa-wt/billing", "transcriptPath": null,
-    "project": { "gitCommonDir": "/Users/alan/code/calendarpa/.git", "name": "calendarpa" }, "worktree": "billing",
-    "model": "claude-sonnet-5", "startedAt": "2026-09-13T13:05:00Z", "lastActivityAt": "2026-09-13T14:01:40Z",
-    "tokens": { "input": 410000, "output": 20000, "cacheCreate": 0, "cacheRead": 900000, "messages": 80 },
-    "pause": { "mode": "soft", "ruleId": "r-1", "scope": "session:c21e0000-2222-4b2b-9c1d-000000000002", "since": "2026-09-13T13:58:00Z", "frozenPids": [] },
-    "lastTool": null },
-  { "sessionId": "4d090000-3333-4b2b-9c1d-000000000003", "pid": null, "alive": true, "discovered": "transcript",
-    "cwd": "/Users/alan/code/audioleveler", "transcriptPath": "/Users/alan/.claude/projects/-Users-alan-code-audioleveler/4d09.jsonl",
-    "project": { "gitCommonDir": null, "name": "audioleveler" }, "worktree": null,
-    "model": null, "startedAt": "2026-09-13T09:00:00Z", "lastActivityAt": "2026-09-13T09:40:00Z",
-    "tokens": { "input": 520000, "output": 9000, "cacheCreate": 0, "cacheRead": 0, "messages": 30 }, "pause": null, "lastTool": null }
-] }
+{
+  "rev": 812,
+  "sessions": [
+    {
+      "sessionId": "3f1c0a52-9d64-4f2e-8b71-2c5a0d9e4411",
+      "pid": 4242,
+      "alive": true,
+      "discovered": "hook",
+      "cwd": "/Users/alan/code/foo-wt2",
+      "transcriptPath": "/Users/alan/.claude/projects/-Users-alan-code-foo-wt2/3f1c0a52-9d64-4f2e-8b71-2c5a0d9e4411.jsonl",
+      "project": { "gitCommonDir": "/Users/alan/code/foo/.git", "name": "foo" },
+      "worktree": "foo-wt2",
+      "model": "claude-opus-5",
+      "startedAt": "2026-09-13T11:04:18.000Z",
+      "lastActivityAt": "2026-09-13T14:02:51.000Z",
+      "tokens": { "input": 18422, "output": 5310, "cacheCreate": 240118, "cacheRead": 1904772, "messages": 143 },
+      "pause": {
+        "mode": "hard",
+        "ruleId": "r_k3m7qz4ub2ah6ptc",
+        "scope": "session:3f1c0a52-9d64-4f2e-8b71-2c5a0d9e4411",
+        "since": "2026-09-13T14:03:10.000Z",
+        "frozenPids": [4242, 4251, 4252]
+      },
+      "lastTool": { "name": "Bash", "at": "2026-09-13T14:02:50.000Z" }
+    },
+    {
+      "sessionId": "8ad4e017-5b22-4c90-9f3d-7e6b1a0c3350",
+      "pid": 4390,
+      "alive": true,
+      "discovered": "hook",
+      "cwd": "/Users/alan/code/foo",
+      "transcriptPath": "/Users/alan/.claude/projects/-Users-alan-code-foo/8ad4e017-5b22-4c90-9f3d-7e6b1a0c3350.jsonl",
+      "project": { "gitCommonDir": "/Users/alan/code/foo/.git", "name": "foo" },
+      "worktree": null,
+      "model": "claude-fable-5-1",
+      "startedAt": "2026-09-13T13:40:02.000Z",
+      "lastActivityAt": "2026-09-13T14:01:07.000Z",
+      "tokens": { "input": 2201, "output": 940, "cacheCreate": 31002, "cacheRead": 288140, "messages": 21 },
+      "pause": null,
+      "lastTool": null
+    },
+    {
+      "sessionId": "c70bd853-62b1-4f42-8c14-2b7dcfe6578c",
+      "pid": null,
+      "alive": false,
+      "discovered": "transcript",
+      "cwd": "/Users/alan/code/notes",
+      "transcriptPath": null,
+      "project": { "gitCommonDir": null, "name": "notes" },
+      "worktree": null,
+      "model": "claude-haiku-4-5",
+      "startedAt": "2026-09-12T21:15:44.000Z",
+      "lastActivityAt": "2026-09-12T22:48:03.000Z",
+      "tokens": { "input": 812, "output": 306, "cacheCreate": 0, "cacheRead": 14022, "messages": 9 },
+      "pause": null,
+      "lastTool": null
+    }
+  ]
+}

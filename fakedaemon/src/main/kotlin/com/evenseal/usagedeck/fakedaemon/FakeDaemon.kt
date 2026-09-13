@@ -177,65 +177,85 @@ class FakeState(
             overall = "ok"
         )
 
-        /** The three sessions from the daemon fixtures: two hook-registered, one transcript-only. */
+        /**
+         * The daemon's `test/fixtures/sessions/sessions.json` (two hook-registered worktrees of one
+         * repo and a dead transcript-only session), started unpaused, plus one live transcript-only
+         * session so the 409 "no trusted pid" path is reachable as well as the 410 "exited" one.
+         */
         fun defaultSessions() = listOf(
             SessionDto(
-                sessionId = "7f3a9c2e-1111-4b2b-9c1d-000000000001",
-                pid = 48211,
+                sessionId = "3f1c0a52-9d64-4f2e-8b71-2c5a0d9e4411",
+                pid = 4242,
                 alive = true,
                 discovered = "hook",
-                cwd = "/Users/alan/code/calendarpa",
-                transcriptPath = "/Users/alan/.claude/projects/-Users-alan-code-calendarpa/7f3a.jsonl",
-                project = ProjectRefDto("/Users/alan/code/calendarpa/.git", "calendarpa"),
+                cwd = "/Users/alan/code/foo-wt2",
+                transcriptPath =
+                "/Users/alan/.claude/projects/-Users-alan-code-foo-wt2/3f1c0a52-9d64-4f2e-8b71-2c5a0d9e4411.jsonl",
+                project = ProjectRefDto("/Users/alan/code/foo/.git", "foo"),
+                worktree = "foo-wt2",
                 model = "claude-opus-5",
-                startedAt = "2026-09-13T11:20:00Z",
-                lastActivityAt = "2026-09-13T14:01:58Z",
-                tokens = TokensCountsDto(1_200_000, 48_000, 90_000, 3_100_000, 210),
-                lastTool = LastToolDto("Read", "2026-09-13T14:01:58Z")
+                startedAt = "2026-09-13T11:04:18.000Z",
+                lastActivityAt = "2026-09-13T14:02:51.000Z",
+                tokens = TokensCountsDto(18_422, 5_310, 240_118, 1_904_772, 143),
+                lastTool = LastToolDto("Bash", "2026-09-13T14:02:50.000Z")
             ),
             SessionDto(
-                sessionId = "c21e0000-2222-4b2b-9c1d-000000000002",
-                pid = 48990,
+                sessionId = "8ad4e017-5b22-4c90-9f3d-7e6b1a0c3350",
+                pid = 4390,
                 alive = true,
                 discovered = "hook",
-                cwd = "/Users/alan/code/calendarpa-wt/billing",
-                project = ProjectRefDto("/Users/alan/code/calendarpa/.git", "calendarpa"),
-                worktree = "billing",
-                model = "claude-sonnet-5",
-                startedAt = "2026-09-13T13:05:00Z",
-                lastActivityAt = "2026-09-13T14:01:40Z",
-                tokens = TokensCountsDto(410_000, 20_000, 0, 900_000, 80)
+                cwd = "/Users/alan/code/foo",
+                transcriptPath =
+                "/Users/alan/.claude/projects/-Users-alan-code-foo/8ad4e017-5b22-4c90-9f3d-7e6b1a0c3350.jsonl",
+                project = ProjectRefDto("/Users/alan/code/foo/.git", "foo"),
+                model = "claude-fable-5-1",
+                startedAt = "2026-09-13T13:40:02.000Z",
+                lastActivityAt = "2026-09-13T14:01:07.000Z",
+                tokens = TokensCountsDto(2_201, 940, 31_002, 288_140, 21)
             ),
             SessionDto(
-                sessionId = "4d090000-3333-4b2b-9c1d-000000000003",
+                sessionId = "c70bd853-62b1-4f42-8c14-2b7dcfe6578c",
+                pid = null,
+                alive = false,
+                discovered = "transcript",
+                cwd = "/Users/alan/code/notes",
+                project = ProjectRefDto(null, "notes"),
+                model = "claude-haiku-4-5",
+                startedAt = "2026-09-12T21:15:44.000Z",
+                lastActivityAt = "2026-09-12T22:48:03.000Z",
+                tokens = TokensCountsDto(812, 306, 0, 14_022, 9)
+            ),
+            SessionDto(
+                sessionId = "b91f77a0-3c48-4d6e-9a20-5e1c8f0b2d34",
                 pid = null,
                 alive = true,
                 discovered = "transcript",
-                cwd = "/Users/alan/code/audioleveler",
-                transcriptPath = "/Users/alan/.claude/projects/-Users-alan-code-audioleveler/4d09.jsonl",
-                project = ProjectRefDto(null, "audioleveler"),
-                startedAt = "2026-09-13T09:00:00Z",
-                lastActivityAt = "2026-09-13T09:40:00Z",
-                tokens = TokensCountsDto(520_000, 9_000, 0, 0, 30)
+                cwd = "/Users/alan/code/scratch",
+                project = ProjectRefDto(null, "scratch"),
+                model = "claude-haiku-4-5",
+                startedAt = "2026-09-13T10:02:11.000Z",
+                lastActivityAt = "2026-09-13T13:58:40.000Z",
+                tokens = TokensCountsDto(4_100, 902, 0, 22_500, 17)
             )
         )
 
         fun defaultGroups() = listOf(
             TokensGroupDto(
-                key = "-Users-alan-code-calendarpa",
-                label = "/Users/alan/code/calendarpa",
-                input = 1_600_000,
-                output = 142_000,
-                cacheCreate = 90_000,
-                cacheRead = 4_000_000,
-                messages = 312
+                key = "-Users-alan-code-foo",
+                label = "/Users/alan/code/foo",
+                input = 20_623,
+                output = 6_250,
+                cacheCreate = 271_120,
+                cacheRead = 2_192_912,
+                messages = 164
             ),
             TokensGroupDto(
-                key = "-Users-alan-code-audioleveler",
-                label = "/Users/alan/code/audioleveler",
-                input = 520_000,
-                output = 9_000,
-                messages = 30
+                key = "-Users-alan-code-notes",
+                label = "/Users/alan/code/notes",
+                input = 812,
+                output = 306,
+                cacheRead = 14_022,
+                messages = 9
             )
         )
     }
@@ -375,13 +395,19 @@ class FakeDaemon(
             return
         }
         if (request.scope.startsWith(SESSION_PREFIX)) {
-            val session = state.session(request.scope.removePrefix(SESSION_PREFIX))
-            if (session == null) {
-                call.error(HttpStatusCode.Gone, "gone", "Session ended; pause cleared.")
+            val id = request.scope.removePrefix(SESSION_PREFIX)
+            val session = state.session(id)
+            // Unknown or exited → 410 and no rule is created; a live session with no trusted pid → 409.
+            if (session == null || !session.alive) {
+                call.error(HttpStatusCode.Gone, "gone", "session $id has exited")
                 return
             }
             if (request.mode == "hard" && (session.discovered == "transcript" || session.pid == null)) {
-                call.error(HttpStatusCode.Conflict, "conflict", "That session has no trusted pid.")
+                call.error(
+                    HttpStatusCode.Conflict,
+                    "conflict",
+                    "session $id was discovered from its transcript and has no trusted pid"
+                )
                 return
             }
         }
