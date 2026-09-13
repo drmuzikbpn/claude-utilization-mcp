@@ -7,6 +7,7 @@ import {
   LAUNCHD_LABEL,
   LOG_TRUNCATE_BYTES,
   tailLines,
+  UPDATE_RESTART_EXIT_CODE,
   type ExecRunner,
   type ServiceManager,
   type ServiceManagerOptions,
@@ -51,6 +52,8 @@ ${envKeys.map((k) => `\t\t<key>${xml(k)}</key>\n\t\t<string>${xml(unit.env[k] ??
 \t</dict>
 \t<key>RunAtLoad</key>
 \t<true/>
+\t<!-- Exit 0 means "stay down" (configure service off); the auto-updater asks for a
+\t     relaunch by exiting ${String(UPDATE_RESTART_EXIT_CODE)}, mirroring systemd's Restart=on-failure. -->
 \t<key>KeepAlive</key>
 \t<dict>
 \t\t<key>SuccessfulExit</key>

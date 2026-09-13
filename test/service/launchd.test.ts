@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { LaunchdService } from '../../src/service/launchd.js';
-import { buildUnit, LAUNCHD_LABEL, LOG_TRUNCATE_BYTES, ServiceError } from '../../src/service/index.js';
+import { buildUnit, LAUNCHD_LABEL, LOG_TRUNCATE_BYTES, ServiceError, UPDATE_RESTART_EXIT_CODE } from '../../src/service/index.js';
 import { cleanupAllTempHomes, fakeExec, tempHome } from '../install/helpers.js';
 
 afterAll(cleanupAllTempHomes);
@@ -35,6 +35,19 @@ describe('plist', () => {
     expect(plist).toContain('<key>KeepAlive</key>\n\t<dict>\n\t\t<key>SuccessfulExit</key>\n\t\t<false/>\n\t</dict>');
     expect(plist).toContain(`<string>${join(h.home, 'Library', 'Logs', 'claude-usage', 'daemon.out.log')}</string>`);
     expect(plist).toContain(`<string>${join(h.home, 'Library', 'Logs', 'claude-usage', 'daemon.err.log')}</string>`);
+  });
+
+  /** Same restart contract as the systemd unit (§20, §23.9) — see that test. */
+  it('keeps KeepAlive.SuccessfulExit=false, so only a non-zero exit relaunches', async () => {
+    const h = tempHome();
+    const svc = new LaunchdService({ env: h.env, exec: fakeExec().runner, uid: 501 });
+    await svc.install(unit());
+    const plist = readFileSync(svc.unitPath, 'utf8');
+
+    expect(plist).toContain('<key>KeepAlive</key>\n\t<dict>\n\t\t<key>SuccessfulExit</key>\n\t\t<false/>\n\t</dict>');
+    // `KeepAlive: true` would relaunch after `configure service off`.
+    expect(plist).not.toMatch(/<key>KeepAlive<\/key>\n\t<true\/>/);
+    expect(plist).toContain(`exiting ${String(UPDATE_RESTART_EXIT_CODE)}`);
   });
 
   it('omits XDG variables that are not set', async () => {

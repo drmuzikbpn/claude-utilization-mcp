@@ -63,6 +63,18 @@ export const SYSTEMD_UNIT_NAME = 'claude-usage';
 /** Logs bigger than this are truncated at install time; no rotation otherwise (§23.9). */
 export const LOG_TRUNCATE_BYTES = 10 * 1024 * 1024;
 
+/**
+ * The restart contract both unit builders encode (§20, §23.9).
+ *
+ * Both supervisors are configured as "exit 0 means stay down" — launchd
+ * `KeepAlive: { SuccessfulExit: false }`, systemd `Restart=on-failure` — because
+ * `configure service off` and `uninstall` need a clean exit to actually stop the
+ * daemon. Neither of them relaunches on exit 0, so the auto-updater asks for its
+ * relaunch by exiting non-zero instead: 75, `EX_TEMPFAIL` from `sysexits.h`. It lives
+ * here, next to the unit renderers, because the two must never drift apart.
+ */
+export const UPDATE_RESTART_EXIT_CODE = 75;
+
 /** Default runner. A missing executable surfaces as `code: 127`, never a throw. */
 export const defaultExec: ExecRunner = (file, args) =>
   new Promise((resolve) => {
