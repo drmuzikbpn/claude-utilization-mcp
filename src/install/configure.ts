@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import { loadConfig, type Config } from '../config.js';
 import { buildUnit, defaultExec, type ExecRunner } from '../service/index.js';
@@ -84,13 +85,14 @@ async function renderQr(text: string): Promise<string> {
   });
 }
 
-export async function runPairing(io: InstallIO, ctx: ResolvedContext, json: boolean): Promise<number> {
+export async function runPairing(io: InstallIO, ctx: ResolvedContext, json: boolean, addrOverride: string | null = null): Promise<number> {
   const config = loadConfig(ctx.configDir);
   if (config.auth.token.length === 0) {
     io.stderr('claude-usage: no bearer token yet — run `claude-usage install` or `configure rotate-token`\n');
     return 1;
   }
-  const { addr, warning } = await resolvePairingAddr(ctx.exec === undefined ? {} : { exec: ctx.exec });
+  const resolved = addrOverride === null ? await resolvePairingAddr(ctx.exec === undefined ? {} : { exec: ctx.exec }) : { addr: addrOverride, warning: null };
+  const { addr, warning } = resolved;
   const payload: PairingPayload = { v: 1, name: config.name, addr, port: config.port, token: config.auth.token };
   const text = JSON.stringify(payload);
   io.stdout(`${text}\n`);
@@ -100,6 +102,16 @@ export async function runPairing(io: InstallIO, ctx: ResolvedContext, json: bool
   }
   if (warning !== null) io.stderr(`warning: ${warning}\n`);
   return 0;
+}
+
+function flagString(argv: readonly string[], name: string): string | null {
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === undefined) continue;
+    if (arg === name) return argv[i + 1] ?? null;
+    if (arg.startsWith(`${name}=`)) return arg.slice(name.length + 1);
+  }
+  return null;
 }
 
 function flagNumber(argv: readonly string[], name: string): number | null {
@@ -223,7 +235,14 @@ export async function runConfigure(argv: readonly string[], io: InstallIO): Prom
   const rest = argv.slice(1);
 
   try {
-    if (sub === 'pairing') return await runPairing(io, ctx, rest.includes('--json'));
+    if (sub === 'pairing') {
+      const addrOverride = flagString(rest, '--addr');
+      if (addrOverride !== null && isIP(addrOverride) === 0) {
+        io.stderr(`claude-usage: --addr must be an IP literal, got "${addrOverride}"\n`);
+        return 1;
+      }
+      return await runPairing(io, ctx, rest.includes('--json'), addrOverride);
+    }
 
     const { config } = loadConfigWithToken(ctx.configDir, io.randomToken);
     const changes: string[] = [];
@@ -277,7 +296,7 @@ export async function runConfigure(argv: readonly string[], io: InstallIO): Prom
       io.stderr(`claude-usage configure: unknown setting "${sub}"\n`);
       io.stderr('  configure [service|hook|mcp|statusline|autoupdate] <on|off>\n');
       io.stderr('  configure thresholds --warn N --critical N\n');
-      io.stderr('  configure port N | rotate-token | pairing [--json]\n');
+      io.stderr('  configure port N | rotate-token | pairing [--json] [--addr <ip>]\n');
       return 1;
     }
 
