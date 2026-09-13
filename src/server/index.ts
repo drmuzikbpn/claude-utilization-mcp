@@ -1,20 +1,21 @@
 import { createServer as createHttpServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { redactConfig, type Config } from '../config.js';
-import { computeStatus } from '../limits/status.js';
-import { stripRaw, type LimitsSnapshot } from '../limits/types.js';
+import type { LimitsSnapshot } from '../limits/types.js';
 import { getVersion } from '../version.js';
 import { sendError, sendJson } from './errors.js';
-import { createUserReader, defaultClaudeJsonPath, type OauthAccount } from './identity.js';
+import { createUserReader, defaultClaudeJsonPath } from './identity.js';
 import { buildHostPolicy, checkRequest, type HostPolicy } from './middleware.js';
 import { parseTokensQuery } from './query.js';
-import { emptyScanStats, zeroTotals, type TokensSource } from './types.js';
+import { healthBody, limitsBody, summaryBody, type SnapshotDeps } from './snapshot.js';
+import { zeroTotals, type TokensSource } from './types.js';
 
 export * from './types.js';
 export * from './errors.js';
 export * from './middleware.js';
 export * from './query.js';
 export * from './identity.js';
+export * from './snapshot.js';
 
 /** 5 s request timeout (§4). */
 export const REQUEST_TIMEOUT_MS = 5_000;
@@ -92,34 +93,17 @@ export function createServer(opts: ServerOptions): UsageServer {
 
   // --- route handlers -------------------------------------------------------
 
-  function healthBody(): Record<string, unknown> {
-    const stats = tokens?.stats ?? emptyScanStats();
-    const user: OauthAccount | null = readUser();
-    return {
-      ok: true,
-      name: opts.config.name,
-      version,
-      uptimeMs: Math.max(0, now() - startedAt),
-      pid: process.pid,
-      user,
-      // W8 owns auto-update; until then the daemon reports it as disabled.
-      update: {
-        channel: 'stable',
-        current: version,
-        available: null,
-        state: 'disabled',
-        deferredReason: null,
-      },
-      stats: {
-        filesTracked: stats.filesTracked,
-        eventsIndexed: stats.eventsIndexed,
-        parseErrors: stats.parseErrors,
-        lastScanAt: stats.lastScanAt,
-        spendReady: tokens?.ready ?? false,
-        ...(stats.scan === undefined ? {} : { scan: stats.scan }),
-      },
-    };
-  }
+  // The `/health`, `/v1/limits` and `/v1/summary` bodies live in `./snapshot.js` so the
+  // SSE `snapshot` event (§19) can embed exactly the same shapes.
+  const snapshotDeps: SnapshotDeps = {
+    config: opts.config,
+    limits: opts.limits,
+    tokens: () => tokens,
+    user: readUser,
+    version,
+    startedAt,
+    now,
+  };
 
   function tokensBody(url: URL, res: ServerResponse): void {
     const parsed = parseTokensQuery(url.searchParams, now());
@@ -148,22 +132,6 @@ export function createServer(opts: ServerOptions): UsageServer {
       return;
     }
     sendJson(res, 200, tokens.query(query));
-  }
-
-  function summaryBody(): Record<string, unknown> {
-    const snapshot = opts.limits.snapshot();
-    const status = computeStatus(snapshot.limits, opts.config.thresholds);
-    const ready = tokens?.ready ?? false;
-    const today = ready && tokens !== null
-      ? tokens.query({ since: new Date(new Date(now()).setHours(0, 0, 0, 0)).toISOString(), groupBy: 'day' }).totals
-      : zeroTotals();
-    return {
-      // `/v1/limits` minus `raw` (§4); the array itself is §23.3's shape.
-      limits: stripRaw(snapshot),
-      status,
-      thresholds: opts.config.thresholds,
-      today: { ready, ...today },
-    };
   }
 
   async function refresh(res: ServerResponse): Promise<void> {
@@ -221,13 +189,13 @@ export function createServer(opts: ServerOptions): UsageServer {
 
     switch (path) {
       case '/health':
-        sendJson(res, 200, healthBody());
+        sendJson(res, 200, healthBody(snapshotDeps));
         return;
       case '/v1/limits':
-        sendJson(res, 200, opts.limits.snapshot());
+        sendJson(res, 200, limitsBody(snapshotDeps));
         return;
       case '/v1/summary':
-        sendJson(res, 200, summaryBody());
+        sendJson(res, 200, summaryBody(snapshotDeps));
         return;
       case '/v1/tokens':
         tokensBody(url, res);
