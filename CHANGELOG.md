@@ -4,7 +4,12 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Fixed
+- Version directories now get their production `node_modules` (`npm install --omit=dev`) so the `mcp` and `configure pairing` subcommands work from the installed copy and from release tarballs.
+
 ### Added
+- `configure pairing --addr <ip>` override for phones that are on Wi-Fi rather than the tailnet.
+- Transcript back-fill in `/v1/sessions`: sessions with activity in the last 10 min read `alive: true`; sessions idle for more than 24 h are omitted.
 - Daemon (`claude-usage serve`): rate-limit windows from the Claude Code OAuth usage endpoint, normalized to `limits[]`; local token spend indexed from `~/.claude/projects/**/*.jsonl` including subagent transcripts, deduplicated, snapshotted to disk.
 - HTTP API on loopback (+ optional Tailscale bind): `/health`, `/v1/limits`, `/v1/summary`, `/v1/tokens`, `/v1/refresh`, `/v1/config`, `/v1/sessions` (+ register/heartbeat/end/gate), `/v1/pause`, `/v1/resume`, `/v1/pause/rules`, `/v1/events` (SSE). Bearer token required for every mutating request and for every non-loopback request; Host allowlist; `Origin` rejected.
 - Sessions registry fed by Claude Code hooks (SessionStart / UserPromptSubmit / PreToolUse / SessionEnd), worktree-aware project grouping, `lastTool`.
