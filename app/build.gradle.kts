@@ -1,0 +1,92 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.kotlin.serialization)
+}
+
+fun git(vararg cmd: String): String = runCatching {
+    ProcessBuilder("git", *cmd)
+        .directory(rootDir)
+        .redirectErrorStream(true)
+        .start()
+        .inputStream.bufferedReader().readText().trim()
+}.getOrDefault("")
+
+val commitCount = git("rev-list", "--count", "HEAD").toIntOrNull() ?: 1
+val shortSha = git("rev-parse", "--short", "HEAD").ifBlank { "dev" }
+
+android {
+    namespace = "com.evenseal.usagedeck"
+    compileSdk = 34
+    defaultConfig {
+        applicationId = "com.evenseal.usagedeck"
+        minSdk = 29
+        targetSdk = 29
+        versionCode = commitCount
+        versionName = "0.1.$commitCount+$shortSha"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField(
+            "String",
+            "RELEASE_REPO",
+            "\"${System.getenv("RELEASE_REPO") ?: "drmuzikbpn/android-project"}\""
+        )
+    }
+    signingConfigs {
+        create("release") {
+            val ks = System.getenv("SIGNING_KEYSTORE_PATH")
+            if (ks != null) {
+                storeFile = file(ks)
+                storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+                keyAlias = System.getenv("SIGNING_KEY_ALIAS")
+                keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    testOptions { unitTests.isIncludeAndroidResources = true }
+}
+
+kotlin { compilerOptions { jvmTarget.set(JvmTarget.JVM_17) } }
+
+dependencies {
+    implementation(project(":core"))
+    val bom = platform(libs.compose.bom)
+    implementation(bom)
+    androidTestImplementation(bom)
+    implementation(libs.compose.ui)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.tooling.preview)
+    implementation(libs.navigation.compose)
+    implementation(libs.activity.compose)
+    implementation(libs.lifecycle.runtime.compose)
+    implementation(libs.lifecycle.service)
+    implementation(libs.coroutines.android)
+    implementation(libs.serialization.json)
+    implementation(libs.okhttp)
+    implementation(libs.security.crypto)
+    implementation(libs.zxing.embedded)
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.coroutines.test)
+    testImplementation(libs.turbine)
+    androidTestImplementation(libs.androidx.test.ext)
+    androidTestImplementation(libs.espresso.core)
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.test.manifest)
+}
