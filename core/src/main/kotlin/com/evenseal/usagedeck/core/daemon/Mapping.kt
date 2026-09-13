@@ -1,0 +1,89 @@
+package com.evenseal.usagedeck.core.daemon
+
+import com.evenseal.usagedeck.core.model.Discovered
+import com.evenseal.usagedeck.core.model.LastTool
+import com.evenseal.usagedeck.core.model.Limit
+import com.evenseal.usagedeck.core.model.LimitStatus
+import com.evenseal.usagedeck.core.model.PauseMode
+import com.evenseal.usagedeck.core.model.PauseRule
+import com.evenseal.usagedeck.core.model.PauseState
+import com.evenseal.usagedeck.core.model.ProjectTokens
+import com.evenseal.usagedeck.core.model.Session
+import com.evenseal.usagedeck.core.model.Tokens
+import com.evenseal.usagedeck.core.model.UpdateState
+import com.evenseal.usagedeck.core.model.User
+import java.time.Instant
+
+internal fun String?.toInstantOrNull(): Instant? = this?.let { runCatching { Instant.parse(it) }.getOrNull() }
+
+internal fun String.toInstantOr(default: Instant): Instant = toInstantOrNull() ?: default
+
+fun TokensCountsDto.toModel() = Tokens(input, output, cacheCreate, cacheRead, messages)
+
+fun TokensGroupDto.toModel() = ProjectTokens(key, label, Tokens(input, output, cacheCreate, cacheRead, messages))
+
+fun UserDto.toModel() = User(emailAddress, accountUuid, displayName)
+
+fun UpdateDto.toModel() = UpdateState(channel, current, available, state, deferredReason)
+
+fun statusOf(s: String?): LimitStatus = when (s?.lowercase()) {
+    "warn" -> LimitStatus.WARN
+    "critical" -> LimitStatus.CRITICAL
+    else -> LimitStatus.OK
+}
+
+private val CRITICAL_SEVERITIES = setOf("critical", "exceeded", "blocked")
+
+/**
+ * Status for a limit the daemon's `status.byId` map does not cover (a bare `limits` event).
+ * Mirrors daemon spec §23.3: critical on percent or a critical-like severity, warn on percent
+ * or any non-`normal` severity.
+ */
+fun statusFor(limit: LimitDto, thresholds: ThresholdsDto): LimitStatus {
+    val severity = limit.severity.lowercase()
+    return when {
+        limit.percent >= thresholds.critical || severity in CRITICAL_SEVERITIES -> LimitStatus.CRITICAL
+        limit.percent >= thresholds.warn || severity != "normal" -> LimitStatus.WARN
+        else -> LimitStatus.OK
+    }
+}
+
+fun LimitDto.toModel(status: LimitStatus) =
+    Limit(id, kind, group, percent, severity, resetsAt.toInstantOrNull(), scope?.model, isActive, status)
+
+fun SummaryDto.toLimits(): List<Limit> = limits.limits.map { it.toModel(statusOf(status.byId[it.id])) }
+
+fun PauseStateDto.toModel() = PauseState(
+    if (mode == "hard") PauseMode.HARD else PauseMode.SOFT,
+    ruleId,
+    scope,
+    since.toInstantOr(Instant.EPOCH),
+    frozenPids
+)
+
+fun PauseRuleDto.toModel() = PauseRule(
+    id,
+    fullScope,
+    if (mode == "hard") PauseMode.HARD else PauseMode.SOFT,
+    reason,
+    createdAt.toInstantOr(Instant.EPOCH),
+    createdBy
+)
+
+fun SessionDto.toModel() = Session(
+    sessionId = identifier,
+    pid = pid,
+    alive = state?.let { it != "ended" } ?: alive,
+    discovered = if (discovered == "transcript") Discovered.TRANSCRIPT else Discovered.HOOK,
+    cwd = cwd,
+    transcriptPath = transcriptPath,
+    projectKey = project.gitCommonDir ?: cwd.ifBlank { project.key.orEmpty() },
+    projectName = project.name.ifBlank { cwd.substringAfterLast('/') },
+    worktree = worktree,
+    model = model,
+    startedAt = startedAt.toInstantOr(Instant.EPOCH),
+    lastActivityAt = lastActivityAt.toInstantOr(Instant.EPOCH),
+    tokens = tokens.toModel(),
+    pause = pause?.toModel(),
+    lastTool = lastTool?.let { LastTool(it.name, it.at.toInstantOr(Instant.EPOCH)) }
+)
