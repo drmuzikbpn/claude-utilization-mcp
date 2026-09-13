@@ -1,0 +1,72 @@
+{
+  "model": "opusplan",
+  "includeCoAuthoredBy": false,
+  "permissions": {
+    "allow": [
+      "Bash(npm run test:*)",
+      "Bash(git status)",
+      "Read(//home/example/code/**)"
+    ],
+    "deny": [
+      "Bash(curl:*)"
+    ],
+    "defaultMode": "acceptEdits"
+  },
+  "env": {
+    "DISABLE_TELEMETRY": "1"
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "/home/example/.claude/statusline.sh",
+    "padding": 0
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/example/.claude/hooks/guard-bash.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/example/.claude/hooks/format-check.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/example/.claude/hooks/prettier.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/example/.claude/hooks/session-banner.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "someUnknownFutureKey": {
+    "enabled": true,
+    "notes": "an unrecognised key that must survive a round-trip untouched"
+  }
+}
