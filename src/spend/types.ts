@@ -50,6 +50,8 @@ export interface ScanStats {
   dedupKeys: number;
   /** Distinct sessions currently retained. */
   sessions: number;
+  /** Completed scan passes since start — a truncation forces an extra full pass. */
+  scans: number;
   /** ISO-8601 instant the last scan finished, or `null` if none has. */
   lastScanAt: string | null;
   /** `true` while a scan is in progress. */
