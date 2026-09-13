@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.evenseal.usagedeck.ui.theme.DeckColors
@@ -45,13 +46,15 @@ fun BottomBar(
     onPrimary: () -> Unit,
     onPrimaryHold: (() -> Unit)?,
     secondary: List<Pair<String, () -> Unit>>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    compact: Boolean = false
 ) {
+    val pad = if (compact) 6.dp else 10.dp
     Row(
         modifier = modifier
             .fillMaxWidth()
             .background(DeckColors.surface)
-            .padding(horizontal = 10.dp, vertical = 10.dp),
+            .padding(horizontal = 10.dp, vertical = if (compact) 6.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -60,23 +63,24 @@ fun BottomBar(
             danger = primaryDanger,
             onPrimary = onPrimary,
             onPrimaryHold = onPrimaryHold,
+            pad = pad,
             modifier = Modifier.weight(1f)
         )
         secondary.forEach { (label, action) ->
-            DeckButton(label = label, onClick = action)
+            DeckButton(label = label, onClick = action, pad = pad)
         }
     }
 }
 
 /** A secondary (`.btn.ghost`) button: bordered, transparent, neutral text. */
 @Composable
-fun DeckButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun DeckButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier, pad: Dp = 10.dp) {
     Box(
         modifier = modifier
             .clip(BUTTON_SHAPE)
             .border(1.dp, DeckColors.line, BUTTON_SHAPE)
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = 14.dp, vertical = pad),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -95,6 +99,7 @@ private fun PrimaryAction(
     danger: Boolean,
     onPrimary: () -> Unit,
     onPrimaryHold: (() -> Unit)?,
+    pad: Dp,
     modifier: Modifier
 ) {
     val haptics = LocalHapticFeedback.current
@@ -134,7 +139,7 @@ private fun PrimaryAction(
                         onLongPress = longPress
                     )
                 }
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .padding(horizontal = 14.dp, vertical = pad),
             contentAlignment = Alignment.CenterStart
         ) {
             Text(

@@ -2,7 +2,6 @@ package com.evenseal.usagedeck.ui.project
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,17 +14,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalViewConfiguration
-import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -39,7 +34,9 @@ import com.evenseal.usagedeck.ui.DeckViewModel
 import com.evenseal.usagedeck.ui.components.BottomBar
 import com.evenseal.usagedeck.ui.components.Format
 import com.evenseal.usagedeck.ui.components.PauseButton
-import com.evenseal.usagedeck.ui.components.PauseButtonDefaults
+import com.evenseal.usagedeck.ui.components.PauseChoiceDefaults
+import com.evenseal.usagedeck.ui.components.PauseChoiceDialog
+import com.evenseal.usagedeck.ui.components.PauseVisual
 import com.evenseal.usagedeck.ui.theme.DeckColors
 import com.evenseal.usagedeck.ui.theme.DeckType
 import java.time.Instant
@@ -91,14 +88,24 @@ fun ProjectScreen(vm: DeckViewModel, machineId: String, key: String, onBack: () 
             }
         }
 
+        val paused = vm.visual(target).let { it is PauseVisual.Soft || it is PauseVisual.Frozen }
+        var choosing by remember { mutableStateOf(false) }
         BottomBar(
-            primary = "Soft pause all ${project.sessions.size}",
-            primaryDanger = false,
-            onPrimary = { vm.tap(target) },
-            onPrimaryHold = { vm.hold(target) },
+            primary = if (paused) PauseChoiceDefaults.RESUME else PauseChoiceDefaults.BUTTON,
+            primaryDanger = !paused,
+            onPrimary = { if (paused) vm.tap(target) else choosing = true },
+            onPrimaryHold = null,
             secondary = emptyList()
         )
-        FreezeButton(onHold = { vm.hold(target) })
+        if (choosing) {
+            PauseChoiceDialog(
+                subject = "${project.name} · ${project.sessions.size} " +
+                    if (project.sessions.size == 1) "session" else "sessions",
+                onSoft = { vm.tap(target) },
+                onFreeze = { vm.hold(target) },
+                onDismiss = { choosing = false }
+            )
+        }
     }
 }
 
@@ -251,35 +258,5 @@ internal fun activityLine(session: Session, now: Instant): String {
         "last tool ${tool.name} ${Format.age(tool.at, now)}"
     } else {
         "last activity ${Format.age(session.lastActivityAt, now)}"
-    }
-}
-
-/** Hold-only, and red, because a freeze is the one action with no soft undo. */
-@Composable
-private fun FreezeButton(onHold: () -> Unit) {
-    val haptics = LocalHapticFeedback.current
-    val viewConfiguration = LocalViewConfiguration.current
-    val holdConfiguration = androidx.compose.runtime.remember(viewConfiguration) {
-        object : ViewConfiguration by viewConfiguration {
-            override val longPressTimeoutMillis: Long get() = PauseButtonDefaults.HOLD_MILLIS
-        }
-    }
-    val longPress: (Offset) -> Unit = {
-        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-        onHold()
-    }
-    CompositionLocalProvider(LocalViewConfiguration provides holdConfiguration) {
-        Text(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(DeckColors.crit.copy(alpha = 0.15f))
-                .pointerInput(Unit) { detectTapGestures(onLongPress = longPress) }
-                .padding(vertical = 10.dp),
-            text = "Hold · freeze",
-            color = DeckColors.crit,
-            fontFamily = DeckType.text,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 14.sp
-        )
     }
 }

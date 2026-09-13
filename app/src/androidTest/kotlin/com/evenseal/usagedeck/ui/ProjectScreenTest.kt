@@ -3,6 +3,7 @@ package com.evenseal.usagedeck.ui
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.evenseal.usagedeck.core.model.BurnHistory
 import com.evenseal.usagedeck.core.model.ProjectTokens
@@ -87,8 +88,10 @@ class ProjectScreenTest {
     @Test
     fun theBottomBarCountsTheSessionsItWouldPause() {
         show()
-        compose.onNodeWithText("Soft pause all 1").assertExists()
-        compose.onNodeWithText("Hold · freeze").assertExists()
+        compose.onNodeWithText("Pause / Stop").assertExists()
+        compose.onNodeWithText("Pause / Stop").performClick()
+        compose.onNodeWithText("Soft pause").assertExists()
+        compose.onNodeWithText("Freeze now").assertExists()
     }
 
     @Test

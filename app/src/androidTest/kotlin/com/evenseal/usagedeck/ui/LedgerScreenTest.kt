@@ -154,4 +154,18 @@ class LedgerScreenTest {
         compose.onNodeWithText("Sessions · 0 live").assertExists()
         compose.onNodeWithText("12%").assertExists()
     }
+
+    @Test
+    fun aRenamedSessionShowsItsTitleInsteadOfItsId() {
+        val titled = Fx.session("a1b2c3d4").copy(title = "Android OS work")
+        val team = TeamState(
+            listOf(
+                Fx.machine("m1", "Adam", "adam@example.com", fiveHour = 12, sevenDay = 30, sessions = listOf(titled))
+            )
+        )
+        show(fakeViewModel(team = team))
+
+        compose.onNodeWithText("Android OS work").assertExists()
+        compose.onNodeWithText("a1b2… · 1.9M today", substring = true).assertExists()
+    }
 }

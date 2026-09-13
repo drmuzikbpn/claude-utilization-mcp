@@ -19,7 +19,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,57 +57,91 @@ fun WideDockScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
     val now by vm.now.collectAsStateWithLifecycle()
     val wifi by vm.wifi.collectAsStateWithLifecycle()
     val chip by vm.alertChip.collectAsStateWithLifecycle()
+    val empty = HomeEmpty.of(team)
+    val showMachine = team.machines.size > 1
 
-    Row(modifier = Modifier.fillMaxSize().background(DeckColors.bg)) {
-        Rail(team = team, now = now, modifier = Modifier.width(RAIL_WIDTH).fillMaxHeight())
+    Column(modifier = Modifier.fillMaxSize().background(DeckColors.bg)) {
+        StatusBar(
+            wifi = wifi,
+            machines = team.machines,
+            clock = now,
+            alertChip = chip,
+            onWifi = { onOpen(Route.Wifi) },
+            onMachine = { id -> onOpen(Route.Machine(id)) }
+        )
 
-        Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-            StatusBar(
-                wifi = wifi,
-                machines = team.machines,
-                clock = now,
-                alertChip = chip,
-                onWifi = { onOpen(Route.Wifi) },
-                onMachine = { id -> onOpen(Route.Machine(id)) }
-            )
+        Row(modifier = Modifier.weight(1f)) {
+            Rail(team = team, now = now, modifier = Modifier.width(RAIL_WIDTH).fillMaxHeight())
 
-            val empty = HomeEmpty.of(team)
-            if (empty != null) {
-                HomeEmptyBody(
-                    empty = empty,
-                    now = now,
-                    onPair = { onOpen(Route.Pairing) },
-                    modifier = Modifier.weight(1f)
-                )
-            } else {
-                LazyColumn(modifier = Modifier.weight(1f)) {
-                    team.projects.filter { it.sessions.isNotEmpty() }.forEach { project ->
-                        items(project.sessions, key = { "${project.machineId}:${it.sessionId}" }) { session ->
-                            val target = PauseTarget.Session(project.machineId, session.sessionId)
-                            SessionRow(
-                                session = session,
-                                rate = vm.rate(project.machineId, session.sessionId),
-                                series = vm.series(project.machineId, session.sessionId),
-                                machineName = project.name,
-                                visual = vm.visual(target),
-                                now = now,
-                                onTap = { vm.tap(target) },
-                                onHold = { vm.hold(target) },
-                                onOpen = { onOpen(Route.Project(project.machineId, project.key)) }
-                            )
+            Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                if (empty != null) {
+                    HomeEmptyBody(
+                        empty = empty,
+                        now = now,
+                        onPair = { onOpen(Route.Pairing) },
+                        modifier = Modifier.weight(1f)
+                    )
+                } else {
+                    ColumnHeader(liveCount = team.liveSessionCount)
+                    LazyColumn(modifier = Modifier.weight(1f)) {
+                        team.projects.filter { it.sessions.isNotEmpty() }.forEach { project ->
+                            items(project.sessions, key = { "${project.machineId}:${it.sessionId}" }) { session ->
+                                val target = PauseTarget.Session(project.machineId, session.sessionId)
+                                SessionRow(
+                                    session = session,
+                                    rate = vm.rate(project.machineId, session.sessionId),
+                                    series = vm.series(project.machineId, session.sessionId),
+                                    machineName = if (showMachine) team.machine(project.machineId)?.name else null,
+                                    visual = vm.visual(target),
+                                    now = now,
+                                    onTap = { vm.tap(target) },
+                                    onHold = { vm.hold(target) },
+                                    onOpen = { onOpen(Route.Project(project.machineId, project.key)) },
+                                    headline = project.name,
+                                    compact = true
+                                )
+                            }
                         }
                     }
                 }
-            }
 
-            BottomBar(
-                primary = "Pause all",
-                primaryDanger = false,
-                onPrimary = { vm.tap(PauseTarget.All) },
-                onPrimaryHold = { vm.hold(PauseTarget.All) },
-                secondary = homeSecondary(empty, onOpen)
-            )
+                BottomBar(
+                    primary = "Pause all",
+                    primaryDanger = false,
+                    onPrimary = { vm.tap(PauseTarget.All) },
+                    onPrimaryHold = { vm.hold(PauseTarget.All) },
+                    secondary = homeSecondary(empty, onOpen),
+                    compact = true
+                )
+            }
         }
+    }
+}
+
+/** The mockup's column captions: what the list is, and what the two numeric columns mean. */
+@Composable
+private fun ColumnHeader(liveCount: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(DeckColors.surface2)
+            .padding(horizontal = 10.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "Sessions · $liveCount",
+            color = DeckColors.muted,
+            fontFamily = DeckType.text,
+            fontWeight = FontWeight.Medium,
+            fontSize = 11.sp,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = "tok/min · 30m",
+            color = DeckColors.dim,
+            fontFamily = DeckType.text,
+            fontSize = 10.sp
+        )
     }
 }
 
@@ -112,43 +149,41 @@ fun WideDockScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
 private fun Rail(team: TeamState, now: Instant, modifier: Modifier) {
     Column(
         modifier = modifier
-            .background(DeckColors.surface)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .drawBehind {
+                drawLine(
+                    color = DeckColors.line,
+                    start = Offset(size.width, 0f),
+                    end = Offset(size.width, size.height),
+                    strokeWidth = 1.dp.toPx()
+                )
+            }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        team.usersWithData().forEach { user -> RailUser(user = user, now = now) }
-        if (team.usersWithData().isEmpty()) {
-            Text(
-                text = if (team.machines.isEmpty()) "nothing paired" else "waiting for data",
-                color = DeckColors.dim,
-                fontFamily = DeckType.text,
-                fontSize = 12.sp
-            )
-            team.machines.forEach { MachineWaitRow(machine = it, now = now) }
+        Column(
+            modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            team.usersWithData().forEach { user -> RailUser(user = user, now = now) }
+            if (team.usersWithData().isEmpty()) {
+                Text(
+                    text = if (team.machines.isEmpty()) "nothing paired" else "waiting for data",
+                    color = DeckColors.dim,
+                    fontFamily = DeckType.text,
+                    fontSize = 12.sp
+                )
+                team.machines.forEach { MachineWaitRow(machine = it, now = now) }
+            }
         }
 
-        Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
-            Text(
-                text = "team today",
-                color = DeckColors.dim,
-                fontFamily = DeckType.text,
-                fontSize = 10.sp
-            )
-            Text(
-                text = Format.tokens(team.teamToday.total),
-                color = DeckColors.fg,
-                fontFamily = DeckType.numeral,
-                fontWeight = FontWeight.Medium,
-                fontSize = 22.sp
-            )
-            Text(
-                text = "${team.liveSessionCount} live",
-                color = DeckColors.muted,
-                fontFamily = DeckType.text,
-                fontSize = 11.sp
-            )
-        }
+        Text(
+            text = "team today ${Format.tokens(team.teamToday.total)} · ${team.liveSessionCount} live",
+            color = DeckColors.dim,
+            fontFamily = DeckType.mono,
+            fontSize = 10.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

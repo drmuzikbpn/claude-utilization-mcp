@@ -85,7 +85,9 @@ data class Session(
     val lastActivityAt: Instant,
     val tokens: Tokens,
     val pause: PauseState?,
-    val lastTool: LastTool?
+    val lastTool: LastTool?,
+    /** The `/rename` title Claude Code stores next to the transcript; null when never renamed. */
+    val title: String? = null
 ) {
     val canHardPause: Boolean get() = discovered == Discovered.HOOK && pid != null
 }
