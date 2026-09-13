@@ -29,13 +29,14 @@ class DaemonApiTest {
         runCatching { server.shutdown() }
     }
 
-    private fun fixture(n: String) = javaClass.getResource("/fixtures/$n")!!.readText()
+    private fun fixture(n: String) = Fixtures.text(n)
 
     @Test
     fun `sends bearer token and parses sessions with etag`() = runTest {
-        server.enqueue(MockResponse().setBody(fixture("sessions.json")).addHeader("ETag", "W/\"42\""))
+        server.enqueue(MockResponse().setBody(fixture("sessions.json")).addHeader("ETag", "W/\"812\""))
         val r = api.sessions(null) as SessionsResult.Changed
-        assertEquals("W/\"42\"", r.etag)
+        assertEquals("W/\"812\"", r.etag)
+        assertEquals(812L, r.dto.rev)
         assertEquals(3, r.dto.sessions.size)
         val req = server.takeRequest()
         assertEquals("Bearer tok", req.getHeader("Authorization"))
@@ -45,16 +46,20 @@ class DaemonApiTest {
     @Test
     fun `304 yields Unchanged and sends If-None-Match`() = runTest {
         server.enqueue(MockResponse().setResponseCode(304))
-        assertEquals(SessionsResult.Unchanged, api.sessions("W/\"42\""))
-        assertEquals("W/\"42\"", server.takeRequest().getHeader("If-None-Match"))
+        assertEquals(SessionsResult.Unchanged, api.sessions("W/\"812\""))
+        assertEquals("W/\"812\"", server.takeRequest().getHeader("If-None-Match"))
     }
 
     @Test
     fun `401 envelope becomes DaemonException with hint`() = runTest {
-        server.enqueue(MockResponse().setResponseCode(401).setBody(fixture("error-401.json")))
+        server.enqueue(
+            MockResponse().setResponseCode(
+                Fixtures.errorStatus("unauthorized")
+            ).setBody(Fixtures.errorBody("unauthorized"))
+        )
         val e = assertThrows(DaemonException::class.java) { runBlocking { api.summary() } }
         assertEquals("unauthorized", e.code)
-        assertTrue(e.userMessage().startsWith("Re-run"))
+        assertTrue(e.userMessage().startsWith("mutating requests need the token"))
     }
 
     @Test
@@ -67,7 +72,7 @@ class DaemonApiTest {
 
     @Test
     fun `pause posts json body to v1 pause`() = runTest {
-        server.enqueue(MockResponse().setBody(fixture("pause-rule.json")))
+        server.enqueue(MockResponse().setBody(fixture("pause-response.json")))
         api.pause("all", PauseMode.SOFT, "usage-deck:abc")
         val req = server.takeRequest()
         assertEquals("/v1/pause", req.path)
@@ -77,22 +82,48 @@ class DaemonApiTest {
 
     @Test
     fun `resume posts scope and rules parse`() = runTest {
-        server.enqueue(MockResponse().setBody("""{"removed":["r-9"],"resumed":["s1"]}"""))
-        assertEquals(listOf("r-9"), api.resume("all").removed)
+        server.enqueue(MockResponse().setBody(fixture("resume-response.json")))
+        assertEquals(listOf("r_k3m7qz4ub2ah6ptc"), api.resume("all").removed)
         val req = server.takeRequest()
         assertEquals("/v1/resume", req.path)
         assertEquals("""{"scope":"all"}""", req.body.readUtf8())
 
-        server.enqueue(
-            MockResponse().setBody(
-                """{"rev":3,"rules":[{"id":"r-9","scope":"all","mode":"hard",""" +
-                    """"reason":"usage-deck:abc","createdAt":"2026-09-13T14:02:00Z","createdBy":"dashboard"}]}"""
-            )
-        )
+        server.enqueue(MockResponse().setBody(fixture("pause-rules.json")))
         val rules = api.rules()
-        assertEquals(3L, rules.rev)
-        assertEquals(PauseMode.HARD, rules.rules.single().toModel().mode)
+        assertEquals(814L, rules.rev)
+        assertEquals(3, rules.rules.size)
+        assertEquals(PauseMode.HARD, rules.rules.first().toModel().mode)
         assertEquals("/v1/pause/rules", server.takeRequest().path)
+    }
+
+    @Test
+    fun `a hard pause on a session with no trusted pid is a 409 conflict`() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(Fixtures.errorStatus("untrusted_pid"))
+                .setBody(Fixtures.errorBody("untrusted_pid"))
+        )
+        val e = assertThrows(DaemonException::class.java) {
+            runBlocking { api.pause("session:c70bd853-62b1-4f42-8c14-2b7dcfe6578c", PauseMode.HARD, "usage-deck:t") }
+        }
+        assertEquals("conflict", e.code)
+        assertEquals(409, e.httpStatus)
+        assertTrue(e.userMessage().startsWith("hard freeze needs a session"))
+    }
+
+    @Test
+    fun `a pause on a session that has exited is a 410 gone`() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(Fixtures.errorStatus("dead_session"))
+                .setBody(Fixtures.errorBody("dead_session"))
+        )
+        val e = assertThrows(DaemonException::class.java) {
+            runBlocking { api.pause("session:8ad4e017-5b22-4c90-9f3d-7e6b1a0c3350", PauseMode.SOFT, "usage-deck:t") }
+        }
+        assertEquals("gone", e.code)
+        assertEquals(410, e.httpStatus)
+        assertEquals("no rule was created", e.userMessage())
     }
 
     @Test
