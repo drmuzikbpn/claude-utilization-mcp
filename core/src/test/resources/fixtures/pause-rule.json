@@ -1,0 +1,1 @@
+{ "rule": { "id": "r-9", "scope": "all", "mode": "soft", "reason": "usage-deck:abc", "createdAt": "2026-09-13T14:02:00Z", "createdBy": "dashboard" }, "affected": ["7f3a9c2e-1111-4b2b-9c1d-000000000001"] }

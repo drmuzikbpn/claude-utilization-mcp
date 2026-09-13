@@ -1,0 +1,8 @@
+{ "limits": [
+    { "id": "session", "kind": "session", "group": "session", "percent": 42, "severity": "normal", "resetsAt": "2026-09-13T16:35:00Z", "scope": null, "isActive": false },
+    { "id": "weekly_all", "kind": "weekly_all", "group": "weekly", "percent": 81, "severity": "normal", "resetsAt": "2026-09-18T09:00:00Z", "scope": null, "isActive": true },
+    { "id": "weekly_scoped:fable", "kind": "weekly_scoped", "group": "weekly", "percent": 10, "severity": "normal", "resetsAt": null, "scope": { "model": "fable", "surface": null }, "isActive": false } ],
+  "status": { "byId": { "session": "ok", "weekly_all": "warn", "weekly_scoped:fable": "ok" }, "overall": "warn" },
+  "thresholds": { "warn": 80, "critical": 95 },
+  "today": { "input": 4200000, "output": 318000, "cacheCreate": 200000, "cacheRead": 9000000, "messages": 600 },
+  "fetchedAt": "2026-09-13T14:00:00Z", "stale": false, "error": null }
