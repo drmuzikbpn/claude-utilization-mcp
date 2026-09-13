@@ -153,4 +153,17 @@ class DtoTest {
         assertEquals("deferred", update.state)
         assertEquals("hard_frozen_sessions", update.deferredReason)
     }
+
+    @Test
+    fun `a session title maps through and a blank one is null`() {
+        val base =
+            """{"sessionId":"s","cwd":"/x","startedAt":"2026-09-13T11:20:00Z",""" +
+                """"lastActivityAt":"2026-09-13T11:21:00Z""""
+        val titled = DaemonJson.decodeFromString<SessionDto>("""$base,"title":"Jamie - Android OS"}""").toModel()
+        val blank = DaemonJson.decodeFromString<SessionDto>("""$base,"title":"  "}""").toModel()
+        val absent = DaemonJson.decodeFromString<SessionDto>("$base}").toModel()
+        assertEquals("Jamie - Android OS", titled.title)
+        assertNull(blank.title)
+        assertNull(absent.title)
+    }
 }

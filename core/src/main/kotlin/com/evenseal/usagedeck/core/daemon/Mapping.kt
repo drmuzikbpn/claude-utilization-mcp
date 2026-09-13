@@ -85,5 +85,6 @@ fun SessionDto.toModel() = Session(
     lastActivityAt = lastActivityAt.toInstantOr(Instant.EPOCH),
     tokens = tokens.toModel(),
     pause = pause?.toModel(),
-    lastTool = lastTool?.let { LastTool(it.name, it.at.toInstantOr(Instant.EPOCH)) }
+    lastTool = lastTool?.let { LastTool(it.name, it.at.toInstantOr(Instant.EPOCH)) },
+    title = title?.takeIf { it.isNotBlank() }
 )

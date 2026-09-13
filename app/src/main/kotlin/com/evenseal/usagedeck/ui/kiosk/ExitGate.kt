@@ -1,7 +1,8 @@
 package com.evenseal.usagedeck.ui.kiosk
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
@@ -18,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
@@ -55,7 +57,27 @@ fun ExitGate(pin: ExitPin, clock: Clock, onUnlocked: () -> Unit, modifier: Modif
                 .background(Color.Transparent)
                 .semantics { contentDescription = ExitGateDefaults.CONTENT_DESCRIPTION }
                 .pointerInput(Unit) {
-                    detectTapGestures(onLongPress = { prompting = true })
+                    // Watch in the Initial pass and consume nothing: a tap on whatever sits under
+                    // this corner (a back arrow, the wifi chip) must still reach it. Only an
+                    // uninterrupted hold of HOLD_MILLIS opens the gate.
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        val startedAt = down.uptimeMillis
+                        var heldLongEnough = false
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) {
+                                heldLongEnough = change.uptimeMillis - startedAt >= ExitGateDefaults.HOLD_MILLIS
+                                break
+                            }
+                            if (change.uptimeMillis - startedAt >= ExitGateDefaults.HOLD_MILLIS) {
+                                heldLongEnough = true
+                                break
+                            }
+                        }
+                        if (heldLongEnough) prompting = true
+                    }
                 }
         )
     }

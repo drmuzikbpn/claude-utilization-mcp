@@ -123,7 +123,8 @@ data class SessionDto(
     val lastActivityAt: String,
     val tokens: TokensCountsDto = TokensCountsDto(),
     val pause: PauseStateDto? = null,
-    val lastTool: LastToolDto? = null
+    val lastTool: LastToolDto? = null,
+    val title: String? = null
 )
 
 @Serializable

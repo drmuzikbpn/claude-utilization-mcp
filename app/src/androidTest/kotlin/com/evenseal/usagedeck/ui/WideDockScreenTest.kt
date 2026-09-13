@@ -46,8 +46,8 @@ class WideDockScreenTest {
     @Test
     fun theRailFooterShowsTheTeamTotalAndLiveCount() {
         showLandscape(fakeViewModel())
-        compose.onNodeWithText("team today").assertExists()
-        compose.onNodeWithText("2 live").assertExists()
+        compose.onNodeWithText("team today", substring = true).assertExists()
+        compose.onNodeWithText("2 live", substring = true).assertExists()
     }
 
     @Test
@@ -70,5 +70,15 @@ class WideDockScreenTest {
         compose.onNodeWithText("No machines paired").assertExists()
         compose.onNodeWithText("nothing paired").assertExists()
         compose.onNodeWithText("Pair").assertExists()
+    }
+
+    @Test
+    fun rowsLeadWithTheProjectNameAndCarryTheColumnCaptions() {
+        compose.setContent { DeckTheme { WideDockScreen(vm = fakeViewModel(), onOpen = {}) } }
+
+        compose.onNodeWithText("calendarpa").assertExists()
+        compose.onNodeWithText("audioleveler").assertExists()
+        compose.onNodeWithText("tok/min · 30m").assertExists()
+        compose.onNodeWithText("a1b2… · 1.9M today", substring = true).assertExists()
     }
 }
