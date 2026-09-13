@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -88,7 +89,10 @@ fun PauseButton(visual: PauseVisual, size: Dp = 34.dp, onTap: () -> Unit, onHold
         Box(
             modifier = Modifier
                 .size(size)
-                .semantics { contentDescription = PauseButtonDefaults.CONTENT_DESCRIPTION }
+                .semantics {
+                    contentDescription = PauseButtonDefaults.CONTENT_DESCRIPTION
+                    if (!enabled) disabled()
+                }
                 .pointerInput(enabled) {
                     if (!enabled) return@pointerInput
                     detectTapGestures(

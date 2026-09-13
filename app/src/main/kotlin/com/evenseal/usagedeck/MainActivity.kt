@@ -3,28 +3,28 @@ package com.evenseal.usagedeck
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import com.evenseal.usagedeck.ui.theme.DeckColors
-import com.evenseal.usagedeck.ui.theme.DeckTheme
-import com.evenseal.usagedeck.ui.theme.DeckType
+import com.evenseal.usagedeck.service.DeckService
+import com.evenseal.usagedeck.ui.DeckNav
 
+/**
+ * The whole app is one activity: it is the launcher, the kiosk and the dashboard. Lock task is
+ * entered here, and the only way out is the [com.evenseal.usagedeck.ui.kiosk.ExitGate] corner.
+ */
 class MainActivity : ComponentActivity() {
+    private val graph by lazy { (application as UsageDeckApp).graph }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            DeckTheme {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "Usage Deck",
-                        color = DeckColors.fg,
-                        fontFamily = DeckType.numeral
-                    )
-                }
-            }
+
+        if (graph.kiosk.isDeviceOwner) {
+            graph.kiosk.applyPolicies()
+            graph.kiosk.startLockTask(this)
         }
+        if (!graph.kiosk.dozeExempt) {
+            graph.kiosk.requestDozeExemption(this)
+        }
+        DeckService.start(this)
+
+        setContent { DeckNav(graph) }
     }
 }

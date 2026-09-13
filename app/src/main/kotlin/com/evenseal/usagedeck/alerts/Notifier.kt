@@ -35,6 +35,10 @@ class Notifier(
     private val _overlay = MutableStateFlow<Alert?>(null)
     val overlay: StateFlow<Alert?> = _overlay.asStateFlow()
 
+    /** The most recent alert whatever the mode, so the status bar can chip it. */
+    private val _latest = MutableStateFlow<Alert?>(null)
+    val latest: StateFlow<Alert?> = _latest.asStateFlow()
+
     private var clearJob: Job? = null
 
     init {
@@ -46,6 +50,7 @@ class Notifier(
     }
 
     fun raise(alert: Alert, mode: DeckMode, quiet: Boolean) {
+        _latest.value = alert
         if (!quiet) vibrate(alert.kind)
         if (mode == DeckMode.DOCK) {
             showOverlay(alert)
