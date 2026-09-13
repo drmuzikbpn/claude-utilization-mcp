@@ -3,7 +3,8 @@
  * and the SSE endpoint (consumer). Deliberately dependency-free and synchronous.
  */
 export type BusEvents = {
-  limits: { limits: unknown; fetchedAt: string; stale: boolean };
+  /** `/v1/limits` minus `raw` — structural so `LimitsSnapshotLite` fits without an import (§19). */
+  limits: { fetchedAt: string | null; stale: boolean; error: unknown; limits: unknown[]; legacyWindows: unknown; extraUsage: unknown };
   spend: { today: unknown; delta: unknown };
   session: { type: 'start' | 'end' | 'update'; session: unknown };
   pause: { rules: unknown[]; affected: string[] };

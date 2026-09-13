@@ -8,6 +8,8 @@ export type ErrorCode =
   | 'method_not_allowed'
   | 'misdirected_request'
   | 'rate_limited'
+  // 503: the daemon is refusing more work of this kind right now (SSE client cap, §19).
+  | 'unavailable'
   | 'internal_error';
 
 export interface ErrorEnvelope {
