@@ -37,6 +37,8 @@ Usage: claude-usage <command> [options]
           [--no-hook] [--no-mcp] [--statusline] [--tailscale] [--linger]
   configure [<setting> <on|off>]    interactive menu, or a scriptable setting
   uninstall [--purge]               remove everything install added
+  update [--check]                  install the newest release (--check: just look)
+  rollback                          point "current" back at the previous version
   hook                              UserPromptSubmit hook (always exits 0)
   statusline                        one-line status for statusLine.command
   --version                         print the version
@@ -387,6 +389,12 @@ export async function run(argv: readonly string[], io: CliIO = {}): Promise<numb
     case 'uninstall':
     case 'configure':
       return w6Dispatch(cmd, rest, base);
+    // W8
+    case 'update':
+    case 'rollback': {
+      const { runUpdateCli } = await import('./update/index.js');
+      return runUpdateCli(cmd, rest, base);
+    }
     case 'tokens':
       return cmdTokens(rest, base);
     case 'sessions':
