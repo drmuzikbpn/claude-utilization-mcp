@@ -86,6 +86,33 @@ class SettingsTest {
     }
 
     @Test
+    fun `critical is always kept above warn`() {
+        store.update { it.copy(warn = 80, critical = 50) }
+        assertEquals(81, store.settings.value.critical)
+
+        store.update { it.copy(warn = 90) }
+        assertTrue(store.settings.value.critical > store.settings.value.warn)
+    }
+
+    @Test
+    fun `warn is clamped to the slider range`() {
+        store.update { it.copy(warn = 10) }
+        assertEquals(50, store.settings.value.warn)
+
+        store.update { it.copy(warn = 99) }
+        assertEquals(94, store.settings.value.warn)
+    }
+
+    @Test
+    fun `escalation seconds are clamped to the supported window`() {
+        store.update { it.copy(escalationSeconds = 5) }
+        assertEquals(30, store.settings.value.escalationSeconds)
+
+        store.update { it.copy(escalationSeconds = 9_000) }
+        assertEquals(600, store.settings.value.escalationSeconds)
+    }
+
+    @Test
     fun `thresholds feed the core alert evaluator`() {
         store.update { it.copy(warn = 60, critical = 85) }
         assertEquals(60, store.thresholds.value.warn)

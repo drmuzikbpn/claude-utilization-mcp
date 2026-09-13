@@ -86,6 +86,15 @@ fun DeckNav(graph: DeckGraph, navController: NavHostController = rememberNavCont
                 if (landscape) WideDockScreen(vm, open) else LedgerScreen(vm, open)
             }
             composable(Dest.PROJECTS) { ProjectsScreen(vm, open, back) }
+            composable(Dest.WIFI) { WifiRoute(graph, vm, back) }
+            composable(Dest.SETTINGS) { SettingsRoute(graph, back) }
+            composable(Dest.PAIRING) { PairingRoute(graph, back) }
+            composable(
+                Dest.MACHINE,
+                arguments = listOf(navArgument("id") { type = NavType.StringType })
+            ) { entry ->
+                MachineRoute(graph, vm, Dest.decode(entry.arguments?.getString("id")), back)
+            }
             composable(
                 Dest.PROJECT,
                 arguments = listOf(

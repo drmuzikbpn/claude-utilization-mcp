@@ -96,6 +96,9 @@ class DeckGraph(private val app: Application) {
 
     val notifier: Notifier = Notifier(app, scope)
 
+    /** Filled in by [DeckService]; null while no service is running. */
+    var updateChecks: UpdateChecks? = null
+
     /** Keeps one [MachineClient] per paired machine, following [MachineStore] as it changes. */
     fun startClients() {
         scope.launch {

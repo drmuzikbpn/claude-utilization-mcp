@@ -26,6 +26,30 @@ data class Settings(
 )
 
 /**
+ * Clamps the Settings screen's controls to ranges that cannot produce nonsense: critical always
+ * sits at least one point above warn, and escalation is either off or inside 30..600 s (spec §9).
+ */
+internal fun Settings.normalised(): Settings {
+    val clampedWarn = warn.coerceIn(WARN_MIN, WARN_MAX)
+    return copy(
+        warn = clampedWarn,
+        critical = critical.coerceIn(clampedWarn + 1, CRITICAL_MAX),
+        escalationSeconds = escalationSeconds?.coerceIn(ESCALATION_MIN, ESCALATION_MAX),
+        nightDim = nightDim.coerceIn(DIM_MIN, 1f)
+    )
+}
+
+const val WARN_MIN = 50
+const val WARN_MAX = 94
+const val CRITICAL_MAX = 99
+const val ESCALATION_MIN = 30
+const val ESCALATION_MAX = 600
+const val DIM_MIN = 0.1f
+
+/** The escalation timeouts the Settings screen offers; null is "off". */
+val ESCALATION_CHOICES: List<Int?> = listOf(null, 30, 60, 90, 120, 300, 600)
+
+/**
  * Settings persisted in plain prefs — none of this is a credential, and the kiosk needs them
  * before the keystore is warm.
  */
@@ -40,7 +64,7 @@ class SettingsStore(private val prefs: SharedPreferences) {
     val pauseSettings: StateFlow<PauseSettings> = derive { PauseSettings(it.escalationSeconds) }
 
     fun update(f: (Settings) -> Settings) {
-        val next = f(_settings.value)
+        val next = f(_settings.value).normalised()
         prefs.edit()
             .putInt(KEY_WARN, next.warn)
             .putInt(KEY_CRITICAL, next.critical)

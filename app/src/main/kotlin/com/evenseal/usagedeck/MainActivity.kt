@@ -3,12 +3,21 @@ package com.evenseal.usagedeck
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.evenseal.usagedeck.kiosk.LockTaskReceiver
 import com.evenseal.usagedeck.service.DeckService
 import com.evenseal.usagedeck.ui.DeckNav
+import com.evenseal.usagedeck.ui.alerts.AlertOverlay
+import com.evenseal.usagedeck.ui.kiosk.ExitGate
 
 /**
  * The whole app is one activity: it is the launcher, the kiosk and the dashboard. Lock task is
- * entered here, and the only way out is the [com.evenseal.usagedeck.ui.kiosk.ExitGate] corner.
+ * entered here, and the only way out is the [ExitGate] corner.
  */
 class MainActivity : ComponentActivity() {
     private val graph by lazy { (application as UsageDeckApp).graph }
@@ -25,6 +34,50 @@ class MainActivity : ComponentActivity() {
         }
         DeckService.start(this)
 
-        setContent { DeckNav(graph) }
+        setContent {
+            Box(modifier = Modifier.fillMaxSize()) {
+                DeckNav(graph)
+
+                val overlay by graph.notifier.overlay.collectAsStateWithLifecycle()
+                val mode by graph.mode.mode.collectAsStateWithLifecycle()
+                AlertOverlay(
+                    alert = overlay,
+                    mode = mode,
+                    onDismiss = { graph.notifier.dismissOverlay() }
+                )
+
+                ExitGate(
+                    pin = graph.exitPin,
+                    clock = graph.clock,
+                    onUnlocked = ::openMaintenanceWindow,
+                    modifier = Modifier.align(Alignment.TopStart)
+                )
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Coming back from the captive portal or the QR scanner must re-pin the deck, unless a
+        // maintenance window is deliberately open.
+        if (graph.kiosk.isDeviceOwner && System.currentTimeMillis() >= maintenanceUntil) {
+            graph.kiosk.startLockTask(this)
+        }
+    }
+
+    /**
+     * Ten minutes out of lock task (spec §4). The re-arm is an alarm rather than a timer here,
+     * so it survives this activity being backgrounded or the process being killed.
+     */
+    private fun openMaintenanceWindow() {
+        maintenanceUntil = System.currentTimeMillis() + LockTaskReceiver.WINDOW_MILLIS
+        graph.kiosk.stopLockTask(this)
+        LockTaskReceiver.scheduleRelock(this, maintenanceUntil)
+    }
+
+    private companion object {
+        /** Process-wide, so a config change cannot reopen the kiosk by accident. */
+        @Volatile
+        var maintenanceUntil: Long = 0L
     }
 }
