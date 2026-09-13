@@ -248,6 +248,7 @@ class MachineClient(
         _state.update { it.copy(limits = limitsOf(event.limits), limitsFetchedAt = fetchedAt) }
     }
 
+    /** `today` is the cumulative authority; the per-event `delta` is deliberately not used. */
     private fun applySpend(event: DaemonEvent.Spend) {
         val today = event.today.toModel()
         _state.update { it.copy(today = today) }
