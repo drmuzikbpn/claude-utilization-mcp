@@ -73,10 +73,12 @@ export interface PairingPayload {
 /** The QR renderer is CLI-only and imported lazily — the daemon never loads it. */
 async function renderQr(text: string): Promise<string> {
   const mod = await import('qrcode-terminal');
-  const generate = (mod as unknown as { default?: typeof mod; generate?: typeof mod.generate }).generate ?? mod.default?.generate;
-  if (typeof generate !== 'function') return '';
+  // `generate` reads `this.error` for the error-correction level, so it must be
+  // called as a method — detaching it yields "errorCorrectLevel: undefined".
+  const qrcode = (mod as unknown as { default?: typeof mod }).default ?? mod;
+  if (typeof qrcode.generate !== 'function') return '';
   return new Promise<string>((resolve) => {
-    generate(text, { small: true }, (qr: string) => {
+    qrcode.generate(text, { small: true }, (qr: string) => {
       resolve(qr);
     });
   });

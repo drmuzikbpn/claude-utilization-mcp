@@ -120,10 +120,12 @@ export async function verifyHealth(io: InstallIO, configDir: string): Promise<bo
         return false;
       }
     });
-  const deadline = Date.now() + HEALTH_TIMEOUT_MS;
-  for (;;) {
+  // Attempt-budgeted rather than wall-clock-budgeted: with the real sleep this is
+  // the 5 s of §8 step 4, and with an injected sleep the tests do not burn 5 s.
+  const attempts = Math.ceil(HEALTH_TIMEOUT_MS / HEALTH_INTERVAL_MS);
+  for (let i = 0; i < attempts; i += 1) {
     if (await probe()) return true;
-    if (Date.now() >= deadline) return false;
-    await sleep(HEALTH_INTERVAL_MS);
+    if (i < attempts - 1) await sleep(HEALTH_INTERVAL_MS);
   }
+  return false;
 }
