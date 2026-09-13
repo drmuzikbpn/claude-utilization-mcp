@@ -449,7 +449,7 @@ CLI mirrors: `claude-usage sessions`, `claude-usage pause <all|project:<path>|se
   `install` copies the running package into this layout first, whether it came from npm or a
   tarball — after install, the install method no longer matters.
 - **Loop:** every `autoUpdate.intervalMs` (default 10 min, jittered ±10 %) `GET
-  https://api.github.com/repos/<owner>/<repo>/releases/latest` (repo pinned in code, overridable
+  https://api.github.com/repos/drmuzikbpn/claude-utilization-mcp/releases/latest` (repo pinned in code, overridable
   in config for forks). Newer → download tarball + `SHA256SUMS` to a temp dir, verify sha256,
   extract into `versions/<v>/`, run `node bin/claude-usage --version` from it as a smoke test,
   atomically repoint `current`, then `process.exit(0)` → `KeepAlive`/`Restart=always` relaunches.
@@ -467,7 +467,7 @@ CLI mirrors: `claude-usage sessions`, `claude-usage pause <all|project:<path>|se
 { "name": "alans-mbp",
   "bind": ["127.0.0.1", "tailscale"],
   "auth": { "token": "…" },
-  "autoUpdate": { "enabled": true, "intervalMs": 600000, "repo": "<owner>/claude-utilization-mcp" },
+  "autoUpdate": { "enabled": true, "intervalMs": 600000, "repo": "drmuzikbpn/claude-utilization-mcp" },
   "events": { "maxClients": 16 } }
 ```
 `config.json` is written with mode `0600` because it now holds the token.
@@ -495,9 +495,9 @@ conflicts with this section, this section wins.
 
 ## 23.1 Name & trademark
 - `claude-usage` is **taken on npm** (unrelated package, v1.1.0). Publish **scoped**:
-  `@<npm-scope>/claude-usage` (scope to be confirmed by Alan), `bin` stays `claude-usage`. The
+  `@drmuzikbpn/claude-usage`, `bin` stays `claude-usage`. The
   CLI name, MCP key, config dir `~/.config/claude-usage/`, launchd label
-  `com.github.<owner>.claude-usage` and systemd unit `claude-usage.service` all keep `claude-usage`.
+  `com.github.drmuzikbpn.claude-usage` and systemd unit `claude-usage.service` all keep `claude-usage`.
 - README footer: "Works with Claude Code. Not affiliated with, endorsed by, or sponsored by
   Anthropic. Claude and Claude Code are trademarks of Anthropic."
 
