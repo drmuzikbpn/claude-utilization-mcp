@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { formatStatusline, runStatusline } from '../src/statusline.js';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { formatStatusline, isSessionPaused, runStatusline } from '../src/statusline.js';
 import { normalizeLimits } from '../src/limits/normalize.js';
 import { computeStatus } from '../src/limits/status.js';
 import type { SummaryBody } from '../src/hook.js';
@@ -143,5 +145,70 @@ describe('runStatusline', () => {
     let out = '';
     await runStatusline({ stdin: 'garbage', stdout: (t) => (out += t), configDir: d.configDir, color: false });
     expect(out).toBe('5h 5% · 7d 13%\n');
+  });
+});
+
+describe('paused marker (§18.2)', () => {
+  function markPaused(configDir: string, sessionId: string): void {
+    mkdirSync(join(configDir, 'paused'), { recursive: true });
+    writeFileSync(join(configDir, 'paused', sessionId), '');
+  }
+
+  async function lineFor(d: FakeDaemon, stdin: string): Promise<string> {
+    let out = '';
+    const code = await runStatusline({ stdin, stdout: (t) => (out += t), configDir: d.configDir, color: false });
+    expect(code).toBe(0);
+    return out;
+  }
+
+  it('prefixes the line while the session is soft-paused', async () => {
+    const d = await daemon();
+    d.setPercents({ session: 42, weekly_all: 61 });
+    markPaused(d.configDir, 's1');
+    expect(await lineFor(d, '{"session_id":"s1"}')).toBe('⏸ paused from dashboard · 5h 42% · 7d 61%\n');
+  });
+
+  it('keeps the colours behind the prefix', async () => {
+    const d = await daemon();
+    d.setPercents({ session: 96 });
+    markPaused(d.configDir, 's1');
+    let out = '';
+    await runStatusline({ stdin: '{"session_id":"s1"}', stdout: (t) => (out += t), configDir: d.configDir, color: true });
+    expect(out.startsWith('⏸ paused from dashboard · ')).toBe(true);
+    expect(out).toContain(`${ESC}[31m5h 96%`);
+  });
+
+  it('renders normally for another session, for no session id, and once the marker is gone', async () => {
+    const d = await daemon();
+    d.setPercents({ session: 42, weekly_all: 61 });
+    markPaused(d.configDir, 'other-session');
+
+    expect(await lineFor(d, '{"session_id":"s1"}')).toBe('5h 42% · 7d 61%\n');
+    expect(await lineFor(d, '{}')).toBe('5h 42% · 7d 61%\n');
+    expect(await lineFor(d, 'garbage')).toBe('5h 42% · 7d 61%\n');
+
+    markPaused(d.configDir, 's1');
+    expect(await lineFor(d, '{"session_id":"s1"}')).toContain('⏸');
+    rmSync(join(d.configDir, 'paused', 's1'));
+    expect(await lineFor(d, '{"session_id":"s1"}')).toBe('5h 42% · 7d 61%\n');
+  });
+
+  it('refuses a session id that would walk out of the paused directory', () => {
+    const dir = tempConfigDir();
+    mkdirSync(join(dir, 'paused'), { recursive: true });
+    writeFileSync(join(dir, 'escape'), '');
+    expect(isSessionPaused(dir, '../escape')).toBe(false);
+    expect(isSessionPaused(dir, 'nested/id')).toBe(false);
+    expect(isSessionPaused(dir, '')).toBe(false);
+    expect(isSessionPaused(dir, undefined)).toBe(false);
+  });
+
+  it('renders a null resetsAt cleanly, paused or not', async () => {
+    const d = await daemon();
+    d.limits.set({ ...d.limits.snapshot(), limits: d.limits.snapshot().limits.map((l) => ({ ...l, resetsAt: null })) });
+    markPaused(d.configDir, 's1');
+    const out = await lineFor(d, '{"session_id":"s1"}');
+    expect(out).toBe('⏸ paused from dashboard · 5h 5% · 7d 13%\n');
+    expect(out).not.toMatch(/resets|null|NaN|Invalid/);
   });
 });
