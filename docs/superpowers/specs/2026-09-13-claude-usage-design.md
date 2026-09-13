@@ -424,7 +424,8 @@ CLI mirrors: `claude-usage sessions`, `claude-usage pause <all|project:<path>|se
 ## 19. Events — `GET /v1/events` (SSE)
 - `text/event-stream`, `id:` = current `rev`, `retry: 3000`.
 - On connect (and on any reconnect, regardless of `Last-Event-ID` — simplest correct
-  behaviour): one `snapshot` event `{ limits, summary, sessions, rules, update, rev }`.
+  behaviour): one `snapshot` event `{ name, version, user, limits, summary, sessions, rules, update, rev }`
+  (`name`/`version`/`user` as in `/health`, so a client can label the machine without a second call).
 - Then: `limits` (each successful poll where anything changed), `spend` (`{ today, delta }`,
   coalesced to ≤ 1/s), `session` (`{ type: "start|end|update", session }`), `pause`
   (`{ rules, affected }`), `update` (`/health.update` object), `heartbeat` every 15 s.
