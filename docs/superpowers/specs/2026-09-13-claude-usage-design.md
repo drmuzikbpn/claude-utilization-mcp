@@ -626,3 +626,15 @@ names key, modes); `mcp` (each tool, daemon-down text, stdout reserved for JSON-
 off` round-trip**: fixture settings → install → uninstall → byte-identical to fixture except
 our once-written `.bak`; `limits` normalizer against the fixture incl. `unknown_window_example`,
 `resetsAt: null`, unknown `severity`.
+
+## 23.13 Dashboard contract clarifications (from the Android spec audit, 2026-09-13)
+- Session objects (`/v1/sessions`, SSE `session`) carry `lastTool: { name, at } | null`,
+  populated by the `PreToolUse` hook: its gate call becomes
+  `GET /v1/sessions/{id}/gate?tool=<tool_name>` and the daemon records `{ name, at: now }`.
+- SSE `spend` `{ today, delta }` is **machine-wide**; per-project/per-session live burn is
+  derived by clients from cumulative `session.update.tokens` and `/v1/tokens`.
+- `rule.reason` is echoed **verbatim** (trimmed to 200 chars) in the rule, in `/v1/pause/rules`
+  and in the `pause` SSE event, so a client can tag its own rules (e.g. `usage-deck:<installId>`).
+- The error envelope **always** carries a non-empty `message` (and `hint` where one exists),
+  including `401`/`403`/`421`: e.g. `{ error: { code: "unauthorized", message: "Bearer token
+  missing or invalid", hint: "run `claude-usage configure pairing` on the host" } }`.
