@@ -22,7 +22,7 @@
 - Aging: fresh < 30 s since heartbeat, stale < 120 s, dead ≥ 120 s. Dead disables pause controls.
 - Escalation default 90 s; range 30 s–600 s or off; persisted across process death.
 - Self-update defers while a gesture is in progress, a hold is mid-press, or any escalation is pending.
-- Version: `versionName = 0.MINOR.<commit-count>+<sha>`, `versionCode = commit-count`. Release repo `BuildConfig.RELEASE_REPO`, default `drmuzikbpn/android-project`.
+- Version: `versionName = 0.MINOR.<commit-count>+<sha>`, `versionCode = commit-count`. Release repo `BuildConfig.RELEASE_REPO`, default `drmuzikbpn/android-project` (owner confirmed by Alan 2026-09-13; the daemon lives at `drmuzikbpn/claude-utilization-mcp`).
 - Every error shown to the user comes from the daemon envelope: `hint` → `message` → per-code default.
 - Single dark theme, colours and fonts from spec §11.6. Tabular numerals everywhere.
 - Commit after every task with a conventional-commit message ending in `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Never push.
@@ -1043,7 +1043,13 @@ Routes (daemon §15–§19, §23): `GET /health`, `GET /v1/summary`, `GET /v1/se
 class DeviceAdminReceiver : android.app.admin.DeviceAdminReceiver()
 class KioskManager(private val context: Context) {
     val isDeviceOwner: Boolean
-    fun applyPolicies()          // if owner: setLockTaskPackages([self, "com.tailscale.ipn"]), setLockTaskFeatures(LOCK_TASK_FEATURE_NONE), setKeyguardDisabled(true), setGlobalSetting(STAY_ON_WHILE_PLUGGED_IN, "7"), addUserRestriction(DISALLOW_SAFE_BOOT), setStatusBarDisabled(true), add self to battery whitelist via `DevicePolicyManager.setPermissionGrantState`? — no: use `dpm.setPackagesSuspended`? — no. Doze whitelist = `PowerManager.isIgnoringBatteryOptimizations` check + as Device Owner run `Settings.Global` via `setGlobalSetting` is not allowed for that key; instead call `dpm.addUserRestriction` is irrelevant. Correct call: `(context.getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager).setApplicationHidden` is irrelevant. USE: `dpm.setPermittedInputMethods`? NO. The documented DO route is `DevicePolicyManager.setPackagesSuspended`… — STOP. The verified API on 29: Device Owner may call `dpm.setGlobalSetting` only for allowlisted keys, so Doze exemption is done by launching `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` once at first run (documented in device-setup.md as a one-tap step) and verified with `PowerManager.isIgnoringBatteryOptimizations(packageName)`. Also set self as persistent preferred launcher: `dpm.addPersistentPreferredActivity(admin, IntentFilter(MAIN + HOME + DEFAULT), ComponentName(self, MainActivity))`.
+    fun applyPolicies()
+    // If owner: setLockTaskPackages(admin, [self, "com.tailscale.ipn"]); setLockTaskFeatures(admin, LOCK_TASK_FEATURE_NONE);
+    // setKeyguardDisabled(admin, true); setGlobalSetting(admin, STAY_ON_WHILE_PLUGGED_IN, "7"); setStatusBarDisabled(admin, true);
+    // addUserRestriction(admin, DISALLOW_SAFE_BOOT);
+    // addPersistentPreferredActivity(admin, IntentFilter(ACTION_MAIN + CATEGORY_HOME + CATEGORY_DEFAULT), ComponentName(self, MainActivity)).
+    // Doze exemption: Device Owner cannot write that setting directly on API 29, so on first run launch
+    // ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS once (one tap, documented in device-setup.md) and expose `dozeExempt`.
     fun startLockTask(activity: Activity)   // only if isDeviceOwner and not already in lock task
     fun stopLockTask(activity: Activity)
     val dozeExempt: Boolean
