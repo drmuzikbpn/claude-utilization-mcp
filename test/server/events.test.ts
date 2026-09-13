@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { EventBus } from '../../src/events/bus.js';
 import { stripRaw } from '../../src/limits/types.js';
 import { createServer, type ServerOptions, type UsageServer } from '../../src/server/index.js';
-import type { EventTimers, SnapshotProvider } from '../../src/server/events.js';
+import { startBusPublishers, type EventTimers, type SnapshotProvider } from '../../src/server/events.js';
+import type { TokenTotals, TokensQuery, TokensResponse, TokensSource } from '../../src/server/types.js';
 import { FIXTURES_DIR } from '../helpers/fixtures.js';
 import { FakeTimers } from '../helpers/fake-timers.js';
 import { FakeLimitsProvider, FakeTokensSource, fixtureSnapshot, snapshotWithPercents, testConfig } from '../helpers/fakes.js';
@@ -598,5 +599,97 @@ describe('SSE fixtures for the dashboard client', () => {
     const standalone = JSON.parse(readFileSync(join(dir, 'snapshot.json'), 'utf8')) as Record<string, unknown>;
     expect(inline).toEqual(standalone);
     expect(Object.keys(standalone)).toEqual(['name', 'version', 'user', 'limits', 'summary', 'sessions', 'rules', 'update', 'rev']);
+  });
+});
+
+describe('bus publishers (what the daemon wires up)', () => {
+  /** `FakeTokensSource` freezes its totals; the publisher needs them to move. */
+  class MovingTokensSource implements TokensSource {
+    ready = true;
+    stats = { filesTracked: 1, eventsIndexed: 1, parseErrors: 0, lastScanAt: null };
+    totals: TokenTotals = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, messages: 0 };
+    private readonly listeners = new Set<() => void>();
+    query(q: TokensQuery): TokensResponse {
+      return { ready: true, stale: false, since: q.since, groupBy: q.groupBy, totals: this.totals, groups: [] };
+    }
+    sessionTotals(): TokenTotals | null {
+      return null;
+    }
+    sessionModel(): string | null {
+      return null;
+    }
+    sessionStartedAt(): string | null {
+      return null;
+    }
+    onChange(cb: () => void): () => void {
+      this.listeners.add(cb);
+      return () => this.listeners.delete(cb);
+    }
+    emit(): void {
+      for (const cb of this.listeners) cb();
+    }
+  }
+
+  function collect(name: 'limits' | 'spend'): unknown[] {
+    const seen: unknown[] = [];
+    bus.subscribe(name, (payload) => seen.push(payload));
+    return seen;
+  }
+
+  it('publishes limits only when the sampled snapshot changed, minus raw', async () => {
+    const limits = new FakeLimitsProvider();
+    const seen = collect('limits');
+    const stop = startBusPublishers({ bus, limits, tokens: () => null, timers, now: () => T0 + timers.clock });
+
+    await timers.advance(1_000);
+    expect(seen).toHaveLength(0);
+
+    limits.set(snapshotWithPercents({ session: 77 }));
+    await timers.advance(1_000);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toEqual(stripRaw(snapshotWithPercents({ session: 77 })));
+    expect(Object.keys(seen[0] as Record<string, unknown>)).not.toContain('raw');
+
+    // An unchanged snapshot is not news.
+    await timers.advance(5_000);
+    expect(seen).toHaveLength(1);
+
+    stop();
+    expect(timers.pendingCount).toBe(0);
+  });
+
+  it('publishes machine-wide spend at most once per second, delta since the last one', async () => {
+    const tokens = new MovingTokensSource();
+    const seen = collect('spend');
+    const stop = startBusPublishers({ bus, limits: new FakeLimitsProvider(), tokens: () => tokens, timers, now: () => T0 + timers.clock });
+
+    tokens.totals = { input: 100, output: 10, cacheCreate: 0, cacheRead: 0, messages: 1 };
+    tokens.emit();
+    tokens.emit();
+    tokens.emit();
+    expect(seen).toHaveLength(0);
+
+    await timers.advance(1_000);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toEqual({
+      today: { ready: true, input: 100, output: 10, cacheCreate: 0, cacheRead: 0, messages: 1 },
+      delta: { input: 100, output: 10, cacheCreate: 0, cacheRead: 0, messages: 1 },
+    });
+
+    tokens.totals = { input: 250, output: 25, cacheCreate: 0, cacheRead: 0, messages: 3 };
+    tokens.emit();
+    await timers.advance(1_000);
+    expect(seen).toHaveLength(2);
+    expect((seen[1] as { delta: TokenTotals }).delta).toEqual({ input: 150, output: 15, cacheCreate: 0, cacheRead: 0, messages: 2 });
+
+    // A change that did not move today's totals publishes nothing.
+    tokens.emit();
+    await timers.advance(1_000);
+    expect(seen).toHaveLength(2);
+
+    stop();
+    tokens.emit();
+    await timers.advance(2_000);
+    expect(seen).toHaveLength(2);
   });
 });

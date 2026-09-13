@@ -1,8 +1,10 @@
 import { rmSync } from 'node:fs';
 import { createTokenReader } from './credentials/index.js';
+import { EventBus } from './events/bus.js';
 import { LimitsPoller } from './limits/poller.js';
 import { ensureConfigDir, expandHome, loadConfig, resolveConfigDir, writeJsonFile, type Config } from './config.js';
 import { daemonFilePath } from './clients/http.js';
+import { startBusPublishers } from './server/events.js';
 import { createServer, type UsageServer } from './server/index.js';
 import type { TokensSource } from './server/types.js';
 import { getVersion } from './version.js';
@@ -31,6 +33,8 @@ export interface DaemonHandle {
   readonly configDir: string;
   readonly server: UsageServer;
   readonly poller: LimitsPoller;
+  /** Shared bus: `/v1/events` streams it, the daemon and W3 publish onto it (§19). */
+  readonly bus: EventBus;
   stop(): Promise<void>;
 }
 
@@ -87,11 +91,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     log: debug,
   });
 
+  // W4: one bus per daemon — the SSE endpoint consumes it, sessions/pause publish onto it.
+  const bus = new EventBus();
+  let tokensSource: TokensSource | null = opts.tokens ?? null;
+
   const server = createServer({
     config,
     limits: poller,
-    tokens: opts.tokens ?? null,
+    tokens: tokensSource,
     version,
+    bus,
   });
 
   const port = opts.port ?? config.port;
@@ -123,9 +132,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     const source = await make(config);
     if (source !== null) {
       server.setTokensSource(source);
+      tokensSource = source;
       debug('spend: store attached');
     }
   }
+
+  // W4: feed the bus — `limits` on every poll that changed something, machine-wide
+  // `spend` on every token-store change, coalesced to at most one per second (§19).
+  const stopPublishers = startBusPublishers({ bus, limits: poller, tokens: () => tokensSource });
 
   let stopped = false;
   return {
@@ -134,9 +148,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     configDir,
     server,
     poller,
+    bus,
     async stop() {
       if (stopped) return;
       stopped = true;
+      stopPublishers();
       poller.stop();
       await server.close();
       try {
