@@ -3,18 +3,17 @@ package com.evenseal.usagedeck.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.evenseal.usagedeck.core.model.Limit
@@ -24,8 +23,9 @@ import java.time.Instant
 import java.time.ZoneId
 
 /**
- * One utilisation window: `5h` or `7d`, the bar, the percent and the reset caption.
- * A null [limit] means the daemon has not reported that window yet and renders as `—`.
+ * One utilisation window as a single row, the way the Ledger mockup draws it:
+ * `5h | ████░░░░ | 42% | 2h33 left`. A null [limit] means the daemon has not reported that window
+ * yet and renders as `—`.
  */
 @Composable
 fun LimitBar(
@@ -38,54 +38,56 @@ fun LimitBar(
     val percent = limit?.percent?.coerceIn(0, 100)
     val color = limit?.let { DeckColors.of(it.status) } ?: DeckColors.dim
 
-    Column(modifier = modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Bottom
-        ) {
-            Text(
-                text = label,
-                color = DeckColors.muted,
-                fontFamily = DeckType.text,
-                fontWeight = FontWeight.Medium,
-                fontSize = 13.sp
-            )
-            Text(
-                text = percent?.let { "$it%" } ?: EMPTY,
-                color = color,
-                fontFamily = DeckType.numeral,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 22.sp
-            )
-        }
-
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = label,
+            color = DeckColors.muted,
+            fontFamily = DeckType.mono,
+            fontSize = 11.sp,
+            modifier = Modifier.width(LABEL_WIDTH)
+        )
         Box(
             modifier = Modifier
-                .padding(top = 3.dp)
-                .fillMaxWidth()
-                .height(6.dp)
-                .clip(RoundedCornerShape(3.dp))
+                .weight(1f)
+                .height(8.dp)
+                .clip(RoundedCornerShape(4.dp))
                 .background(DeckColors.surface2)
         ) {
             if (percent != null && percent > 0) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(percent / 100f)
-                        .height(6.dp)
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp))
                         .background(color)
                 )
             }
         }
-
         Text(
-            modifier = Modifier.padding(top = 2.dp),
-            text = if (limit == null) EMPTY else Format.resets(limit.resetsAt, now, zone),
-            color = DeckColors.dim,
-            fontFamily = DeckType.text,
-            fontSize = 11.sp
+            text = percent?.let { "$it%" } ?: EMPTY,
+            color = color,
+            fontFamily = DeckType.numeral,
+            fontSize = 18.sp,
+            textAlign = TextAlign.End,
+            modifier = Modifier.width(PERCENT_WIDTH)
+        )
+        Text(
+            text = if (limit == null) EMPTY else Format.resetsShort(limit.resetsAt, now, zone),
+            color = DeckColors.muted,
+            fontFamily = DeckType.mono,
+            fontSize = 10.sp,
+            textAlign = TextAlign.End,
+            maxLines = 1,
+            modifier = Modifier.width(RESET_WIDTH)
         )
     }
 }
 
+private val LABEL_WIDTH = 28.dp
+private val PERCENT_WIDTH = 44.dp
+private val RESET_WIDTH = 76.dp
 private const val EMPTY = "—"

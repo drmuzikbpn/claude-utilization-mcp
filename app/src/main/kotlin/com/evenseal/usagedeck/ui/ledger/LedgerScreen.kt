@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -28,10 +29,14 @@ import com.evenseal.usagedeck.ui.DeckViewModel
 import com.evenseal.usagedeck.ui.Route
 import com.evenseal.usagedeck.ui.components.BottomBar
 import com.evenseal.usagedeck.ui.components.Format
+import com.evenseal.usagedeck.ui.components.HomeEmpty
+import com.evenseal.usagedeck.ui.components.HomeEmptyBody
 import com.evenseal.usagedeck.ui.components.LimitBar
 import com.evenseal.usagedeck.ui.components.PauseButton
 import com.evenseal.usagedeck.ui.components.SessionRow
 import com.evenseal.usagedeck.ui.components.StatusBar
+import com.evenseal.usagedeck.ui.components.Tag
+import com.evenseal.usagedeck.ui.components.usersWithData
 import com.evenseal.usagedeck.ui.theme.DeckColors
 import com.evenseal.usagedeck.ui.theme.DeckType
 import java.time.Instant
@@ -54,30 +59,50 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
             onMachine = { id -> onOpen(Route.Machine(id)) }
         )
 
-        team.users.forEach { user ->
+        val empty = HomeEmpty.of(team)
+
+        team.usersWithData().forEach { user ->
             UserBlock(user = user, now = now)
         }
 
-        SessionsHeader(liveCount = team.liveSessionCount)
+        if (empty is HomeEmpty.NoMachines || empty is HomeEmpty.Connecting) {
+            HomeEmptyBody(
+                empty = empty,
+                now = now,
+                onPair = { onOpen(Route.Pairing) },
+                modifier = Modifier.weight(1f)
+            )
+        } else {
+            SessionsHeader(liveCount = team.liveSessionCount)
 
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            team.projects.filter { it.sessions.isNotEmpty() }.forEach { project ->
-                item(key = "h:${project.machineId}:${project.key}") {
-                    ProjectHeader(vm = vm, project = project, now = now, onOpen = onOpen)
-                }
-                items(project.sessions, key = { "${project.machineId}:${it.sessionId}" }) { session ->
-                    val target = PauseTarget.Session(project.machineId, session.sessionId)
-                    SessionRow(
-                        session = session,
-                        rate = vm.rate(project.machineId, session.sessionId),
-                        series = vm.series(project.machineId, session.sessionId),
-                        machineName = null,
-                        visual = vm.visual(target),
-                        now = now,
-                        onTap = { vm.tap(target) },
-                        onHold = { vm.hold(target) },
-                        onOpen = { onOpen(Route.Project(project.machineId, project.key)) }
-                    )
+            if (empty is HomeEmpty.NoSessions) {
+                HomeEmptyBody(
+                    empty = empty,
+                    now = now,
+                    onPair = { onOpen(Route.Pairing) },
+                    modifier = Modifier.weight(1f)
+                )
+            } else {
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    team.projects.filter { it.sessions.isNotEmpty() }.forEach { project ->
+                        item(key = "h:${project.machineId}:${project.key}") {
+                            ProjectHeader(vm = vm, project = project, now = now, onOpen = onOpen)
+                        }
+                        items(project.sessions, key = { "${project.machineId}:${it.sessionId}" }) { session ->
+                            val target = PauseTarget.Session(project.machineId, session.sessionId)
+                            SessionRow(
+                                session = session,
+                                rate = vm.rate(project.machineId, session.sessionId),
+                                series = vm.series(project.machineId, session.sessionId),
+                                machineName = null,
+                                visual = vm.visual(target),
+                                now = now,
+                                onTap = { vm.tap(target) },
+                                onHold = { vm.hold(target) },
+                                onOpen = { onOpen(Route.Project(project.machineId, project.key)) }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -87,13 +112,20 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
             primaryDanger = false,
             onPrimary = { vm.tap(PauseTarget.All) },
             onPrimaryHold = { vm.hold(PauseTarget.All) },
-            secondary = listOf(
-                "Projects" to { onOpen(Route.Projects) },
-                "Wifi" to { onOpen(Route.Wifi) }
-            )
+            secondary = homeSecondary(empty, onOpen)
         )
     }
 }
+
+/** With nothing paired, "Projects" is a dead end; offer "Pair" in its place. */
+internal fun homeSecondary(empty: HomeEmpty?, onOpen: (Route) -> Unit): List<Pair<String, () -> Unit>> = listOf(
+    if (empty is HomeEmpty.NoMachines) {
+        "Pair" to { onOpen(Route.Pairing) }
+    } else {
+        "Projects" to { onOpen(Route.Projects) }
+    },
+    "Wifi" to { onOpen(Route.Wifi) }
+)
 
 /** A teammate's block fades to 55 % once their machine stops checking in (spec §11.1). */
 @Composable
@@ -103,7 +135,8 @@ internal fun UserBlock(user: UserView, now: Instant, modifier: Modifier = Modifi
         modifier = modifier
             .fillMaxWidth()
             .alpha(if (faded) STALE_ALPHA else 1f)
-            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -118,35 +151,21 @@ internal fun UserBlock(user: UserView, now: Instant, modifier: Modifier = Modifi
                 fontSize = 15.sp
             )
             Text(
-                text = user.emailAddress ?: "last seen ${Format.age(user.limitsFetchedAt, now)}",
+                text = if (faded) "last seen ${Format.age(user.limitsFetchedAt, now)}" else user.emailAddress.orEmpty(),
                 color = DeckColors.dim,
-                fontFamily = DeckType.text,
-                fontSize = 11.sp
+                fontFamily = DeckType.mono,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 12.dp).weight(1f, fill = false)
             )
         }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                LimitBar(label = "5h", limit = user.fiveHour, now = now)
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                LimitBar(label = "7d", limit = user.sevenDay, now = now)
-            }
-        }
+        LimitBar(label = "5h", limit = user.fiveHour, now = now)
+        LimitBar(label = "7d", limit = user.sevenDay, now = now)
         if (user.scoped.isNotEmpty()) {
-            Row(
-                modifier = Modifier.padding(top = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 user.scoped.forEach { limit ->
-                    Text(
-                        text = "${limit.scopeModel ?: limit.id} ${limit.percent}%",
-                        color = DeckColors.of(limit.status),
-                        fontFamily = DeckType.mono,
-                        fontSize = 10.sp
-                    )
+                    Tag(text = "${limit.scopeModel ?: limit.id} ${limit.percent}%", color = DeckColors.of(limit.status))
                 }
             }
         }

@@ -67,9 +67,14 @@ fun PauseButton(visual: PauseVisual, size: Dp = 34.dp, onTap: () -> Unit, onHold
         else -> DeckColors.dim
     }
     val label = when (visual) {
-        is PauseVisual.Soft -> visual.countdown ?: PAUSE_GLYPH
+        is PauseVisual.Soft -> visual.countdown ?: PLAY_GLYPH
         is PauseVisual.Frozen -> visual.elapsed
         else -> PAUSE_GLYPH
+    }
+    val fill = when {
+        visual is PauseVisual.Frozen -> DeckColors.frozen.copy(alpha = 0.12f)
+        visual is PauseVisual.Soft -> DeckColors.warn.copy(alpha = 0.10f)
+        else -> DeckColors.surface
     }
     val labelColor = when {
         !enabled -> DeckColors.dim
@@ -113,6 +118,11 @@ fun PauseButton(visual: PauseVisual, size: Dp = 34.dp, onTap: () -> Unit, onHold
             Canvas(modifier = Modifier.size(size)) {
                 val stroke = if (holding) 2.5.dp.toPx() else 1.5.dp.toPx()
                 drawCircle(
+                    color = fill,
+                    radius = (this.size.minDimension - stroke) / 2f,
+                    center = Offset(this.size.width / 2f, this.size.height / 2f)
+                )
+                drawCircle(
                     color = ring,
                     radius = (this.size.minDimension - stroke) / 2f,
                     center = Offset(this.size.width / 2f, this.size.height / 2f),
@@ -122,9 +132,9 @@ fun PauseButton(visual: PauseVisual, size: Dp = 34.dp, onTap: () -> Unit, onHold
             Text(
                 text = label,
                 color = if (holding) DeckColors.crit else labelColor,
-                fontFamily = if (label == PAUSE_GLYPH) DeckType.text else DeckType.mono,
+                fontFamily = if (label == PAUSE_GLYPH || label == PLAY_GLYPH) DeckType.text else DeckType.mono,
                 fontWeight = FontWeight.Medium,
-                fontSize = if (label == PAUSE_GLYPH) 13.sp else 10.sp
+                fontSize = if (label == PAUSE_GLYPH || label == PLAY_GLYPH) 13.sp else 10.sp
             )
         }
     }
@@ -139,3 +149,4 @@ object PauseButtonDefaults {
 }
 
 private const val PAUSE_GLYPH = "❚❚"
+private const val PLAY_GLYPH = "▶"

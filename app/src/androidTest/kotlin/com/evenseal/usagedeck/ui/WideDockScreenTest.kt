@@ -6,6 +6,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.evenseal.usagedeck.core.model.TeamState
 import com.evenseal.usagedeck.ui.theme.DeckTheme
 import com.evenseal.usagedeck.ui.widedock.WideDockScreen
 import org.junit.Rule
@@ -53,5 +54,21 @@ class WideDockScreenTest {
     fun theBottomBarStillOffersPauseAll() {
         showLandscape(fakeViewModel())
         compose.onNodeWithText("Pause all").assertExists()
+    }
+
+    @Test
+    fun noMachinesShowsThePairingPromptInBothPanes() {
+        compose.setContent {
+            DeckTheme {
+                WideDockScreen(
+                    vm = fakeViewModel(team = TeamState(emptyList())),
+                    onOpen = {}
+                )
+            }
+        }
+
+        compose.onNodeWithText("No machines paired").assertExists()
+        compose.onNodeWithText("nothing paired").assertExists()
+        compose.onNodeWithText("Pair").assertExists()
     }
 }

@@ -32,8 +32,13 @@ import com.evenseal.usagedeck.ui.DeckViewModel
 import com.evenseal.usagedeck.ui.Route
 import com.evenseal.usagedeck.ui.components.BottomBar
 import com.evenseal.usagedeck.ui.components.Format
+import com.evenseal.usagedeck.ui.components.HomeEmpty
+import com.evenseal.usagedeck.ui.components.HomeEmptyBody
+import com.evenseal.usagedeck.ui.components.MachineWaitRow
 import com.evenseal.usagedeck.ui.components.SessionRow
 import com.evenseal.usagedeck.ui.components.StatusBar
+import com.evenseal.usagedeck.ui.components.usersWithData
+import com.evenseal.usagedeck.ui.ledger.homeSecondary
 import com.evenseal.usagedeck.ui.theme.DeckColors
 import com.evenseal.usagedeck.ui.theme.DeckType
 import java.time.Instant
@@ -63,21 +68,31 @@ fun WideDockScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
                 onMachine = { id -> onOpen(Route.Machine(id)) }
             )
 
-            LazyColumn(modifier = Modifier.weight(1f)) {
-                team.projects.filter { it.sessions.isNotEmpty() }.forEach { project ->
-                    items(project.sessions, key = { "${project.machineId}:${it.sessionId}" }) { session ->
-                        val target = PauseTarget.Session(project.machineId, session.sessionId)
-                        SessionRow(
-                            session = session,
-                            rate = vm.rate(project.machineId, session.sessionId),
-                            series = vm.series(project.machineId, session.sessionId),
-                            machineName = project.name,
-                            visual = vm.visual(target),
-                            now = now,
-                            onTap = { vm.tap(target) },
-                            onHold = { vm.hold(target) },
-                            onOpen = { onOpen(Route.Project(project.machineId, project.key)) }
-                        )
+            val empty = HomeEmpty.of(team)
+            if (empty != null) {
+                HomeEmptyBody(
+                    empty = empty,
+                    now = now,
+                    onPair = { onOpen(Route.Pairing) },
+                    modifier = Modifier.weight(1f)
+                )
+            } else {
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    team.projects.filter { it.sessions.isNotEmpty() }.forEach { project ->
+                        items(project.sessions, key = { "${project.machineId}:${it.sessionId}" }) { session ->
+                            val target = PauseTarget.Session(project.machineId, session.sessionId)
+                            SessionRow(
+                                session = session,
+                                rate = vm.rate(project.machineId, session.sessionId),
+                                series = vm.series(project.machineId, session.sessionId),
+                                machineName = project.name,
+                                visual = vm.visual(target),
+                                now = now,
+                                onTap = { vm.tap(target) },
+                                onHold = { vm.hold(target) },
+                                onOpen = { onOpen(Route.Project(project.machineId, project.key)) }
+                            )
+                        }
                     }
                 }
             }
@@ -87,10 +102,7 @@ fun WideDockScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
                 primaryDanger = false,
                 onPrimary = { vm.tap(PauseTarget.All) },
                 onPrimaryHold = { vm.hold(PauseTarget.All) },
-                secondary = listOf(
-                    "Projects" to { onOpen(Route.Projects) },
-                    "Wifi" to { onOpen(Route.Wifi) }
-                )
+                secondary = homeSecondary(empty, onOpen)
             )
         }
     }
@@ -105,7 +117,16 @@ private fun Rail(team: TeamState, now: Instant, modifier: Modifier) {
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        team.users.forEach { user -> RailUser(user = user, now = now) }
+        team.usersWithData().forEach { user -> RailUser(user = user, now = now) }
+        if (team.usersWithData().isEmpty()) {
+            Text(
+                text = if (team.machines.isEmpty()) "nothing paired" else "waiting for data",
+                color = DeckColors.dim,
+                fontFamily = DeckType.text,
+                fontSize = 12.sp
+            )
+            team.machines.forEach { MachineWaitRow(machine = it, now = now) }
+        }
 
         Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
             Text(
@@ -136,45 +157,39 @@ private fun RailUser(user: UserView, now: Instant) {
     val faded = user.health != Health.FRESH
     Column(modifier = Modifier.fillMaxWidth().alpha(if (faded) STALE_ALPHA else 1f)) {
         Text(
-            text = user.displayName,
+            text = user.displayName.uppercase(),
             color = DeckColors.muted,
             fontFamily = DeckType.text,
-            fontWeight = FontWeight.Medium,
-            fontSize = 12.sp
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 11.sp,
+            letterSpacing = 1.2.sp
         )
-        BigNumber(limit = user.fiveHour, size = FIVE_HOUR_SP, now = now)
-        BigNumber(limit = user.sevenDay, size = SEVEN_DAY_SP, now = now)
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            BigNumber(limit = user.fiveHour, size = FIVE_HOUR_SP)
+            BigNumber(limit = user.sevenDay, size = SEVEN_DAY_SP)
+        }
+        Text(
+            text = "5h ${Format.resetsShort(user.fiveHour?.resetsAt, now, ZoneId.systemDefault())} · " +
+                "7d ${Format.resetsShort(user.sevenDay?.resetsAt, now, ZoneId.systemDefault())}",
+            color = DeckColors.dim,
+            fontFamily = DeckType.mono,
+            fontSize = 10.sp,
+            maxLines = 1
+        )
     }
 }
 
-/**
- * The percent alone is the headline; the `%` sign and the reset caption are deliberately much
- * smaller so the number is what carries across the room.
- */
+/** The percent alone is the headline; no `%` sign, colour carries the state (mockup D). */
 @Composable
-private fun BigNumber(limit: Limit?, size: Int, now: Instant) {
+private fun BigNumber(limit: Limit?, size: Int) {
     val color = limit?.let { DeckColors.of(it.status) } ?: DeckColors.dim
-    Row(verticalAlignment = Alignment.Bottom) {
-        Text(
-            text = limit?.percent?.toString() ?: "—",
-            color = color,
-            fontFamily = DeckType.numeral,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = size.sp
-        )
-        Text(
-            text = "%",
-            color = color,
-            fontFamily = DeckType.numeral,
-            fontSize = (size / 3).sp,
-            modifier = Modifier.padding(bottom = (size / 8).dp)
-        )
-    }
     Text(
-        text = Format.resets(limit?.resetsAt, now, ZoneId.systemDefault()),
-        color = DeckColors.dim,
-        fontFamily = DeckType.text,
-        fontSize = 10.sp
+        text = limit?.percent?.toString() ?: "—",
+        color = color,
+        fontFamily = DeckType.numeral,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = size.sp,
+        lineHeight = size.sp
     )
 }
 
