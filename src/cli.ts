@@ -7,18 +7,21 @@ import { getVersion } from './version.js';
 import type { LimitStatus } from './limits/status.js';
 import type { NormalizedLimit } from './limits/types.js';
 import { isTokensGroupBy } from './server/types.js';
+import { resumeAll } from './pause/freeze.js';
+import { parseScope, type PauseRule } from './pause/rules.js';
+import type { SessionView } from './sessions/types.js';
 
 export interface CliIO {
   stdout?: (text: string) => void;
   stderr?: (text: string) => void;
   configDir?: string;
-  client?: Pick<DaemonClient, 'get'>;
+  client?: Pick<DaemonClient, 'get'> & Partial<Pick<DaemonClient, 'post'>>;
   stdin?: string;
   env?: NodeJS.ProcessEnv;
 }
 
 /** Subcommands other waves own; they exist so `help` is honest about the surface. */
-const PLANNED = ['install', 'configure', 'uninstall', 'mcp', 'sessions', 'pause', 'resume'];
+const PLANNED = ['install', 'configure', 'uninstall', 'mcp'];
 
 const HELP = `claude-usage — local usage service for Claude Code sessions
 
@@ -27,6 +30,9 @@ Usage: claude-usage <command> [options]
   serve [--verbose]                 run the daemon in the foreground
   status                            daemon state, limits and today's tokens
   tokens [--since <v>] [--by <g>]   token spend table (since: today|7d|24h|ISO)
+  sessions                          live Claude Code sessions
+  pause <scope> [--hard] [--reason] pause all | project:<path> | session:<id>
+  resume <scope> | --all            clear pause rules (--all works with no daemon)
   hook                              UserPromptSubmit hook (always exits 0)
   statusline                        one-line status for statusLine.command
   --version                         print the version
@@ -172,6 +178,136 @@ async function cmdTokens(argv: readonly string[], io: Required<Pick<CliIO, 'stdo
   return 0;
 }
 
+function shortId(id: string): string {
+  return id.length > 12 ? `${id.slice(0, 8)}…` : id;
+}
+
+function pauseLabel(session: SessionView): string {
+  if (session.pause === null) return '-';
+  const frozen = session.pause.frozenPids.length;
+  return session.pause.mode === 'hard' ? `hard(${frozen})` : 'soft';
+}
+
+/** A client that can POST/DELETE: the token comes from `config.json` (§16). */
+function authedClient(io: CliIO, configDir: string): DaemonClient {
+  const token = loadConfig(configDir).auth.token;
+  return new DaemonClient(token.length > 0 ? { configDir, token } : { configDir });
+}
+
+function unreachable(io: Required<Pick<CliIO, 'stderr'>>, err: unknown): number {
+  io.stderr(
+    err instanceof DaemonUnreachable
+      ? `claude-usage: ${err.message}\n`
+      : `claude-usage: ${(err as Error).message}\n`,
+  );
+  return 1;
+}
+
+async function cmdSessions(io: Required<Pick<CliIO, 'stdout' | 'stderr'>> & CliIO): Promise<number> {
+  const configDir = io.configDir ?? resolveConfigDir();
+  const client = io.client ?? new DaemonClient({ configDir });
+  let body: Record<string, unknown>;
+  try {
+    body = (await client.get('/v1/sessions')) as Record<string, unknown>;
+  } catch (err) {
+    return unreachable(io, err);
+  }
+  const sessions = Array.isArray(body['sessions']) ? (body['sessions'] as SessionView[]) : [];
+  if (sessions.length === 0) {
+    io.stdout('no sessions\n');
+    return 0;
+  }
+  const projectWidth = Math.max(7, ...sessions.map((s) => (s.project?.name ?? '').length + (s.worktree === null ? 0 : s.worktree.length + 3)));
+  io.stdout(
+    `  ${pad('session', 9)}  ${pad('project', projectWidth)}  ${pad('pid', 7)}  ${pad('state', 7)}  ${pad('pause', 9)}  ${'msgs'.padStart(7)}  last activity\n`,
+  );
+  for (const s of sessions) {
+    const project = s.worktree === null ? (s.project?.name ?? '?') : `${s.project?.name ?? '?'} @ ${s.worktree}`;
+    io.stdout(
+      `  ${pad(shortId(s.sessionId), 9)}  ${pad(project, projectWidth)}  ` +
+        `${pad(s.pid === null ? '-' : String(s.pid), 7)}  ${pad(s.alive ? 'alive' : s.discovered === 'transcript' ? 'file' : 'dead', 7)}  ` +
+        `${pad(pauseLabel(s), 9)}  ${formatCount(s.tokens?.messages).padStart(7)}  ${s.lastActivityAt}\n`,
+    );
+  }
+  io.stdout(`rev ${String(body['rev'] ?? 0)}\n`);
+  return 0;
+}
+
+async function cmdPause(argv: readonly string[], io: Required<Pick<CliIO, 'stdout' | 'stderr'>> & CliIO): Promise<number> {
+  const scope = argv.find((a) => !a.startsWith('-'));
+  if (scope === undefined || parseScope(scope) === null) {
+    io.stderr('claude-usage: pause needs a scope — all | project:<path> | session:<id>\n');
+    return 1;
+  }
+  const configDir = io.configDir ?? resolveConfigDir();
+  const client = io.client ?? authedClient(io, configDir);
+  if (typeof client.post !== 'function') {
+    io.stderr('claude-usage: this client cannot POST\n');
+    return 1;
+  }
+  const mode = argv.includes('--hard') ? 'hard' : 'soft';
+  const reason = flagValue(argv, ['--reason', '-r']) ?? '';
+  let body: Record<string, unknown>;
+  try {
+    body = (await client.post('/v1/pause', { scope, mode, reason, createdBy: 'cli' })) as Record<string, unknown>;
+  } catch (err) {
+    return unreachable(io, err);
+  }
+  const rule = body['rule'] as PauseRule | undefined;
+  const affected = Array.isArray(body['affected']) ? (body['affected'] as string[]) : [];
+  io.stdout(`paused ${scope} (${mode}) — rule ${rule?.id ?? '?'}\n`);
+  io.stdout(`affected: ${affected.length === 0 ? 'none' : affected.map(shortId).join(', ')}\n`);
+  return 0;
+}
+
+async function cmdResume(argv: readonly string[], io: Required<Pick<CliIO, 'stdout' | 'stderr'>> & CliIO): Promise<number> {
+  const configDir = io.configDir ?? resolveConfigDir();
+  const all = argv.includes('--all');
+  const scope = argv.find((a) => !a.startsWith('-'));
+  if (!all && (scope === undefined || parseScope(scope) === null)) {
+    io.stderr('claude-usage: resume needs a scope — all | project:<path> | session:<id> — or --all\n');
+    return 1;
+  }
+
+  const client = io.client ?? authedClient(io, configDir);
+  if (all) {
+    // §18.3's escape hatch: every rule goes, and everything recorded is SIGCONTed —
+    // with the daemon if it is up, straight off disk if it is not.
+    try {
+      if (typeof client.post !== 'function') throw new DaemonUnreachable('no POST client');
+      const body = (await client.get('/v1/pause/rules')) as { rules?: PauseRule[] };
+      const rules = body.rules ?? [];
+      for (const scopeValue of new Set(rules.map((r) => r.scope))) {
+        await client.post('/v1/resume', { scope: scopeValue });
+      }
+      io.stdout(`resumed everything — removed ${String(rules.length)} rule(s)\n`);
+      return 0;
+    } catch {
+      const offline = resumeAll(configDir);
+      io.stdout(
+        `daemon not answering — resumed offline: ${String(offline.resumed.length)} process(es), ` +
+          `${String(offline.removed.length)} rule(s) cleared\n`,
+      );
+      return 0;
+    }
+  }
+
+  if (typeof client.post !== 'function') {
+    io.stderr('claude-usage: this client cannot POST\n');
+    return 1;
+  }
+  let body: Record<string, unknown>;
+  try {
+    body = (await client.post('/v1/resume', { scope })) as Record<string, unknown>;
+  } catch (err) {
+    return unreachable(io, err);
+  }
+  const removed = Array.isArray(body['removed']) ? (body['removed'] as string[]) : [];
+  const resumed = Array.isArray(body['resumed']) ? (body['resumed'] as string[]) : [];
+  io.stdout(`removed ${String(removed.length)} rule(s); resumed ${resumed.length === 0 ? 'none' : resumed.map(shortId).join(', ')}\n`);
+  return 0;
+}
+
 /** Subcommand dispatch. Returns the process exit code; never calls `process.exit`. */
 export async function run(argv: readonly string[], io: CliIO = {}): Promise<number> {
   const stdout = io.stdout ?? ((t: string) => process.stdout.write(t));
@@ -189,6 +325,12 @@ export async function run(argv: readonly string[], io: CliIO = {}): Promise<numb
       return cmdStatus(base);
     case 'tokens':
       return cmdTokens(rest, base);
+    case 'sessions':
+      return cmdSessions(base);
+    case 'pause':
+      return cmdPause(rest, base);
+    case 'resume':
+      return cmdResume(rest, base);
     case 'hook': {
       const hookIo = {
         stdin: io.stdin ?? (await readStdin()),

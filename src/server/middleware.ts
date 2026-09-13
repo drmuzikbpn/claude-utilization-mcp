@@ -105,6 +105,35 @@ export function bearerMatches(header: string | undefined, expected: string): boo
   return timingSafeEqual(digest(presented), digest(expected));
 }
 
+/**
+ * The three endpoints our own hooks POST to from loopback with **no token** (§17.1).
+ *
+ * Claude Code runs `claude-usage hook` as a bare command: it has no way to read the bearer
+ * token without also handing every hook the credential, and a `SessionStart` that cannot
+ * register makes the whole sessions view wrong. These three are write-only session
+ * bookkeeping keyed by a session id the caller must already know, they expose no data back,
+ * and the exemption is loopback-ONLY — from the tailnet they still require the token, like
+ * every other mutating request. Pause/resume are deliberately NOT on this list.
+ */
+export const LOOPBACK_HOOK_POSTS: readonly RegExp[] = [
+  /^\/v1\/sessions\/register$/,
+  /^\/v1\/sessions\/[^/]+\/heartbeat$/,
+  /^\/v1\/sessions\/[^/]+\/end$/,
+];
+
+/** Path of `req` with any query string and trailing slash removed. */
+export function requestPath(req: IncomingMessage): string {
+  const raw = req.url ?? '/';
+  const q = raw.indexOf('?');
+  const path = q === -1 ? raw : raw.slice(0, q);
+  return path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
+}
+
+export function isLoopbackHookPost(method: string, path: string): boolean {
+  if (method !== 'POST') return false;
+  return LOOPBACK_HOOK_POSTS.some((re) => re.test(path));
+}
+
 export type GateOutcome =
   | { ok: true; loopback: boolean }
   | {
@@ -144,6 +173,9 @@ export function checkRequest(req: IncomingMessage, policy: HostPolicy, token: st
 
   const method = (req.method ?? 'GET').toUpperCase();
   if (loopback && SAFE_METHODS.has(method)) return { ok: true, loopback };
+
+  // Narrow exemption: the hook's own session bookkeeping, loopback only (see above).
+  if (loopback && isLoopbackHookPost(method, requestPath(req))) return { ok: true, loopback };
 
   if (!bearerMatches(req.headers.authorization, token)) {
     return {

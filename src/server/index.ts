@@ -18,6 +18,7 @@ import { buildHostPolicy, checkRequest, type HostPolicy } from './middleware.js'
 import { parseTokensQuery } from './query.js';
 import { healthBody, limitsBody, summaryBody, type SnapshotDeps } from './snapshot.js';
 import { zeroTotals, type TokensSource } from './types.js';
+import type { SessionsSubsystem } from '../sessions/index.js';
 
 export * from './types.js';
 export * from './errors.js';
@@ -41,6 +42,10 @@ export interface ServerOptions {
   limits: LimitsProvider;
   /** `null` until W1's SpendStore is wired in; `/v1/tokens` then answers `ready: false`. */
   tokens?: TokensSource | null;
+  // --- W3: sessions & pause (§17, §18) ------------------------------------
+  /** Sessions/pause subsystem; when absent those routes simply 404. */
+  sessions?: SessionsSubsystem | null;
+  // ------------------------------------------------------------------------
   version?: string;
   startedAt?: number;
   /** Extra Host names to allow (e.g. the MagicDNS name — §16). */
@@ -103,6 +108,8 @@ export function createServer(opts: ServerOptions): UsageServer {
   const readUser = createUserReader(opts.claudeJsonPath ?? defaultClaudeJsonPath(), now);
 
   let tokens: TokensSource | null = opts.tokens ?? null;
+  // W3: one registration block — the routes themselves live in src/sessions/routes.ts.
+  const sessionsRouter = opts.sessions?.router ?? null;
   const bound: BoundAddress[] = [];
   let policy: HostPolicy = buildHostPolicy(bound, opts.extraHostNames ?? []);
 
@@ -207,6 +214,9 @@ export function createServer(opts: ServerOptions): UsageServer {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const path = url.pathname.length > 1 && url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
 
+    // W3: sessions & pause (§18.4) own their own method handling and status codes.
+    if (sessionsRouter !== null && (await sessionsRouter.handle(req, res, method, path, url))) return;
+
     const known = ROUTES.some((r) => r.path === path);
     if (!known) {
       sendError(res, 404, 'not_found', `no route for ${path}`);
@@ -259,6 +269,7 @@ export function createServer(opts: ServerOptions): UsageServer {
     },
     setTokensSource(source) {
       tokens = source;
+      opts.sessions?.setTokensSource(source);
     },
     handle,
     listen(port, host = '127.0.0.1') {

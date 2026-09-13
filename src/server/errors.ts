@@ -7,6 +7,8 @@ export type ErrorCode =
   | 'not_found'
   | 'method_not_allowed'
   | 'misdirected_request'
+  | 'conflict'
+  | 'gone'
   | 'rate_limited'
   // 503: the daemon is refusing more work of this kind right now (SSE client cap, §19).
   | 'unavailable'
