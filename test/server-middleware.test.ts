@@ -9,7 +9,7 @@ import {
   normalizeAddress,
   parseHostHeader,
 } from '../src/server/middleware.js';
-import { localMidnight, parseSince, parseTokensQuery } from '../src/server/query.js';
+import { utcMidnight, parseSince, parseTokensQuery } from '../src/server/query.js';
 
 const TOKEN = 'test-bearer-token';
 const policy = buildHostPolicy([{ address: '127.0.0.1', port: 47291 }, { address: '100.68.121.23', port: 47291 }]);
@@ -149,8 +149,8 @@ describe('parseSince', () => {
   const now = Date.parse('2026-09-13T14:00:00Z');
 
   it('defaults to local midnight today', () => {
-    expect(parseSince(undefined, now)).toBe(localMidnight(now));
-    expect(parseSince('today', now)).toBe(localMidnight(now));
+    expect(parseSince(undefined, now)).toBe(utcMidnight(now));
+    expect(parseSince('today', now)).toBe(utcMidnight(now));
   });
 
   it('handles relative windows', () => {

@@ -5,10 +5,10 @@ export const DEFAULT_GROUP_BY: TokensGroupBy = 'project';
 
 const RELATIVE = /^(\d+)([mhd])$/;
 
-/** Local midnight for `since=today`, as an ISO-8601 `Z` instant. */
-export function localMidnight(now: number): string {
+/** UTC midnight for `since=today` (aggregates are keyed by UTC day, §23.7). */
+export function utcMidnight(now: number): string {
   const d = new Date(now);
-  d.setHours(0, 0, 0, 0);
+  d.setUTCHours(0, 0, 0, 0);
   return d.toISOString();
 }
 
@@ -18,7 +18,7 @@ export function localMidnight(now: number): string {
  */
 export function parseSince(value: string | undefined, now: number = Date.now()): string | null {
   const raw = value === undefined || value.length === 0 ? DEFAULT_SINCE : value;
-  if (raw === 'today') return localMidnight(now);
+  if (raw === 'today') return utcMidnight(now);
   if (raw === 'all') return new Date(0).toISOString();
 
   const rel = RELATIVE.exec(raw);
