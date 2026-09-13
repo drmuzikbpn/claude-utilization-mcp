@@ -142,8 +142,11 @@ internal fun homeSecondary(empty: HomeEmpty?, onOpen: (Route) -> Unit): List<Pai
     } else {
         "Projects" to { onOpen(Route.Projects) }
     },
-    "Wifi" to { onOpen(Route.Wifi) }
+    GEAR to { onOpen(Route.Settings) }
 )
+
+/** The gear glyph on the home bottom bars; Settings is where wifi, display and sound live now. */
+const val GEAR = "⚙"
 
 /** A teammate's block fades to 55 % once their machine stops checking in (spec §11.1). */
 @Composable
