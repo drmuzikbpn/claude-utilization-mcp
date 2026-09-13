@@ -41,6 +41,8 @@ class DeckService : LifecycleService() {
         graph.wifi.start()
         graph.startClients()
         graph.pause.start()
+        graph.updateChecks = graph.updater
+        graph.updater.start()
 
         lifecycleScope.launch { alertLoop() }
     }
@@ -51,6 +53,8 @@ class DeckService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        graph.updater.stop()
+        graph.updateChecks = null
         graph.pause.stop()
         graph.stopClients()
         graph.wifi.stop()
