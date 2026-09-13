@@ -90,9 +90,9 @@ export function limitsLiteBody(d: Pick<SnapshotDeps, 'limits'>): LimitsSnapshotL
   return stripRaw(d.limits.snapshot());
 }
 
-/** Local midnight, the lower bound of "today" for `/v1/summary.today`. */
+/** UTC midnight, the lower bound of "today" for `/v1/summary.today` (aggregates are UTC-day keyed, §23.7). */
 export function startOfDayIso(now: number): string {
-  return new Date(new Date(now).setHours(0, 0, 0, 0)).toISOString();
+  return new Date(new Date(now).setUTCHours(0, 0, 0, 0)).toISOString();
 }
 
 /** Machine-wide totals since local midnight; also the `today` of the SSE `spend` event. */
