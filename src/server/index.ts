@@ -66,16 +66,27 @@ export interface BoundAddress {
 }
 
 export interface UsageServer {
-  readonly http: Server;
+  /** The first bound listener, or `null` before `listen`. */
+  readonly http: Server | null;
+  /** One `http.Server` per bound address, all sharing `handle` (§16). */
+  readonly servers: readonly Server[];
   readonly addresses: readonly BoundAddress[];
+  /** The port every listener shares, or `null` before `listen`. */
+  readonly port: number | null;
   /** The bus `GET /v1/events` streams; the daemon publishes onto it (§19). */
   readonly bus: EventBus;
   readonly events: EventsEndpoint;
   /** Attach the tokens source once it exists (daemon startup order, §6). */
   setTokensSource(source: TokensSource | null): void;
   handle(req: IncomingMessage, res: ServerResponse): void;
-  /** Listen and resolve with the bound port (tests pass 0). */
-  listen(port: number, host?: string): Promise<number>;
+  /** Listen on one address or several and resolve with the bound port (tests pass 0). */
+  listen(port: number, hosts?: string | readonly string[]): Promise<number>;
+  /** Add one address after startup (SIGHUP re-resolution, §16); already bound → no-op. */
+  bind(host: string, port?: number): Promise<number>;
+  /** Stop listening on one address, leaving the rest up. */
+  unbind(host: string): Promise<void>;
+  /** Replace the extra Host names — the MagicDNS name, re-resolved on SIGHUP (§16). */
+  setExtraHostNames(names: readonly string[]): void;
   close(): Promise<void>;
 }
 
@@ -110,11 +121,18 @@ export function createServer(opts: ServerOptions): UsageServer {
   let tokens: TokensSource | null = opts.tokens ?? null;
   // W3: one registration block — the routes themselves live in src/sessions/routes.ts.
   const sessionsRouter = opts.sessions?.router ?? null;
+  /** One listener per requested address, keyed by the lower-cased host we asked for. */
+  const listeners = new Map<string, { server: Server; addresses: BoundAddress[] }>();
   const bound: BoundAddress[] = [];
-  let policy: HostPolicy = buildHostPolicy(bound, opts.extraHostNames ?? []);
+  let extraHostNames: string[] = [...(opts.extraHostNames ?? [])];
+  let policy: HostPolicy = buildHostPolicy(bound, extraHostNames);
+  let listenPort: number | null = null;
 
+  /** `addresses` is handed out live, so it is refilled in place rather than replaced. */
   const rebuildPolicy = (): void => {
-    policy = buildHostPolicy(bound, opts.extraHostNames ?? []);
+    bound.length = 0;
+    for (const entry of listeners.values()) bound.push(...entry.addresses);
+    policy = buildHostPolicy(bound, extraHostNames);
   };
 
   // --- route handlers -------------------------------------------------------
@@ -256,12 +274,65 @@ export function createServer(opts: ServerOptions): UsageServer {
     }
   }
 
-  const http = createHttpServer(handle);
-  http.requestTimeout = requestTimeoutMs;
-  http.headersTimeout = requestTimeoutMs;
+  // --- listeners ------------------------------------------------------------
+
+  /**
+   * §16: one `http.Server` per address, all running the same `handle`. Binding is
+   * per-address so the daemon can add a tailnet address that only appeared later, or drop
+   * one that went away, without disturbing loopback.
+   */
+  async function bindOne(host: string, port: number): Promise<number> {
+    const key = host.toLowerCase();
+    const existing = listeners.get(key);
+    if (existing !== undefined) return existing.addresses[0]?.port ?? port;
+
+    const server = createHttpServer(handle);
+    server.requestTimeout = requestTimeoutMs;
+    server.headersTimeout = requestTimeoutMs;
+
+    const actual = await new Promise<number>((resolve, reject) => {
+      const onError = (err: Error): void => {
+        server.removeListener('listening', onListening);
+        // A listener that never bound must not linger as a half-open handle.
+        server.close();
+        reject(err);
+      };
+      const onListening = (): void => {
+        server.removeListener('error', onError);
+        const info = server.address() as AddressInfo | null;
+        resolve(info === null ? port : info.port);
+      };
+      server.once('error', onError);
+      server.once('listening', onListening);
+      server.listen(port, host);
+    });
+
+    const info = server.address() as AddressInfo | null;
+    const addresses: BoundAddress[] = [{ address: host, port: actual }];
+    if (info !== null && info.address !== host) addresses.push({ address: info.address, port: actual });
+    listeners.set(key, { server, addresses });
+    listenPort = actual;
+    rebuildPolicy();
+    return actual;
+  }
+
+  function closeServer(server: Server): Promise<void> {
+    return new Promise<void>((resolve) => {
+      server.closeAllConnections();
+      server.close(() => resolve());
+    });
+  }
 
   return {
-    http,
+    get http() {
+      return [...listeners.values()][0]?.server ?? null;
+    },
+    get servers() {
+      return [...listeners.values()].map((entry) => entry.server);
+    },
+    get port() {
+      return listenPort;
+    },
     bus,
     events,
     get addresses() {
@@ -272,34 +343,39 @@ export function createServer(opts: ServerOptions): UsageServer {
       opts.sessions?.setTokensSource(source);
     },
     handle,
-    listen(port, host = '127.0.0.1') {
-      return new Promise<number>((resolve, reject) => {
-        const onError = (err: Error): void => {
-          http.removeListener('listening', onListening);
-          reject(err);
-        };
-        const onListening = (): void => {
-          http.removeListener('error', onError);
-          const info = http.address() as AddressInfo | null;
-          const actual = info === null ? port : info.port;
-          bound.push({ address: host, port: actual });
-          if (info !== null && info.address !== host) bound.push({ address: info.address, port: actual });
-          rebuildPolicy();
-          resolve(actual);
-        };
-        http.once('error', onError);
-        http.once('listening', onListening);
-        http.listen(port, host);
-      });
+    async listen(port, hosts = '127.0.0.1') {
+      const list = typeof hosts === 'string' ? [hosts] : [...hosts];
+      if (list.length === 0) list.push('127.0.0.1');
+      let actual = port;
+      for (const host of list) {
+        // Only the first bind may be told port 0; the rest must land on the same port.
+        actual = await bindOne(host, actual);
+      }
+      return actual;
     },
-    close() {
-      return new Promise<void>((resolve) => {
-        events.close();
-        http.closeAllConnections();
-        http.close(() => {
-          resolve();
-        });
-      });
+    async bind(host, port) {
+      const target = port ?? listenPort;
+      if (target === null) throw new Error('bind() needs a port until listen() has run');
+      return bindOne(host, target);
+    },
+    async unbind(host) {
+      const key = host.toLowerCase();
+      const entry = listeners.get(key);
+      if (entry === undefined) return;
+      listeners.delete(key);
+      rebuildPolicy();
+      await closeServer(entry.server);
+    },
+    setExtraHostNames(names) {
+      extraHostNames = [...names];
+      rebuildPolicy();
+    },
+    async close() {
+      events.close();
+      const entries = [...listeners.values()];
+      listeners.clear();
+      rebuildPolicy();
+      await Promise.all(entries.map((entry) => closeServer(entry.server)));
     },
   };
 }
