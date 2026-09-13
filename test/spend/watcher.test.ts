@@ -131,6 +131,7 @@ describe('TranscriptWatcher mid-scan queueing', () => {
   });
 
   it('never runs two flushes concurrently and re-runs once for events raised mid-flush', async () => {
+    vi.useFakeTimers();
     const dir = await makeTempDir();
     let running = 0;
     let overlaps = 0;
@@ -141,7 +142,7 @@ describe('TranscriptWatcher mid-scan queueing', () => {
     });
     const watcher = new TranscriptWatcher({
       dir,
-      debounceMs: 1,
+      debounceMs: 10,
       onFlush: async () => {
         calls += 1;
         running += 1;
@@ -154,11 +155,15 @@ describe('TranscriptWatcher mid-scan queueing', () => {
     watcher.resume();
 
     watcher.notify('a.jsonl');
-    await new Promise((r) => setTimeout(r, 20));
+    vi.advanceTimersByTime(10);
+    expect(calls).toBe(1);
+
     watcher.notify('b.jsonl'); // arrives while the first flush is still awaiting
-    await new Promise((r) => setTimeout(r, 20));
+    vi.advanceTimersByTime(10);
+    expect(calls).toBe(1); // queued, not run concurrently
+
     release();
-    await new Promise((r) => setTimeout(r, 50));
+    for (let i = 0; i < 10; i += 1) await Promise.resolve();
 
     expect(overlaps).toBe(0);
     expect(calls).toBe(2);
@@ -170,6 +175,9 @@ describe('TranscriptWatcher real filesystem events', () => {
   it('flushes when a transcript is written under a nested dir', async () => {
     const dir = await makeTempDir();
     if (!recursiveWatchSupported(dir)) return; // platform without recursive fs.watch
+
+    const nested = join(dir, 'proj', 'session', 'subagents');
+    await mkdir(nested, { recursive: true });
 
     let flushes = 0;
     const watcher = new TranscriptWatcher({
@@ -183,12 +191,12 @@ describe('TranscriptWatcher real filesystem events', () => {
     await watcher.start();
     watcher.resume();
 
-    await mkdir(join(dir, 'proj', 'session', 'subagents'), { recursive: true });
-    await writeFile(join(dir, 'proj', 'session', 'subagents', 'agent-x.jsonl'), '{}\n');
-
-    const deadline = Date.now() + 4000;
-    while (flushes === 0 && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 25));
+    // A recursive watch can take a moment to arm (FSEvents on macOS), so keep writing
+    // until the change is delivered rather than racing a single write.
+    const deadline = Date.now() + 8000;
+    for (let i = 0; flushes === 0 && Date.now() < deadline; i += 1) {
+      await writeFile(join(nested, 'agent-x.jsonl'), `{"n":${i}}\n`);
+      await new Promise((r) => setTimeout(r, 150));
     }
     watcher.stop();
     expect(flushes).toBeGreaterThan(0);
