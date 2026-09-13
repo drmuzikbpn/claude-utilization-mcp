@@ -197,7 +197,7 @@ class MachineClient(
             is DaemonEvent.SessionChange -> applySessionChange(event)
             is DaemonEvent.Pause -> applyPause(event)
             is DaemonEvent.Update -> _state.update { it.copy(update = event.update.toModel()) }
-            DaemonEvent.Heartbeat -> Unit
+            is DaemonEvent.Heartbeat -> applyHeartbeat(event)
             is DaemonEvent.Unknown -> Unit
         }
     }
@@ -231,6 +231,16 @@ class MachineClient(
         }
         burn.record(burnKeyForMachine(), now, event.today.toModel().total)
         recordSessionBurn(sessions, now)
+    }
+
+    /**
+     * `lastHeartbeatAt` is already bumped by [touch] off the local clock — aging must not depend
+     * on the daemon's clock — so only the revision travels with the heartbeat.
+     */
+    private fun applyHeartbeat(event: DaemonEvent.Heartbeat) {
+        if (event.rev <= 0) return
+        etag = "W/\"${event.rev}\""
+        _state.update { if (event.rev > it.rev) it.copy(rev = event.rev) else it }
     }
 
     private fun applyLimits(event: DaemonEvent.Limits) {

@@ -173,10 +173,11 @@ class MachineClientTest {
         runCurrent()
         assertEquals(Health.STALE, f.client.state.value.health)
 
-        f.events.emit(DaemonEvent.Heartbeat)
+        f.events.emit(DaemonEvent.Heartbeat(rev = 9, at = "2026-09-13T14:00:45.000Z"))
         runCurrent()
         assertEquals(f.clock.now(), f.client.state.value.lastHeartbeatAt)
         assertEquals(Health.FRESH, f.client.state.value.health)
+        assertEquals("the heartbeat's rev advances the sessions revision", 9L, f.client.state.value.rev)
     }
 
     @Test

@@ -1,0 +1,26 @@
+retry: 3000
+
+id: 0
+event: snapshot
+data: {"name":"alans-mbp","version":"0.1.417+3f9c2ab","user":{"emailAddress":"alan@example.test","accountUuid":"c0ffee00-1111-4222-8333-444455556666","organizationUuid":"d1a9b0c2-7777-4888-8999-aaaabbbbcccc","displayName":"Alan Example","organizationName":"Example Productions"},"limits":{"fetchedAt":"2026-09-13T13:59:41.000Z","stale":false,"error":null,"limits":[{"id":"session","kind":"session","group":"session","percent":37,"severity":"normal","resetsAt":"2026-09-13T18:00:00.000Z","scope":null,"isActive":true},{"id":"weekly_all","kind":"weekly_all","group":"weekly","percent":62,"severity":"normal","resetsAt":"2026-09-17T07:00:00.000Z","scope":null,"isActive":false},{"id":"weekly_scoped:fable","kind":"weekly_scoped","group":"weekly","percent":81,"severity":"warning","resetsAt":"2026-09-17T07:00:00.000Z","scope":{"model":"Fable","surface":null},"isActive":false}],"legacyWindows":{"five_hour":{"utilization":37.2,"resetsAt":"2026-09-13T18:00:00.000Z"},"seven_day":{"utilization":62.4,"resetsAt":"2026-09-17T07:00:00.000Z"}},"extraUsage":{"isEnabled":false,"utilization":null,"spendLimitReached":false}},"summary":{"limits":{"fetchedAt":"2026-09-13T13:59:41.000Z","stale":false,"error":null,"limits":[{"id":"session","kind":"session","group":"session","percent":37,"severity":"normal","resetsAt":"2026-09-13T18:00:00.000Z","scope":null,"isActive":true},{"id":"weekly_all","kind":"weekly_all","group":"weekly","percent":62,"severity":"normal","resetsAt":"2026-09-17T07:00:00.000Z","scope":null,"isActive":false},{"id":"weekly_scoped:fable","kind":"weekly_scoped","group":"weekly","percent":81,"severity":"warning","resetsAt":"2026-09-17T07:00:00.000Z","scope":{"model":"Fable","surface":null},"isActive":false}],"legacyWindows":{"five_hour":{"utilization":37.2,"resetsAt":"2026-09-13T18:00:00.000Z"},"seven_day":{"utilization":62.4,"resetsAt":"2026-09-17T07:00:00.000Z"}},"extraUsage":{"isEnabled":false,"utilization":null,"spendLimitReached":false}},"status":{"byId":{"session":"ok","weekly_all":"ok","weekly_scoped:fable":"warn"},"overall":"warn"},"thresholds":{"warn":80,"critical":95},"today":{"ready":true,"input":1284000,"output":96400,"cacheCreate":412000,"cacheRead":8900000,"messages":613}},"sessions":[{"id":"3f2a91c4-7d51-4a0e-9a6b-1c0d5e8f2b77","pid":42317,"cwd":"/Users/dev/code/orbit-api","project":"-Users-dev-code-orbit-api","state":"active","startedAt":"2026-09-13T12:41:09.000Z","lastActivityAt":"2026-09-13T13:59:51.000Z","lastTool":{"name":"Edit","at":"2026-09-13T13:59:51.000Z"},"model":"claude-fable-5-1","tokens":{"input":812000,"output":61300,"cacheCreate":300000,"cacheRead":5100000,"messages":402}},{"id":"8b4c0d2e-55aa-4f13-8e77-2d9a6c31b904","pid":42980,"cwd":"/Users/dev/code/orbit-android","project":"-Users-dev-code-orbit-android","state":"paused","startedAt":"2026-09-13T13:20:02.000Z","lastActivityAt":"2026-09-13T13:52:14.000Z","lastTool":null,"model":"claude-fable-5-1","tokens":{"input":472000,"output":35100,"cacheCreate":112000,"cacheRead":3800000,"messages":211}}],"rules":[{"id":"rule-9f21","scope":"session","target":"8b4c0d2e-55aa-4f13-8e77-2d9a6c31b904","mode":"soft","reason":"usage-deck:7f10c2 weekly Fable limit above 80%","createdAt":"2026-09-13T13:52:20.000Z","expiresAt":null}],"update":{"channel":"stable","current":"0.1.417+3f9c2ab","available":null,"state":"disabled","deferredReason":null},"rev":0}
+
+id: 1
+event: limits
+data: {"fetchedAt":"2026-09-13T14:00:41.000Z","stale":false,"error":null,"limits":[{"id":"session","kind":"session","group":"session","percent":39,"severity":"normal","resetsAt":"2026-09-13T18:00:00.000Z","scope":null,"isActive":true},{"id":"weekly_all","kind":"weekly_all","group":"weekly","percent":62,"severity":"normal","resetsAt":"2026-09-17T07:00:00.000Z","scope":null,"isActive":false},{"id":"weekly_scoped:fable","kind":"weekly_scoped","group":"weekly","percent":81,"severity":"warning","resetsAt":"2026-09-17T07:00:00.000Z","scope":{"model":"Fable","surface":null},"isActive":false}],"legacyWindows":{"five_hour":{"utilization":39.1,"resetsAt":"2026-09-13T18:00:00.000Z"},"seven_day":{"utilization":62.4,"resetsAt":"2026-09-17T07:00:00.000Z"}},"extraUsage":{"isEnabled":false,"utilization":null,"spendLimitReached":false}}
+
+id: 3
+event: spend
+data: {"today":{"ready":true,"input":1294200,"output":97350,"cacheCreate":412000,"cacheRead":8961000,"messages":617},"delta":{"input":10200,"output":950,"cacheCreate":0,"cacheRead":61000,"messages":4}}
+
+id: 4
+event: session
+data: {"type":"update","session":{"id":"3f2a91c4-7d51-4a0e-9a6b-1c0d5e8f2b77","pid":42317,"cwd":"/Users/dev/code/orbit-api","project":"-Users-dev-code-orbit-api","state":"active","startedAt":"2026-09-13T12:41:09.000Z","lastActivityAt":"2026-09-13T14:00:52.000Z","lastTool":{"name":"Bash","at":"2026-09-13T14:00:52.000Z"},"model":"claude-fable-5-1","tokens":{"input":812000,"output":61300,"cacheCreate":300000,"cacheRead":5100000,"messages":402}}}
+
+id: 5
+event: pause
+data: {"rules":[{"id":"rule-9f21","scope":"session","target":"8b4c0d2e-55aa-4f13-8e77-2d9a6c31b904","mode":"soft","reason":"usage-deck:7f10c2 weekly Fable limit above 80%","createdAt":"2026-09-13T13:52:20.000Z","expiresAt":null}],"affected":["8b4c0d2e-55aa-4f13-8e77-2d9a6c31b904"]}
+
+id: 5
+event: heartbeat
+data: {"rev":5,"at":"2026-09-13T14:00:15.000Z"}
+

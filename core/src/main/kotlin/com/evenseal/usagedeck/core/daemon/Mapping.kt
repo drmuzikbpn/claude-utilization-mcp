@@ -63,7 +63,7 @@ fun PauseStateDto.toModel() = PauseState(
 
 fun PauseRuleDto.toModel() = PauseRule(
     id,
-    scope,
+    fullScope,
     if (mode == "hard") PauseMode.HARD else PauseMode.SOFT,
     reason,
     createdAt.toInstantOr(Instant.EPOCH),
@@ -71,13 +71,13 @@ fun PauseRuleDto.toModel() = PauseRule(
 )
 
 fun SessionDto.toModel() = Session(
-    sessionId = sessionId,
+    sessionId = identifier,
     pid = pid,
-    alive = alive,
+    alive = state?.let { it != "ended" } ?: alive,
     discovered = if (discovered == "transcript") Discovered.TRANSCRIPT else Discovered.HOOK,
     cwd = cwd,
     transcriptPath = transcriptPath,
-    projectKey = project.gitCommonDir ?: cwd,
+    projectKey = project.gitCommonDir ?: cwd.ifBlank { project.key.orEmpty() },
     projectName = project.name.ifBlank { cwd.substringAfterLast('/') },
     worktree = worktree,
     model = model,

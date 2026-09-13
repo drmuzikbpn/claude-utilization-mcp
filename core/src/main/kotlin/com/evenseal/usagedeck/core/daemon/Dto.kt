@@ -2,6 +2,11 @@ package com.evenseal.usagedeck.core.daemon
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonTransformingSerializer
 
 val DaemonJson = Json {
     ignoreUnknownKeys = true
@@ -93,8 +98,23 @@ data class SummaryDto(
     val stale: Boolean get() = limits.stale
 }
 
+/**
+ * `session.project`. The daemon sends the rich `{ gitCommonDir, name }` form for hook-registered
+ * sessions and, on some builds, the bare opaque projects-dir key as a string; both decode here.
+ */
 @Serializable
-data class ProjectRefDto(val gitCommonDir: String? = null, val name: String = "")
+data class ProjectRefDto(val gitCommonDir: String? = null, val name: String = "", val key: String? = null)
+
+object ProjectRefTolerant : JsonTransformingSerializer<ProjectRefDto>(ProjectRefDto.serializer()) {
+    override fun transformDeserialize(element: JsonElement): JsonElement =
+        if (element is JsonPrimitive) JsonObject(mapOf("key" to element)) else element
+}
+
+/** `snapshot.sessions` arrives either as `{ rev, sessions }` or as a bare array. */
+object SessionsTolerant : JsonTransformingSerializer<SessionsDto>(SessionsDto.serializer()) {
+    override fun transformDeserialize(element: JsonElement): JsonElement =
+        if (element is JsonArray) JsonObject(mapOf("sessions" to element)) else element
+}
 
 @Serializable
 data class PauseStateDto(
@@ -110,21 +130,29 @@ data class LastToolDto(val name: String, val at: String)
 
 @Serializable
 data class SessionDto(
-    val sessionId: String,
+    val sessionId: String = "",
+    /** Alias the daemon's event payloads use for [sessionId]. */
+    val id: String? = null,
     val pid: Int? = null,
     val alive: Boolean = true,
+    /** `active|paused|ended` on builds that send it; [alive] is derived from it when present. */
+    val state: String? = null,
     val discovered: String = "hook",
-    val cwd: String,
+    val cwd: String = "",
     val transcriptPath: String? = null,
+    @Serializable(with = ProjectRefTolerant::class)
     val project: ProjectRefDto = ProjectRefDto(),
     val worktree: String? = null,
     val model: String? = null,
-    val startedAt: String,
-    val lastActivityAt: String,
+    val startedAt: String = "",
+    val lastActivityAt: String = "",
     val tokens: TokensCountsDto = TokensCountsDto(),
     val pause: PauseStateDto? = null,
     val lastTool: LastToolDto? = null
-)
+) {
+    /** [sessionId], or the `id` alias when that is what arrived. */
+    val identifier: String get() = sessionId.ifBlank { id.orEmpty() }
+}
 
 @Serializable
 data class SessionsDto(val rev: Long = 0, val sessions: List<SessionDto> = emptyList())
@@ -132,12 +160,19 @@ data class SessionsDto(val rev: Long = 0, val sessions: List<SessionDto> = empty
 @Serializable
 data class PauseRuleDto(
     val id: String,
+    /** Either the full grammar (`session:<id>`) or the bare kind, with the id in [target]. */
     val scope: String,
+    /** Present on builds that split the scope into kind + target. */
+    val target: String? = null,
     val mode: String,
     val reason: String? = null,
     val createdAt: String,
-    val createdBy: String = ""
-)
+    val createdBy: String = "",
+    val expiresAt: String? = null
+) {
+    /** The scope in the daemon's `all | project:<key> | session:<id>` grammar. */
+    val fullScope: String get() = if (scope.contains(':') || target == null) scope else "$scope:$target"
+}
 
 @Serializable
 data class PauseResponseDto(val rule: PauseRuleDto, val affected: List<String> = emptyList())
