@@ -297,6 +297,16 @@ describe('pairing (§16)', () => {
     expect(typeof payload['addr']).toBe('string');
   });
 
+  it('--addr overrides the resolved address and rejects non-IP values', async () => {
+    const b = bed();
+    await runInstall(['--yes'], b.io);
+    b.out = '';
+    expect(await b.configure(['pairing', '--json', '--addr', '192.168.1.194'])).toBe(0);
+    const payload = JSON.parse(b.out.trim()) as Record<string, unknown>;
+    expect(payload['addr']).toBe('192.168.1.194');
+    expect(await b.configure(['pairing', '--json', '--addr', 'not-an-ip'])).toBe(1);
+  });
+
   it('renders a QR without --json', async () => {
     const b = bed();
     await runInstall(['--yes'], b.io);
