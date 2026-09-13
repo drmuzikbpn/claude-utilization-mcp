@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.evenseal.usagedeck.core.model.PauseMode
 import com.evenseal.usagedeck.core.model.Session
 import com.evenseal.usagedeck.ui.theme.DeckColors
 import com.evenseal.usagedeck.ui.theme.DeckType
@@ -63,6 +64,9 @@ fun SessionRow(
                     fontWeight = FontWeight.Medium,
                     fontSize = 13.sp
                 )
+                if (session.pause?.mode == PauseMode.HARD) {
+                    Tag(text = FROZEN_TAG, color = DeckColors.frozen)
+                }
                 session.model?.let { Tag(text = it, color = DeckColors.accent) }
                 session.worktree?.let { Tag(text = it, color = DeckColors.muted) }
                 if (machineName != null) Tag(text = machineName, color = DeckColors.dim)
@@ -103,6 +107,9 @@ private fun subtitle(session: Session, now: Instant): String {
         Format.age(session.lastActivityAt, now)
     }
 }
+
+/** A frozen session says so in words, not only in colour — the dock is read from a distance. */
+const val FROZEN_TAG = "frozen"
 
 @Composable
 private fun Tag(text: String, color: Color) {
