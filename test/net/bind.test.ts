@@ -3,7 +3,7 @@ import { ConfigError } from '../../src/config.js';
 import { resolveBindAddresses, TAILSCALE_KEYWORD } from '../../src/net/bind.js';
 
 const noTailnet = async (): Promise<string | null> => null;
-const tailnet = async (): Promise<string | null> => '100.68.121.23';
+const tailnet = async (): Promise<string | null> => '100.101.102.103';
 
 function collect(): { lines: string[]; log: (line: string) => void } {
   const lines: string[] = [];
@@ -25,7 +25,7 @@ describe('resolveBindAddresses', () => {
   it('resolves the tailscale keyword', async () => {
     await expect(resolveBindAddresses(['127.0.0.1', TAILSCALE_KEYWORD], { resolveTailscale: tailnet })).resolves.toEqual([
       '127.0.0.1',
-      '100.68.121.23',
+      '100.101.102.103',
     ]);
   });
 
@@ -33,10 +33,10 @@ describe('resolveBindAddresses', () => {
     let calls = 0;
     const resolveTailscale = async (): Promise<string | null> => {
       calls += 1;
-      return '100.68.121.23';
+      return '100.101.102.103';
     };
     await expect(resolveBindAddresses(['tailscale', 'Tailscale', ' tailscale '], { resolveTailscale })).resolves.toEqual([
-      '100.68.121.23',
+      '100.101.102.103',
     ]);
     expect(calls).toBe(1);
   });
@@ -58,8 +58,8 @@ describe('resolveBindAddresses', () => {
 
   it('de-dupes repeated and re-resolved addresses', async () => {
     await expect(
-      resolveBindAddresses(['127.0.0.1', '127.0.0.1', '100.68.121.23', 'tailscale'], { resolveTailscale: tailnet }),
-    ).resolves.toEqual(['127.0.0.1', '100.68.121.23']);
+      resolveBindAddresses(['127.0.0.1', '127.0.0.1', '100.101.102.103', 'tailscale'], { resolveTailscale: tailnet }),
+    ).resolves.toEqual(['127.0.0.1', '100.101.102.103']);
   });
 
   it('rejects anything that is neither an IP literal nor the keyword, naming the key', async () => {

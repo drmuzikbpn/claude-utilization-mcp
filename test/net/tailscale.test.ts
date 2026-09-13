@@ -60,7 +60,7 @@ const missingBinary: ExecFn = () => {
 };
 
 describe('isTailscaleIPv4', () => {
-  it.each(['100.64.0.0', '100.68.121.23', '100.127.255.255'])('accepts %s', (addr) => {
+  it.each(['100.64.0.0', '100.101.102.103', '100.127.255.255'])('accepts %s', (addr) => {
     expect(isTailscaleIPv4(addr)).toBe(true);
   });
 
@@ -79,8 +79,8 @@ describe('findTailscaleIPv4', () => {
   });
 
   it('finds the address regardless of interface name', () => {
-    const table: InterfaceTable = Object.fromEntries([v4('192.168.1.20', 'en0'), v4('100.68.121.23', 'utun4')]);
-    expect(findTailscaleIPv4(table)).toBe('100.68.121.23');
+    const table: InterfaceTable = Object.fromEntries([v4('192.168.1.20', 'en0'), v4('100.101.102.103', 'utun4')]);
+    expect(findTailscaleIPv4(table)).toBe('100.101.102.103');
   });
 
   it('takes the first match when several interfaces qualify', () => {
@@ -101,23 +101,23 @@ describe('findTailscaleIPv4', () => {
 
 describe('resolveTailscaleIPv4', () => {
   it('prefers the interface table and never shells out', async () => {
-    const table: InterfaceTable = Object.fromEntries([v4('100.68.121.23')]);
-    await expect(resolveTailscaleIPv4({ interfaces: () => table, exec: forbiddenExec })).resolves.toBe('100.68.121.23');
+    const table: InterfaceTable = Object.fromEntries([v4('100.101.102.103')]);
+    await expect(resolveTailscaleIPv4({ interfaces: () => table, exec: forbiddenExec })).resolves.toBe('100.101.102.103');
   });
 
   it('falls back to `tailscale ip -4` when no interface matches', async () => {
     const calls: Array<{ file: string; args: readonly string[]; timeoutMs: number }> = [];
     const exec: ExecFn = async (file, args, opts) => {
       calls.push({ file, args, timeoutMs: opts.timeoutMs });
-      return '100.68.121.23\n';
+      return '100.101.102.103\n';
     };
-    await expect(resolveTailscaleIPv4({ interfaces: () => LAN, exec })).resolves.toBe('100.68.121.23');
+    await expect(resolveTailscaleIPv4({ interfaces: () => LAN, exec })).resolves.toBe('100.101.102.103');
     expect(calls).toEqual([{ file: 'tailscale', args: ['ip', '-4'], timeoutMs: 2_000 }]);
   });
 
   it('takes the first line when the CLI prints several', async () => {
-    await expect(resolveTailscaleIPv4({ interfaces: () => LAN, exec: execReturning('100.68.121.23\n100.68.121.24\n') })).resolves.toBe(
-      '100.68.121.23',
+    await expect(resolveTailscaleIPv4({ interfaces: () => LAN, exec: execReturning('100.101.102.103\n100.68.121.24\n') })).resolves.toBe(
+      '100.101.102.103',
     );
   });
 

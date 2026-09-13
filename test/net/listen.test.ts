@@ -167,10 +167,10 @@ describe('Host allowlist across bound addresses and MagicDNS', () => {
 });
 
 describe('non-loopback authentication (§16)', () => {
-  const policy = buildHostPolicy([{ address: '100.68.121.23', port: 47291 }], [MAGIC_DNS]);
+  const policy = buildHostPolicy([{ address: '100.101.102.103', port: 47291 }], [MAGIC_DNS]);
 
   function fakeReq(over: { remote?: string; method?: string; host?: string; authorization?: string }): IncomingMessage {
-    const headers: Record<string, string> = { host: over.host ?? '100.68.121.23:47291' };
+    const headers: Record<string, string> = { host: over.host ?? '100.101.102.103:47291' };
     if (over.authorization !== undefined) headers['authorization'] = over.authorization;
     return {
       method: over.method ?? 'GET',

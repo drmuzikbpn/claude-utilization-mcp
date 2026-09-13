@@ -12,7 +12,7 @@ import {
 import { utcMidnight, parseSince, parseTokensQuery } from '../src/server/query.js';
 
 const TOKEN = 'test-bearer-token';
-const policy = buildHostPolicy([{ address: '127.0.0.1', port: 47291 }, { address: '100.68.121.23', port: 47291 }]);
+const policy = buildHostPolicy([{ address: '127.0.0.1', port: 47291 }, { address: '100.101.102.103', port: 47291 }]);
 
 function fakeReq(over: {
   remote?: string;
@@ -43,7 +43,7 @@ describe('normalizeAddress / isLoopbackAddress', () => {
     expect(isLoopbackAddress(addr)).toBe(true);
   });
 
-  it.each(['100.68.121.23', '192.168.1.4', '10.0.0.1', 'fe80::1', undefined])('treats %s as remote', (addr) => {
+  it.each(['100.101.102.103', '192.168.1.4', '10.0.0.1', 'fe80::1', undefined])('treats %s as remote', (addr) => {
     expect(isLoopbackAddress(addr)).toBe(false);
   });
 });
@@ -68,7 +68,7 @@ describe('parseHostHeader', () => {
 
 describe('isHostAllowed', () => {
   it('accepts bound addresses, localhost and 127.0.0.1', () => {
-    for (const host of ['localhost', 'localhost:47291', '127.0.0.1:47291', '100.68.121.23:47291', 'LOCALHOST']) {
+    for (const host of ['localhost', 'localhost:47291', '127.0.0.1:47291', '100.101.102.103:47291', 'LOCALHOST']) {
       expect(isHostAllowed(host, policy), host).toBe(true);
     }
   });
@@ -118,7 +118,7 @@ describe('checkRequest gate order', () => {
   });
 
   it('requires the token for a non-loopback GET', () => {
-    const remote = { remote: '100.68.121.23', host: '100.68.121.23:47291' };
+    const remote = { remote: '100.101.102.103', host: '100.101.102.103:47291' };
     expect(checkRequest(fakeReq(remote), policy, TOKEN)).toMatchObject({ ok: false, status: 401 });
     expect(checkRequest(fakeReq({ ...remote, authorization: `Bearer ${TOKEN}` }), policy, TOKEN)).toMatchObject({
       ok: true,
@@ -127,12 +127,12 @@ describe('checkRequest gate order', () => {
   });
 
   it('rejects a wrong token from a non-loopback GET', () => {
-    const req = fakeReq({ remote: '100.68.121.23', host: '100.68.121.23:47291', authorization: 'Bearer nope' });
+    const req = fakeReq({ remote: '100.101.102.103', host: '100.101.102.103:47291', authorization: 'Bearer nope' });
     expect(checkRequest(req, policy, TOKEN)).toMatchObject({ ok: false, status: 401 });
   });
 
   it('never trusts a forged X-Forwarded-For style Host to claim loopback', () => {
-    const req = fakeReq({ remote: '100.68.121.23', host: 'localhost:47291' });
+    const req = fakeReq({ remote: '100.101.102.103', host: 'localhost:47291' });
     expect(checkRequest(req, policy, TOKEN)).toMatchObject({ ok: false, status: 401 });
   });
 

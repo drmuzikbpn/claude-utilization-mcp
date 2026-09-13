@@ -327,7 +327,7 @@ machine (DNS rebinding, `localhost` fetches from web pages).
 - Loopback is determined from the socket's remote address, never from headers.
 
 **Pairing.** `claude-usage configure pairing` prints
-`{ "v": 1, "name": "alans-mbp", "addr": "100.68.121.23", "port": 47291, "token": "…" }`
+`{ "v": 1, "name": "alans-mbp", "addr": "100.101.102.103", "port": 47291, "token": "…" }`
 as JSON and as a terminal QR code (single small dependency for QR rendering, CLI-only —
 the daemon never loads it). `--json` suppresses the QR.
 

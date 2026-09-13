@@ -193,7 +193,7 @@ node bin/claude-usage serve --verbose
 
 ```bash
 node bin/claude-usage configure pairing
-#   {"v":1,"name":"alans-mbp","addr":"100.68.121.23","port":47291,"token":"…"}
+#   {"v":1,"name":"alans-mbp","addr":"100.101.102.103","port":47291,"token":"…"}
 #   <QR block>
 node bin/claude-usage configure pairing --json    # JSON only, no QR
 ```
@@ -201,7 +201,7 @@ node bin/claude-usage configure pairing --json    # JSON only, no QR
 From the **second device** (phone on the tailnet, or another laptop):
 
 ```bash
-TOKEN=…  ADDR=100.68.121.23
+TOKEN=…  ADDR=100.101.102.103
 curl -s -o /dev/null -w '%{http_code}\n' http://$ADDR:47291/health
 #   401   ← non-loopback GET needs the token
 curl -s -H "Authorization: Bearer $TOKEN" http://$ADDR:47291/health | head -c 80

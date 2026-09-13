@@ -93,13 +93,13 @@ describe('the loopback hook exemption (§16 + §17.1)', () => {
 
   it('exempts them from loopback only — the tailnet still needs the token', () => {
     expect(checkRequest(req({}), policy, TOKEN).ok).toBe(true);
-    const remote = checkRequest(req({ remote: '100.68.121.23' }), policy, TOKEN);
+    const remote = checkRequest(req({ remote: '100.101.102.103' }), policy, TOKEN);
     expect(remote.ok).toBe(false);
     if (!remote.ok) {
       expect(remote.status).toBe(401);
       expect(remote.message.length).toBeGreaterThan(0);
     }
-    expect(checkRequest(req({ remote: '100.68.121.23', authorization: `Bearer ${TOKEN}` }), policy, TOKEN).ok).toBe(true);
+    expect(checkRequest(req({ remote: '100.101.102.103', authorization: `Bearer ${TOKEN}` }), policy, TOKEN).ok).toBe(true);
   });
 
   it('still requires the token for pause from loopback', () => {

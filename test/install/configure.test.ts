@@ -263,9 +263,9 @@ describe('pairing (§16)', () => {
     const ifaces = {
       lo0: [{ address: '127.0.0.1', family: 'IPv4' as const, internal: true, netmask: '', mac: '', cidr: null }],
       en0: [{ address: '192.168.1.5', family: 'IPv4' as const, internal: false, netmask: '', mac: '', cidr: null }],
-      tailscale0: [{ address: '100.68.121.23', family: 'IPv4' as const, internal: false, netmask: '', mac: '', cidr: null }],
+      tailscale0: [{ address: '100.101.102.103', family: 'IPv4' as const, internal: false, netmask: '', mac: '', cidr: null }],
     };
-    expect(firstTailscaleIPv4(ifaces)).toBe('100.68.121.23');
+    expect(firstTailscaleIPv4(ifaces)).toBe('100.101.102.103');
     expect(firstTailscaleIPv4({ lo0: ifaces.lo0 })).toBeNull();
   });
 
@@ -301,9 +301,9 @@ describe('pairing (§16)', () => {
     const b = bed();
     await runInstall(['--yes'], b.io);
     b.out = '';
-    expect(await b.configure(['pairing', '--json', '--addr', '192.168.1.194'])).toBe(0);
+    expect(await b.configure(['pairing', '--json', '--addr', '192.168.1.42'])).toBe(0);
     const payload = JSON.parse(b.out.trim()) as Record<string, unknown>;
-    expect(payload['addr']).toBe('192.168.1.194');
+    expect(payload['addr']).toBe('192.168.1.42');
     expect(await b.configure(['pairing', '--json', '--addr', 'not-an-ip'])).toBe(1);
   });
 
