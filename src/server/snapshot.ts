@@ -22,6 +22,8 @@ export interface SnapshotDeps {
   tokens(): TokensSource | null;
   /** Cached `~/.claude.json → oauthAccount` reader (§15). */
   user(): OauthAccount | null;
+  /** Live auto-updater state (§20); absent → the updater is not running (`disabled`). */
+  update?: UpdateStateProvider;
   version: string;
   startedAt: number;
   now(): number;
@@ -32,9 +34,13 @@ export interface UpdateStatus {
   channel: string;
   current: string;
   available: string | null;
-  state: 'idle' | 'checking' | 'downloading' | 'verifying' | 'ready' | 'deferred' | 'disabled';
+  /** `error` is §20's failed-verify/failed-apply state; the rest are §15's. */
+  state: 'idle' | 'checking' | 'downloading' | 'verifying' | 'ready' | 'deferred' | 'disabled' | 'error';
   deferredReason: string | null;
 }
+
+/** What `src/update` injects so `/health` and the SSE snapshot read the live state. */
+export type UpdateStateProvider = () => UpdateStatus;
 
 export interface TodayTotals extends TokenTotals {
   ready: boolean;
@@ -47,7 +53,7 @@ export interface SummaryBody {
   today: TodayTotals;
 }
 
-/** W8 owns auto-update; until then the daemon reports it as disabled. */
+/** The shape when no updater is attached: auto-update is simply off. */
 export function updateBody(version: string): UpdateStatus {
   return {
     channel: 'stable',
@@ -56,6 +62,11 @@ export function updateBody(version: string): UpdateStatus {
     state: 'disabled',
     deferredReason: null,
   };
+}
+
+/** The live `update` object — the injected provider, or the disabled fallback (§20). */
+export function updateStatusOf(d: Pick<SnapshotDeps, 'update' | 'version'>): UpdateStatus {
+  return d.update?.() ?? updateBody(d.version);
 }
 
 export function healthBody(d: SnapshotDeps): Record<string, unknown> {
@@ -68,7 +79,7 @@ export function healthBody(d: SnapshotDeps): Record<string, unknown> {
     uptimeMs: Math.max(0, d.now() - d.startedAt),
     pid: process.pid,
     user: d.user(),
-    update: updateBody(d.version),
+    update: updateStatusOf(d),
     stats: {
       filesTracked: stats.filesTracked,
       eventsIndexed: stats.eventsIndexed,

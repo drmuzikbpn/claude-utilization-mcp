@@ -1,0 +1,97 @@
+name: Release
+
+# Every green push to `main` cuts a release (§20): the version is
+# MAJOR.MINOR.<commit count>+<short sha>, the tarball is what the auto-updater
+# downloads, and SHA256SUMS is what it verifies against.
+on:
+  push: { branches: [main] }
+  workflow_dispatch:
+
+# Two pushes in quick succession would otherwise race for the same tag; the second
+# waits for the first rather than cancelling it (a half-published release is worse
+# than a slow one).
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Job level so the publish step's own `if:` can read it — a step cannot see env it
+    # defines itself. An unset secret is the empty string, which skips the publish.
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 } # rev-list --count needs the whole history
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, registry-url: 'https://registry.npmjs.org' }
+
+      - run: npm ci
+
+      # The same gates as CI — nothing is published that would have failed a PR.
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: Compute version
+        id: version
+        run: |
+          set -euo pipefail
+          v="$(node scripts/release-version.mjs)"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+          echo "Release version: $v"
+
+      - name: Stamp package.json
+        run: npm version --no-git-tag-version "${{ steps.version.outputs.version }}"
+
+      - name: Pack and checksum
+        id: pack
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          # `npm pack` names the scoped tarball drmuzikbpn-claude-usage-<v>.tgz; the
+          # release asset keeps the CLI's own name (§23.1).
+          packed="$(npm pack --pack-destination release --silent | tail -n 1)"
+          asset="claude-usage-${{ steps.version.outputs.version }}.tgz"
+          mv "release/$packed" "release/$asset"
+          cd release
+          sha256sum "$asset" > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Tag
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            release/claude-usage-${{ steps.version.outputs.version }}.tgz
+            release/SHA256SUMS
+
+      # Publishing is optional: a fork (or this repo before NPM_TOKEN is configured)
+      # still gets a GitHub Release, which is what the auto-updater consumes. It is also
+      # allowed to fail — the registry treats `1.2.3+sha` and `1.2.3+othersha` as the same
+      # version, so a same-commit-count rebuild is rejected there while the tag and the
+      # release asset (which the updater uses) remain perfectly valid.
+      - name: Publish to npm
+        if: ${{ env.NPM_TOKEN != '' }}
+        continue-on-error: true
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --provenance

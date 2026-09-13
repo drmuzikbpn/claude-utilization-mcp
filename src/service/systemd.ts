@@ -8,6 +8,7 @@ import {
   SYSTEMD_UNIT,
   SYSTEMD_UNIT_NAME,
   tailLines,
+  UPDATE_RESTART_EXIT_CODE,
   type ExecRunner,
   type ServiceManager,
   type ServiceManagerOptions,
@@ -35,6 +36,10 @@ After=network.target
 Type=simple
 ExecStart=${exec}
 ${envLines}
+# Restart policy (§20, §23.9): exit 0 means "stay down" — that is what
+# "configure service off" relies on. The auto-updater asks for its relaunch by exiting
+# ${String(UPDATE_RESTART_EXIT_CODE)} (EX_TEMPFAIL), which on-failure restarts, exactly like launchd's
+# KeepAlive.SuccessfulExit=false on macOS.
 Restart=on-failure
 RestartSec=5
 
