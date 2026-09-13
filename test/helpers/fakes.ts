@@ -1,7 +1,7 @@
 import { defaultConfig, type Config } from '../../src/config.js';
 import { normalizeLimits } from '../../src/limits/normalize.js';
 import { emptySnapshot, type LimitsSnapshot } from '../../src/limits/types.js';
-import type { LimitsProvider } from '../../src/server/index.js';
+import type { LimitsObservable, LimitsProvider } from '../../src/server/index.js';
 import {
   zeroTotals,
   type ScanStats,
@@ -37,17 +37,27 @@ export function snapshotWithPercents(percents: Record<string, number>, severity?
   };
 }
 
-export class FakeLimitsProvider implements LimitsProvider {
+export class FakeLimitsProvider implements LimitsProvider, LimitsObservable {
   refreshCalls = 0;
   rateLimited = false;
+  private readonly listeners = new Set<() => void>();
   constructor(private current: LimitsSnapshot = fixtureSnapshot()) {}
 
   snapshot(): LimitsSnapshot {
     return this.current;
   }
 
+  /** Stands in for a poll that changed the body — the real poller notifies the same way. */
   set(snapshot: LimitsSnapshot): void {
     this.current = snapshot;
+    for (const cb of [...this.listeners]) cb();
+  }
+
+  onChange(cb: () => void): () => void {
+    this.listeners.add(cb);
+    return () => {
+      this.listeners.delete(cb);
+    };
   }
 
   async refresh(): Promise<{ rateLimited: boolean; snapshot: LimitsSnapshot }> {

@@ -301,3 +301,102 @@ describe('LimitsPoller refresh', () => {
     expect(h.timers.pendingCount).toBe(0);
   });
 });
+
+describe('LimitsPoller.onChange (§19)', () => {
+  /** The fixture with one percent moved, so the normalized body genuinely differs. */
+  function moved(percent: number): Record<string, unknown> {
+    const raw = liveLimitsFixture() as unknown as Record<string, unknown>;
+    const five = raw['five_hour'] as Record<string, unknown>;
+    return { ...raw, five_hour: { ...five, utilization: percent } };
+  }
+
+  it('fires on the first successful poll and not on an identical one', async () => {
+    const h = harness();
+    let fired = 0;
+    h.poller.onChange(() => {
+      fired += 1;
+    });
+
+    await h.poller.refresh();
+    expect(fired).toBe(1);
+
+    h.timers.clock += 10_000;
+    await h.poller.refresh();
+    expect(h.calls).toHaveLength(2);
+    expect(fired).toBe(1);
+  });
+
+  it('fires when the normalized body changes', async () => {
+    const h = harness();
+    let fired = 0;
+    h.poller.onChange(() => {
+      fired += 1;
+    });
+    await h.poller.refresh();
+
+    h.setResult(async () => moved(77));
+    h.timers.clock += 10_000;
+    await h.poller.refresh();
+    expect(fired).toBe(2);
+  });
+
+  it('ignores a changed fetchedAt on its own', async () => {
+    const h = harness();
+    await h.poller.refresh();
+    let fired = 0;
+    h.poller.onChange(() => {
+      fired += 1;
+    });
+    h.timers.clock += 60_000;
+    await h.poller.refresh();
+    expect(h.poller.snapshot().fetchedAt).toMatch(/Z$/);
+    expect(fired).toBe(0);
+  });
+
+  it('fires once when a poll starts failing, not on every repeat', async () => {
+    const h = harness();
+    await h.poller.refresh();
+    let fired = 0;
+    h.poller.onChange(() => {
+      fired += 1;
+    });
+
+    h.setResult(async () => {
+      throw new LimitsError('network', 'boom');
+    });
+    h.timers.clock += 10_000;
+    await h.poller.refresh();
+    expect(h.poller.snapshot()).toMatchObject({ stale: true, error: { code: 'network' } });
+    expect(fired).toBe(1);
+
+    h.timers.clock += 10_000;
+    await h.poller.refresh();
+    expect(fired).toBe(1);
+
+    // Recovery is news again.
+    h.setResult(async () => liveLimitsFixture());
+    h.timers.clock += 10_000;
+    await h.poller.refresh();
+    expect(fired).toBe(2);
+  });
+
+  it('stops delivering after unsubscribe, and survives a throwing listener', async () => {
+    const h = harness();
+    const seen: string[] = [];
+    const off = h.poller.onChange(() => seen.push('a'));
+    h.poller.onChange(() => {
+      seen.push('b');
+      throw new Error('listener blew up');
+    });
+    h.poller.onChange(() => seen.push('c'));
+
+    await h.poller.refresh();
+    expect(seen).toEqual(['a', 'b', 'c']);
+
+    off();
+    h.setResult(async () => moved(31));
+    h.timers.clock += 10_000;
+    await h.poller.refresh();
+    expect(seen).toEqual(['a', 'b', 'c', 'b', 'c']);
+  });
+});

@@ -183,7 +183,9 @@ export function checkRequest(req: IncomingMessage, policy: HostPolicy, token: st
       status: 401,
       code: 'unauthorized',
       message: 'a valid Authorization: Bearer token is required',
-      hint: loopback ? 'mutating requests need the token even from loopback' : undefined,
+      hint: loopback
+        ? 'mutating requests need the token even from loopback'
+        : 'pair this device with `claude-usage configure pairing`',
     };
   }
   return { ok: true, loopback };

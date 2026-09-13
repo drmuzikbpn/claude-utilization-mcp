@@ -1,11 +1,14 @@
+import { existsSync } from 'node:fs';
 import { DaemonClient } from './clients/http.js';
 import { resolveConfigDir } from './config.js';
 import type { LimitStatus } from './limits/status.js';
 import type { NormalizedLimit } from './limits/types.js';
-import { HEADLINE_IDS, parseHookStdin, type SummaryBody } from './hook.js';
+import { HEADLINE_IDS, parseHookStdin, pausedMarkerPath, type SummaryBody } from './hook.js';
 
 export const STATUSLINE_TIMEOUT_MS = 400;
 export const SEPARATOR = ' · ';
+/** §18.2: what a soft-paused session shows in front of its usage line. */
+export const PAUSED_PREFIX = `⏸ paused from dashboard${SEPARATOR}`;
 
 const SHORT_LABELS: Record<string, string> = { session: '5h', weekly_all: '7d' };
 
@@ -49,6 +52,21 @@ export function formatStatusline(summary: SummaryBody, color: boolean): string |
   return parts.length === 0 ? null : parts.join(SEPARATOR);
 }
 
+/**
+ * §18.2: the gate hook drops `<configDir>/paused/<sessionId>` while a session is soft-paused
+ * and removes it on resume, so the status line can say so without reaching the daemon.
+ */
+export function isSessionPaused(configDir: string, sessionId: string | undefined): boolean {
+  // The id comes from hook stdin: refuse anything that could walk out of `paused/`.
+  if (typeof sessionId !== 'string' || sessionId.length === 0) return false;
+  if (sessionId.includes('/') || sessionId.includes('\\') || sessionId.startsWith('.')) return false;
+  try {
+    return existsSync(pausedMarkerPath(configDir, sessionId));
+  } catch {
+    return false;
+  }
+}
+
 function isSummary(v: unknown): v is SummaryBody {
   if (typeof v !== 'object' || v === null) return false;
   const rec = v as Record<string, unknown>;
@@ -67,8 +85,10 @@ export async function runStatusline(io: StatuslineIO = {}): Promise<number> {
   const color = io.color ?? (env['NO_COLOR'] === undefined || env['NO_COLOR'] === '');
 
   try {
-    // Claude Code passes session JSON on stdin; we read and ignore it for now.
-    parseHookStdin(io.stdin);
+    // Claude Code passes session JSON on stdin; the session id tells us whether this very
+    // session is paused (§18.2).
+    const input = parseHookStdin(io.stdin);
+    const paused = isSessionPaused(configDir, input.session_id);
 
     const client = io.client ?? new DaemonClient({ configDir, timeoutMs: io.timeoutMs ?? STATUSLINE_TIMEOUT_MS });
     const body = await client.get('/v1/summary', { timeoutMs: io.timeoutMs ?? STATUSLINE_TIMEOUT_MS });
@@ -76,7 +96,7 @@ export async function runStatusline(io: StatuslineIO = {}): Promise<number> {
 
     const line = formatStatusline(body, color);
     if (line === null) return 0;
-    out(`${line}\n`);
+    out(`${paused ? PAUSED_PREFIX : ''}${line}\n`);
     return 0;
   } catch {
     return 0;
