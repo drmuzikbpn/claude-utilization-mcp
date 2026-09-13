@@ -45,6 +45,10 @@
             android:label="Pair machine"
             android:screenOrientation="sensor" />
 
+        <service
+            android:name=".service.DeckService"
+            android:exported="false" />
+
         <receiver
             android:name=".kiosk.DeviceAdminReceiver"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
