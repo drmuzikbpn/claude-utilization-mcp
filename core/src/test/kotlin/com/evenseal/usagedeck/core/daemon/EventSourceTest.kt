@@ -28,7 +28,7 @@ class EventSourceTest {
         runCatching { server.shutdown() }
     }
 
-    private fun fixture(n: String) = javaClass.getResource("/fixtures/$n")!!.readText()
+    private fun fixture(n: String) = Fixtures.text(n)
 
     @Test
     fun `emits Open then parsed events then Closed`() = runTest {
@@ -48,7 +48,11 @@ class EventSourceTest {
 
     @Test
     fun `401 closes with unauthorized`() = runTest {
-        server.enqueue(MockResponse().setResponseCode(401).setBody(fixture("error-401.json")))
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(Fixtures.errorStatus("unauthorized"))
+                .setBody(Fixtures.errorBody("unauthorized"))
+        )
         val last = DaemonEventSource(cfg, OkHttpClient()).events().toList().last() as Connection.Closed
         assertEquals("unauthorized", last.error!!.code)
     }
