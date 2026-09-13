@@ -588,7 +588,11 @@ describe('SSE fixtures for the dashboard client', () => {
       expect(() => JSON.parse((data as RegExpExecArray)[1] as string)).not.toThrow();
       names.push((name as RegExpExecArray)[1] as string);
     }
-    expect(names).toEqual(['snapshot', 'limits', 'spend', 'session', 'pause', 'heartbeat']);
+    // Captured from a live daemon: a session was registered and soft-paused before the client
+    // connected, then resumed and heartbeated; the poller did not change during the capture.
+    expect(names[0]).toBe('snapshot');
+    expect(names[names.length - 1]).toBe('heartbeat');
+    expect(names).toEqual(['snapshot', 'pause', 'session', 'spend', 'spend', 'heartbeat']);
   });
 
   it('snapshot.json is exactly the data of the transcript’s snapshot frame', () => {

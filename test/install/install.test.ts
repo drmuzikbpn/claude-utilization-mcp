@@ -1,0 +1,329 @@
+import { afterAll, describe, expect, it } from 'vitest';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { runInstall } from '../../src/install/apply.js';
+import type { InstallIO } from '../../src/install/context.js';
+import { MCP_KEY } from '../../src/install/claude-json.js';
+import { backupPathFor, hookCommand } from '../../src/install/settings-merge.js';
+import { claudeJsonPath, currentBin, currentLink, settingsPath, versionDir } from '../../src/paths.js';
+import { cleanupAllTempHomes, fakeExec, fakePackage, FakeService, scriptedPrompter, tempHome } from './helpers.js';
+
+afterAll(cleanupAllTempHomes);
+
+const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'install');
+const TOKEN = 'deterministic-token-for-tests';
+
+interface Bed {
+  env: NodeJS.ProcessEnv;
+  home: string;
+  configDir: string;
+  service: FakeService;
+  exec: ReturnType<typeof fakeExec>;
+  out: string;
+  err: string;
+  io: InstallIO;
+  run(argv: string[]): Promise<number>;
+}
+
+function bed(opts: { platform?: string; settings?: string; healthy?: boolean; prompt?: InstallIO['prompt']; isTTY?: boolean } = {}): Bed {
+  const h = tempHome();
+  if (opts.settings !== undefined) {
+    const file = settingsPath(h.env);
+    mkdirSync(dirname(file), { recursive: true });
+    copyFileSync(join(FIXTURES, opts.settings), file);
+  }
+  const service = new FakeService(opts.platform === 'linux' ? 'systemd' : 'launchd');
+  const exec = fakeExec();
+  const b: Bed = {
+    env: h.env,
+    home: h.home,
+    configDir: h.configDir,
+    service,
+    exec,
+    out: '',
+    err: '',
+    io: {} as InstallIO,
+    run: async () => 0,
+  };
+  b.io = {
+    stdout: (t) => {
+      b.out += t;
+    },
+    stderr: (t) => {
+      b.err += t;
+    },
+    env: h.env,
+    platform: opts.platform ?? 'darwin',
+    service,
+    exec: exec.runner,
+    nodePath: '/opt/node/v20/bin/node',
+    sourceDir: fakePackage('1.2.3'),
+    version: '1.2.3',
+    readCredentials: () => Promise.resolve('never-printed'),
+    health: () => Promise.resolve(opts.healthy ?? true),
+    sleep: () => Promise.resolve(),
+    randomToken: () => TOKEN,
+    isTTY: opts.isTTY ?? false,
+    ...(opts.prompt === undefined ? {} : { prompt: opts.prompt }),
+  };
+  b.run = (argv) => runInstall(argv, b.io);
+  return b;
+}
+
+function config(b: Bed): Record<string, never> & Record<string, unknown> {
+  return JSON.parse(readFileSync(join(b.configDir, 'config.json'), 'utf8')) as Record<string, never>;
+}
+
+function settings(b: Bed): Record<string, unknown> {
+  return JSON.parse(readFileSync(settingsPath(b.env), 'utf8')) as Record<string, unknown>;
+}
+
+describe('--yes accepts the defaults', () => {
+  it('installs the service, hooks and MCP but not the status line', async () => {
+    const b = bed({ settings: 'settings-populated.json' });
+    expect(await b.run(['--yes'])).toBe(0);
+
+    expect(b.service.calls).toContain('install');
+    const cfg = config(b);
+    expect(cfg['integrations']).toEqual({ service: true, hook: true, mcp: true, statusline: false });
+
+    const hooks = settings(b)['hooks'] as Record<string, unknown[]>;
+    expect(JSON.stringify(hooks)).toContain(hookCommand(currentBin(b.env)));
+    expect(hooks['UserPromptSubmit']).toHaveLength(1);
+
+    expect(b.exec.lines()).toContain(`claude mcp add --scope user ${MCP_KEY} -- ${currentBin(b.env)} mcp`);
+    // statusline defaults to off, so the user's own statusLine is untouched
+    expect(settings(b)['statusLine']).toMatchObject({ command: '/home/example/.claude/statusline.sh' });
+    expect(config(b)['integrations']).toMatchObject({ statusline: false });
+  });
+
+  it('mints a 32-byte bearer token into a 0600 config inside a 0700 directory', async () => {
+    const b = bed();
+    await b.run(['--yes']);
+    const cfg = config(b) as unknown as { auth: { token: string } };
+    expect(cfg.auth.token).toBe(TOKEN);
+    expect(statSync(join(b.configDir, 'config.json')).mode & 0o777).toBe(0o600);
+    expect(statSync(b.configDir).mode & 0o777).toBe(0o700);
+  });
+
+  it('does not rotate an existing token on a re-run', async () => {
+    const b = bed();
+    await b.run(['--yes']);
+    b.io.randomToken = () => 'a-different-token';
+    await b.run(['--yes']);
+    expect((config(b) as unknown as { auth: { token: string } }).auth.token).toBe(TOKEN);
+  });
+
+  it('builds the unit from the absolute node path and the current symlink', async () => {
+    const b = bed();
+    await b.run(['--yes']);
+    expect(b.service.unit).toEqual({
+      nodePath: '/opt/node/v20/bin/node',
+      binPath: currentBin(b.env),
+      args: ['serve'],
+      env: {
+        PATH: '/usr/bin:/bin',
+        XDG_CONFIG_HOME: join(b.home, '.config'),
+        XDG_DATA_HOME: join(b.home, '.local', 'share'),
+      },
+    });
+  });
+
+  it('lays out versions/<v>/ and points current at it before installing the service', async () => {
+    const b = bed();
+    await b.run(['--yes']);
+    expect(existsSync(versionDir('1.2.3', b.env))).toBe(true);
+    expect(existsSync(currentLink(b.env))).toBe(true);
+    expect(existsSync(currentBin(b.env))).toBe(true);
+    expect(b.out).not.toContain('already installed');
+  });
+
+  it('skips the copy when the version is already laid out', async () => {
+    const b = bed();
+    await b.run(['--yes']);
+    b.out = '';
+    await b.run(['--yes']);
+    expect(b.out).toContain('already installed');
+  });
+
+  it('is idempotent — a second run changes nothing in settings.json', async () => {
+    const b = bed({ settings: 'settings-populated.json' });
+    await b.run(['--yes']);
+    const after = readFileSync(settingsPath(b.env), 'utf8');
+    await b.run(['--yes']);
+    expect(readFileSync(settingsPath(b.env), 'utf8')).toBe(after);
+  });
+
+  it('writes the .bak exactly once', async () => {
+    const b = bed({ settings: 'settings-populated.json' });
+    const original = readFileSync(join(FIXTURES, 'settings-populated.json'), 'utf8');
+    await b.run(['--yes']);
+    await b.run(['--yes']);
+    expect(readFileSync(backupPathFor(settingsPath(b.env)), 'utf8')).toBe(original);
+  });
+});
+
+describe('opt-outs', () => {
+  it('--no-service --no-hook --no-mcp leaves every integration alone', async () => {
+    const b = bed({ settings: 'settings-populated.json' });
+    const before = readFileSync(settingsPath(b.env), 'utf8');
+    expect(await b.run(['--yes', '--no-service', '--no-hook', '--no-mcp'])).toBe(0);
+
+    expect(b.service.calls).toEqual([]);
+    expect(b.exec.lines()).toEqual([]);
+    expect(readFileSync(settingsPath(b.env), 'utf8')).toBe(before);
+    expect(config(b)['integrations']).toEqual({ service: false, hook: false, mcp: false, statusline: false });
+    expect(b.out).toContain('run `claude-usage serve` yourself');
+  });
+
+  it('--statusline sets statusLine when there is none', async () => {
+    const b = bed({ settings: 'settings-empty.json' });
+    await b.run(['--yes', '--statusline']);
+    expect(settings(b)['statusLine']).toEqual({ type: 'command', command: `${currentBin(b.env)} statusline` });
+  });
+
+  it('--statusline prints the snippet instead of overwriting an existing statusLine (§7.3)', async () => {
+    const b = bed({ settings: 'settings-populated.json' });
+    await b.run(['--yes', '--statusline']);
+    expect(settings(b)['statusLine']).toMatchObject({ command: '/home/example/.claude/statusline.sh' });
+    expect(b.out).toContain(`${currentBin(b.env)} statusline`);
+    expect(b.out).toContain('append this to your own script');
+  });
+
+  it('--tailscale appends the bind entry once', async () => {
+    const b = bed();
+    await b.run(['--yes', '--tailscale']);
+    expect(config(b)['bind']).toEqual(['127.0.0.1', 'tailscale']);
+    await b.run(['--yes', '--tailscale']);
+    expect(config(b)['bind']).toEqual(['127.0.0.1', 'tailscale']);
+  });
+
+  it('rejects unknown options before doing anything', async () => {
+    const b = bed();
+    expect(await b.run(['--nope'])).toBe(1);
+    expect(b.err).toContain('unknown option "--nope"');
+    expect(existsSync(join(b.configDir, 'config.json'))).toBe(false);
+  });
+});
+
+describe('confirmation', () => {
+  it('asks about each item and honours scripted answers', async () => {
+    const scripted = scriptedPrompter([true, false, false, true]);
+    const b = bed({ settings: 'settings-empty.json', prompt: scripted.prompt, isTTY: true });
+    expect(await b.run([])).toBe(0);
+    expect(scripted.questions).toEqual([
+      'background service?',
+      'Claude Code hooks?',
+      'MCP server?',
+      'status line?',
+    ]);
+    expect(config(b)['integrations']).toEqual({ service: true, hook: false, mcp: false, statusline: true });
+    expect(settings(b)['hooks']).toBeUndefined();
+    expect(settings(b)['statusLine']).toBeDefined();
+  });
+
+  it('fails on a non-TTY without --yes, and changes nothing', async () => {
+    const b = bed({ isTTY: false });
+    expect(await b.run([])).toBe(1);
+    expect(b.err).toContain('--yes');
+    expect(b.service.calls).toEqual([]);
+    expect(existsSync(join(b.configDir, 'config.json'))).toBe(false);
+  });
+});
+
+describe('preflight gate', () => {
+  it('stops on an unsupported platform without writing anything', async () => {
+    const b = bed({ platform: 'win32' });
+    expect(await b.run(['--yes'])).toBe(1);
+    expect(b.err).toContain('nothing was changed');
+    expect(existsSync(join(b.configDir, 'config.json'))).toBe(false);
+    expect(existsSync(claudeJsonPath(b.env))).toBe(false);
+    expect(b.service.calls).toEqual([]);
+  });
+
+  it('continues with a warning when credentials are unreadable', async () => {
+    const b = bed();
+    b.io.readCredentials = () => Promise.reject(new Error('Keychain item not readable'));
+    expect(await b.run(['--yes'])).toBe(0);
+    expect(b.out).toContain('[warn] credentials');
+    expect(b.service.calls).toContain('install');
+  });
+});
+
+describe('health verification', () => {
+  it('reports the daemon healthy in the status table', async () => {
+    const b = bed({ healthy: true });
+    await b.run(['--yes']);
+    expect(b.out).toContain('daemon');
+    expect(b.out).toContain('healthy on port 47291');
+  });
+
+  it('notes the failure and still exits 0 when /health never answers', async () => {
+    const b = bed({ healthy: false });
+    expect(await b.run(['--yes'])).toBe(0);
+    expect(b.out).toContain('did not answer GET /health within 5s');
+  });
+
+  it('retries until /health answers', async () => {
+    const b = bed();
+    let calls = 0;
+    b.io.health = () => {
+      calls += 1;
+      return Promise.resolve(calls >= 3);
+    };
+    await b.run(['--yes']);
+    expect(calls).toBe(3);
+    expect(b.out).toContain('healthy on port');
+  });
+});
+
+describe('linger (systemd only)', () => {
+  it('reports the result and never fails install', async () => {
+    const b = bed({ platform: 'linux' });
+    const systemd = Object.assign(b.service, {
+      kind: 'systemd' as const,
+      enableLinger: () => Promise.resolve({ ok: false, message: 'loginctl not found — lingering not enabled' }),
+    });
+    b.io.service = systemd;
+    expect(await b.run(['--yes', '--linger'])).toBe(0);
+    expect(b.out).toContain('loginctl not found');
+  });
+
+  it('is ignored on launchd', async () => {
+    const b = bed({ platform: 'darwin' });
+    expect(await b.run(['--yes', '--linger'])).toBe(0);
+    expect(b.out).toContain('--linger only applies to systemd');
+  });
+});
+
+describe('MCP fallback', () => {
+  it('merges ~/.claude.json directly and warns when claude is missing', async () => {
+    const h = tempHome();
+    const service = new FakeService();
+    let out = '';
+    const code = await runInstall(['--yes'], {
+      stdout: (t) => {
+        out += t;
+      },
+      stderr: () => undefined,
+      env: h.env,
+      platform: 'darwin',
+      service,
+      exec: fakeExec(() => ({ code: 127 })).runner,
+      nodePath: '/usr/bin/node',
+      sourceDir: fakePackage('1.2.3'),
+      version: '1.2.3',
+      readCredentials: () => Promise.resolve('x'),
+      health: () => Promise.resolve(true),
+      sleep: () => Promise.resolve(),
+      randomToken: () => TOKEN,
+      isTTY: false,
+    });
+    expect(code).toBe(0);
+    const json = JSON.parse(readFileSync(claudeJsonPath(h.env), 'utf8')) as Record<string, Record<string, unknown>>;
+    expect(json['mcpServers']?.[MCP_KEY]).toEqual({ type: 'stdio', command: currentBin(h.env), args: ['mcp'] });
+    expect(statSync(claudeJsonPath(h.env)).mode & 0o777).toBe(0o600);
+    expect(out).toContain('quit running Claude Code sessions');
+  });
+});
