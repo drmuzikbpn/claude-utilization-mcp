@@ -1,0 +1,32 @@
+{
+  "name": "@drmuzikbpn/claude-usage",
+  "version": "0.1.0",
+  "description": "Local daemon + hook + MCP server that tells Claude Code sessions how close the account is to its rate limits, and aggregates local token spend. Not affiliated with Anthropic.",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "claude-usage": "bin/claude-usage" },
+  "files": ["bin", "dist", "README.md", "LICENSE"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepare": "lefthook install || true"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.30.0",
+    "@types/node": "^22.0.0",
+    "@types/qrcode-terminal": "^0.12.2",
+    "eslint": "^9.30.0",
+    "lefthook": "^1.11.0",
+    "typescript": "^5.8.0",
+    "typescript-eslint": "^8.35.0",
+    "vitest": "^3.2.0"
+  }
+}
