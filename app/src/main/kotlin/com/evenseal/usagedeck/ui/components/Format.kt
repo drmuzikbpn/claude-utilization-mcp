@@ -15,7 +15,7 @@ object Format {
     private val HOUR_MINUTE: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.UK)
     private val DAY_HOUR_MINUTE: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE HH:mm", Locale.UK)
 
-    /** `0`, `999`, `4.2k`, `1.2M`, `12.4M` — a trailing `.0` is always dropped. */
+    /** `0`, `999`, `4.2k`, `1.2M`, `12.4M`, `3.1B` — a trailing `.0` is always dropped. */
     fun tokens(n: Long): String = compact(n)
 
     /** `0/min`, `412/min`, `38k/min`. */
@@ -86,10 +86,11 @@ object Format {
         val value = n.coerceAtLeast(0)
         if (value < 1_000) return value.toString()
         val thousands = value / 1_000.0
-        return if (thousands < 999.95) {
-            oneDecimal(thousands) + "k"
-        } else {
-            oneDecimal(value / 1_000_000.0) + "M"
+        val millions = value / 1_000_000.0
+        return when {
+            thousands < 999.95 -> oneDecimal(thousands) + "k"
+            millions < 999.95 -> oneDecimal(millions) + "M"
+            else -> oneDecimal(value / 1_000_000_000.0) + "B"
         }
     }
 

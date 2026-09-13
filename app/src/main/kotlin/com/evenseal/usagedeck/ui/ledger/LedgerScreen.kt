@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
@@ -16,7 +18,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -34,6 +39,7 @@ import com.evenseal.usagedeck.ui.components.HomeEmptyBody
 import com.evenseal.usagedeck.ui.components.LimitBar
 import com.evenseal.usagedeck.ui.components.PauseButton
 import com.evenseal.usagedeck.ui.components.SessionRow
+import com.evenseal.usagedeck.ui.components.Sparkline
 import com.evenseal.usagedeck.ui.components.StatusBar
 import com.evenseal.usagedeck.ui.components.Tag
 import com.evenseal.usagedeck.ui.components.usersWithData
@@ -48,6 +54,7 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
     val now by vm.now.collectAsStateWithLifecycle()
     val wifi by vm.wifi.collectAsStateWithLifecycle()
     val chip by vm.alertChip.collectAsStateWithLifecycle()
+    val expanded by vm.expanded.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize().background(DeckColors.bg)) {
         StatusBar(
@@ -85,9 +92,18 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
             } else {
                 LazyColumn(modifier = Modifier.weight(1f)) {
                     team.projects.filter { it.sessions.isNotEmpty() }.forEach { project ->
+                        val open = "${project.machineId}|${project.key}" in expanded
                         item(key = "h:${project.machineId}:${project.key}") {
-                            ProjectHeader(vm = vm, project = project, now = now, onOpen = onOpen)
+                            ProjectHeader(
+                                vm = vm,
+                                project = project,
+                                now = now,
+                                expanded = open,
+                                onToggle = { vm.toggleExpanded(project.machineId, project.key) },
+                                onOpen = onOpen
+                            )
                         }
+                        if (!open) return@forEach
                         items(project.sessions, key = { "${project.machineId}:${it.sessionId}" }) { session ->
                             val target = PauseTarget.Session(project.machineId, session.sessionId)
                             SessionRow(
@@ -197,37 +213,88 @@ private fun SessionsHeader(liveCount: Int) {
     }
 }
 
+/**
+ * A project row is the collapsed summary of its sessions: name, worktree count, live count, the
+ * project's own burn rate and 30-minute sparkline, and a pause control for the whole project.
+ * Tapping the row expands it to the individual sessions; `›` opens the drill-in.
+ */
 @Composable
-internal fun ProjectHeader(vm: DeckViewModel, project: ProjectView, now: Instant, onOpen: (Route) -> Unit) {
+internal fun ProjectHeader(
+    vm: DeckViewModel,
+    project: ProjectView,
+    now: Instant,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onOpen: (Route) -> Unit
+) {
     val target = PauseTarget.Project(project.machineId, project.key)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onOpen(Route.Project(project.machineId, project.key)) }
-            .padding(horizontal = 10.dp, vertical = 4.dp),
+            .clickable(onClick = onToggle)
+            .semantics { contentDescription = "${if (expanded) "collapse" else "expand"} ${project.name}" }
+            .padding(start = 6.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Text(
-            text = project.name,
-            color = DeckColors.fg,
+            text = if (expanded) "▾" else "▸",
+            color = DeckColors.dim,
             fontFamily = DeckType.text,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 13.sp,
-            modifier = Modifier.weight(1f)
+            fontSize = 12.sp,
+            modifier = Modifier.width(12.dp)
         )
-        if (project.worktreeCount > 1) {
-            Text(
-                text = "${project.worktreeCount} wt",
-                color = DeckColors.muted,
-                fontFamily = DeckType.mono,
-                fontSize = 10.sp
-            )
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = project.name,
+                    color = DeckColors.fg,
+                    fontFamily = DeckType.text,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (project.worktreeCount > 1) Tag(text = "${project.worktreeCount} wt")
+                Tag(text = "${project.sessions.size} live")
+            }
+            if (!expanded) {
+                Text(
+                    text = "${Format.tokens(project.liveTokens.total)} today",
+                    color = DeckColors.muted,
+                    fontFamily = DeckType.text,
+                    fontSize = 11.sp
+                )
+            }
         }
+        Text(
+            text = Format.ratePerMin(vm.projectRate(project.machineId, project.key)),
+            color = DeckColors.muted,
+            fontFamily = DeckType.numeral,
+            fontWeight = FontWeight.Medium,
+            fontSize = 16.sp,
+            textAlign = TextAlign.End,
+            modifier = Modifier.width(74.dp)
+        )
+        Sparkline(
+            series = vm.projectSparkline(project.machineId, project.key),
+            modifier = Modifier.width(64.dp).height(20.dp)
+        )
         PauseButton(
             visual = vm.visual(target),
             onTap = { vm.tap(target) },
             onHold = { vm.hold(target) }
+        )
+        Text(
+            text = "›",
+            color = DeckColors.accent,
+            fontFamily = DeckType.text,
+            fontSize = 22.sp,
+            modifier = Modifier
+                .clickable { onOpen(Route.Project(project.machineId, project.key)) }
+                .semantics { contentDescription = "open ${project.name}" }
+                .padding(horizontal = 8.dp, vertical = 4.dp)
         )
     }
 }

@@ -92,6 +92,11 @@ class EndToEndTest {
         }
 
         // 2. A tap on a session's pause control reaches the daemon as this phone's own rule.
+        // In portrait the project starts collapsed; open it (the wide dock has no such header).
+        compose.onAllNodesWithContentDescription("expand $PROJECT").fetchSemanticsNodes().firstOrNull()?.let {
+            compose.onAllNodesWithContentDescription("expand $PROJECT")[0].performClick()
+            compose.waitForIdle()
+        }
         val controls = compose.onAllNodesWithContentDescription(
             PauseButtonDefaults.CONTENT_DESCRIPTION,
             useUnmergedTree = true
