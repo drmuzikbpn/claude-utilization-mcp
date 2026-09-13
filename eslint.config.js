@@ -5,4 +5,6 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   { rules: { '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }] } },
+  // Plain Node ESM helper scripts (no TypeScript, no bundler): give them the globals.
+  { files: ['scripts/**/*.mjs'], languageOptions: { globals: { process: 'readonly' } } },
 );
