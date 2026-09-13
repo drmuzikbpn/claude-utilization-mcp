@@ -33,6 +33,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".wifi.CaptivePortalActivity"
+            android:exported="false"
+            android:label="Captive portal"
+            android:screenOrientation="sensor" />
+
         <receiver
             android:name=".kiosk.DeviceAdminReceiver"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
