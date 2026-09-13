@@ -7,6 +7,8 @@ export type ErrorCode =
   | 'not_found'
   | 'method_not_allowed'
   | 'misdirected_request'
+  | 'conflict'
+  | 'gone'
   | 'rate_limited'
   | 'internal_error';
 

@@ -56,6 +56,17 @@ export interface ScanStats {
   scan?: ScanProgress;
 }
 
+/** One transcript-known session (§17.2). `cwd` is the label the store recorded, if any. */
+export interface TranscriptSession {
+  sessionId: string;
+  /** The `~/.claude/projects/<dir>` directory name, verbatim (§23.6). */
+  projectKey: string;
+  /** Most recent counted timestamp, ISO-8601. */
+  lastActivityAt: string;
+  /** cwd of the session's first top-level line; `''` when unknown. */
+  cwd?: string;
+}
+
 export interface TokensSource {
   query(q: TokensQuery): TokensResponse;
   readonly ready: boolean;
@@ -63,6 +74,12 @@ export interface TokensSource {
   sessionTotals(sessionId: string): TokenTotals | null;
   sessionModel(sessionId: string): string | null;
   sessionStartedAt(sessionId: string): string | null;
+  /**
+   * Sessions the store has seen in transcripts — the source of §17.2's back-fill, which
+   * surfaces them with `pid: null`, `discovered: "transcript"`. Optional so a `TokensSource`
+   * that predates W3 (and the test fakes) still satisfies this interface.
+   */
+  listSessions?(): TranscriptSession[];
   /** Subscribe to store changes; returns an unsubscribe function. */
   onChange(cb: () => void): () => void;
 }

@@ -3,6 +3,8 @@ import { createTokenReader } from './credentials/index.js';
 import { LimitsPoller } from './limits/poller.js';
 import { ensureConfigDir, expandHome, loadConfig, resolveConfigDir, writeJsonFile, type Config } from './config.js';
 import { daemonFilePath } from './clients/http.js';
+import { EventBus } from './events/bus.js';
+import { createSessionsSubsystem, type SessionsSubsystem } from './sessions/index.js';
 import { createServer, type UsageServer } from './server/index.js';
 import type { TokensSource } from './server/types.js';
 import { getVersion } from './version.js';
@@ -23,6 +25,10 @@ export interface DaemonOptions {
   /** Start the limits poller (off in tests that do not want network timers). */
   poll?: boolean;
   port?: number;
+  /** W3: shared event bus; created here when omitted. */
+  bus?: EventBus;
+  /** W3: start the sessions/pause subsystem (default `true`). */
+  sessions?: boolean;
 }
 
 export interface DaemonHandle {
@@ -31,6 +37,8 @@ export interface DaemonHandle {
   readonly configDir: string;
   readonly server: UsageServer;
   readonly poller: LimitsPoller;
+  readonly bus: EventBus;
+  readonly sessions: SessionsSubsystem | null;
   stop(): Promise<void>;
 }
 
@@ -87,11 +95,21 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     log: debug,
   });
 
+  // --- W3: shared EventBus + sessions/pause subsystem (single wiring block) ---
+  // The bus is shared with the SSE endpoint; the subsystem loads `sessions.json` /
+  // `pause.json`, runs the §18.3 orphan sweep and starts the 15 s liveness timer.
+  const bus = opts.bus ?? new EventBus();
+  const sessions = opts.sessions === false ? null : createSessionsSubsystem({ configDir, bus, tokens: opts.tokens ?? null });
+  sessions?.start();
+  // ---------------------------------------------------------------------------
+
   const server = createServer({
     config,
     limits: poller,
     tokens: opts.tokens ?? null,
     version,
+    bus,
+    sessions,
   });
 
   const port = opts.port ?? config.port;
@@ -134,9 +152,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     configDir,
     server,
     poller,
+    bus,
+    sessions,
     async stop() {
       if (stopped) return;
       stopped = true;
+      // W3 §18.3: SIGCONT every hard-frozen pid before anything else shuts down.
+      sessions?.stop();
       poller.stop();
       await server.close();
       try {
