@@ -14,7 +14,7 @@ every value is invented.
 | `-home-dev-beta/<sessionB>.jsonl` | a second project: one line inside a 90-day window from 2026-09-13, one from 2025-01-01 for retention pruning |
 
 Counted totals across the whole tree (no retention applied):
-`input 1116, output 2228, cacheCreate 3336, cacheRead 4452, messages 5`, with
+`input 1116, output 2228, cacheCreate 3340, cacheRead 4452, messages 5`, with
 `parseErrors: 1`.
 
 Regenerate by hand — these files are checked in and are the contract the
