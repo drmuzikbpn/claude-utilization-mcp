@@ -1,0 +1,7 @@
+pre-commit:
+  parallel: false
+  commands:
+    ktlint:
+      run: JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew ktlintCheck --offline -q
+    unit:
+      run: JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew :core:test --offline -q
