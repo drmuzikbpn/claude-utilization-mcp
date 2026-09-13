@@ -37,7 +37,8 @@ sealed interface DaemonEvent {
 
     data class Update(val update: UpdateDto) : DaemonEvent
 
-    object Heartbeat : DaemonEvent
+    /** `{ rev, at }`. Both are advisory; the client ages machines off its own clock. */
+    data class Heartbeat(val rev: Long = 0, val at: String? = null) : DaemonEvent
 
     data class Unknown(val event: String) : DaemonEvent
 }
@@ -53,12 +54,16 @@ internal data class SnapshotDto(
     val user: UserDto? = null,
     val summary: SummaryDto = SummaryDto(),
     val limits: LimitsBodyDto = LimitsBodyDto(),
+    @Serializable(with = SessionsTolerant::class)
     val sessions: SessionsDto = SessionsDto(),
     /** Either the `/v1/pause/rules` body or a bare array of rules; both are accepted. */
     val rules: JsonElement? = null,
     val update: UpdateDto? = null,
     val rev: Long = 0
 )
+
+@Serializable
+internal data class HeartbeatDto(val rev: Long = 0, val at: String? = null)
 
 @Serializable
 internal data class SpendEventDto(
@@ -79,9 +84,13 @@ internal data class PauseEventDto(
 object SseParser {
     fun parse(event: String?, data: String): DaemonEvent {
         val name = event ?: ""
-        if (name == "heartbeat") return DaemonEvent.Heartbeat
         return runCatching {
             when (name) {
+                "heartbeat" -> if (data.isBlank()) {
+                    DaemonEvent.Heartbeat()
+                } else {
+                    DaemonJson.decodeFromString<HeartbeatDto>(data).let { DaemonEvent.Heartbeat(it.rev, it.at) }
+                }
                 "snapshot" -> snapshot(DaemonJson.decodeFromString<SnapshotDto>(data))
                 "limits" -> DaemonJson.decodeFromString<LimitsBodyDto>(data)
                     .let { DaemonEvent.Limits(it.limits, it.fetchedAt, it.stale) }
@@ -94,7 +103,7 @@ object SseParser {
                 "update" -> DaemonEvent.Update(DaemonJson.decodeFromString<UpdateDto>(data))
                 else -> DaemonEvent.Unknown(name)
             }
-        }.getOrElse { DaemonEvent.Unknown(name) }
+        }.getOrElse { if (name == "heartbeat") DaemonEvent.Heartbeat() else DaemonEvent.Unknown(name) }
     }
 
     private fun snapshot(dto: SnapshotDto) = DaemonEvent.Snapshot(

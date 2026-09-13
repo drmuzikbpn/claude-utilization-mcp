@@ -9,7 +9,14 @@ import org.junit.Test
 class SseEventsTest {
     @Test
     fun `heartbeat parses with empty data`() {
-        assertEquals(DaemonEvent.Heartbeat, SseParser.parse("heartbeat", ""))
+        assertEquals(DaemonEvent.Heartbeat(), SseParser.parse("heartbeat", ""))
+        assertEquals(DaemonEvent.Heartbeat(), SseParser.parse("heartbeat", "{not json"))
+    }
+
+    @Test
+    fun `heartbeat carries rev and at when the daemon sends them`() {
+        val e = SseParser.parse("heartbeat", """{"rev":5,"at":"2026-09-13T14:00:15.000Z"}""")
+        assertEquals(DaemonEvent.Heartbeat(5, "2026-09-13T14:00:15.000Z"), e)
     }
 
     @Test
