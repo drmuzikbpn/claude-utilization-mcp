@@ -39,6 +39,12 @@
             android:label="Captive portal"
             android:screenOrientation="sensor" />
 
+        <activity
+            android:name=".pairing.QrScanActivity"
+            android:exported="false"
+            android:label="Pair machine"
+            android:screenOrientation="sensor" />
+
         <receiver
             android:name=".kiosk.DeviceAdminReceiver"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
