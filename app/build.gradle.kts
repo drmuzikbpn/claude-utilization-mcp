@@ -7,12 +7,18 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+/**
+ * Runs git against the repository root with a clean environment. A Gradle daemon first started
+ * from a git hook (lefthook) inherits GIT_DIR/GIT_INDEX_FILE and would stamp every later build
+ * with "not a git repository"; dropping GIT_* makes the stamp independent of who started the daemon.
+ */
 fun git(vararg cmd: String): String = runCatching {
-    ProcessBuilder("git", *cmd)
-        .directory(rootDir)
-        .redirectErrorStream(true)
+    val process = ProcessBuilder("git", *cmd)
+        .directory(rootProject.projectDir)
+        .apply { environment().keys.removeAll { it.startsWith("GIT_") } }
         .start()
-        .inputStream.bufferedReader().readText().trim()
+    val out = process.inputStream.bufferedReader().readText().trim()
+    if (process.waitFor() == 0) out else ""
 }.getOrDefault("")
 
 val commitCount = git("rev-list", "--count", "HEAD").toIntOrNull() ?: 1
