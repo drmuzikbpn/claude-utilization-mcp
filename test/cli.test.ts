@@ -66,7 +66,8 @@ describe('dispatch', () => {
     expect(r.out).toBe('');
   });
 
-  it.each(['install', 'configure', 'uninstall', 'mcp', 'sessions', 'pause', 'resume'])(
+  // W3 implemented sessions/pause/resume; they are covered in test/pause/cli.test.ts.
+  it.each(['install', 'configure', 'uninstall', 'mcp'])(
     'exits 1 with "not implemented yet" for %s',
     async (cmd) => {
       const r = await cli([cmd]);
