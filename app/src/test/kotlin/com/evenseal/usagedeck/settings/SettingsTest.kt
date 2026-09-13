@@ -124,4 +124,17 @@ class SettingsTest {
         store.update { it.copy(escalationSeconds = 120) }
         assertEquals(120, store.pauseSettings.value.escalationSeconds)
     }
+
+    @Test
+    fun `display and sound toggles default on and round-trip off`() {
+        val store = SettingsStore(prefs)
+        val d = store.settings.value
+        assertTrue(d.autoDim && d.keepScreenOn && d.clock24h && d.sound)
+        store.update { it.copy(autoDim = false, keepScreenOn = false, clock24h = false, sound = false) }
+        val again = SettingsStore(prefs).settings.value
+        assertFalse(again.autoDim)
+        assertFalse(again.keepScreenOn)
+        assertFalse(again.clock24h)
+        assertFalse(again.sound)
+    }
 }

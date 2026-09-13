@@ -115,7 +115,7 @@ class DeckService : LifecycleService() {
     private fun deliver(alert: Alert, now: Instant) {
         lastRaisedAt[alert.key] = now
         val quiet = graph.settings.isQuiet(now.atZone(ZoneId.systemDefault()).toLocalTime())
-        graph.notifier.raise(alert, graph.mode.mode.value, quiet)
+        graph.notifier.raise(alert, graph.mode.mode.value, quiet, sound = graph.settings.settings.value.sound)
     }
 
     private fun buildNotification(): Notification {

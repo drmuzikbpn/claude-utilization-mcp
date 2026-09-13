@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.evenseal.usagedeck.settings.Settings
@@ -82,7 +83,7 @@ class SettingsScreenTest {
     @Test
     fun escalationOffWritesNull() {
         show()
-        compose.onNodeWithText("off").performClick()
+        compose.onNodeWithText("off").performScrollTo().performClick()
         assertNull(latest().escalationSeconds)
     }
 
@@ -97,7 +98,7 @@ class SettingsScreenTest {
     @Test
     fun pickingAnEscalationTimeoutWritesTheSeconds() {
         show()
-        compose.onNodeWithText("300s").performClick()
+        compose.onNodeWithText("300s").performScrollTo().performClick()
         assertEquals(300, latest().escalationSeconds)
     }
 
@@ -113,5 +114,19 @@ class SettingsScreenTest {
         show()
         compose.onNodeWithText("23:00").assertExists()
         compose.onNodeWithText("07:00").assertExists()
+    }
+
+    @Test
+    fun displayAndSoundTogglesWriteTheirSettings() {
+        show()
+        compose.onNodeWithText("Wifi").assertExists()
+        compose.onNodeWithText("24-hour clock").performClick()
+        assertEquals(false, latest().clock24h)
+        compose.onNodeWithText("Auto-dim at night").performClick()
+        assertEquals(false, latest().autoDim)
+        compose.onNodeWithText("Alert sound").performClick()
+        assertEquals(false, latest().sound)
+        compose.onNodeWithText("Keep screen on").performClick()
+        assertEquals(false, latest().keepScreenOn)
     }
 }

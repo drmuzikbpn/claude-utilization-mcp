@@ -57,6 +57,7 @@ fun WideDockScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
     val now by vm.now.collectAsStateWithLifecycle()
     val wifi by vm.wifi.collectAsStateWithLifecycle()
     val chip by vm.alertChip.collectAsStateWithLifecycle()
+    val prefs by vm.settings.collectAsStateWithLifecycle()
     val empty = HomeEmpty.of(team)
     val showMachine = team.machines.size > 1
 
@@ -67,7 +68,8 @@ fun WideDockScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
             clock = now,
             alertChip = chip,
             onWifi = { onOpen(Route.Wifi) },
-            onMachine = { id -> onOpen(Route.Machine(id)) }
+            onMachine = { id -> onOpen(Route.Machine(id)) },
+            use24h = prefs.clock24h
         )
 
         Row(modifier = Modifier.weight(1f)) {

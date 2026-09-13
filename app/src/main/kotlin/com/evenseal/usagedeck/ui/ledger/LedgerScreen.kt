@@ -54,6 +54,7 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
     val now by vm.now.collectAsStateWithLifecycle()
     val wifi by vm.wifi.collectAsStateWithLifecycle()
     val chip by vm.alertChip.collectAsStateWithLifecycle()
+    val prefs by vm.settings.collectAsStateWithLifecycle()
     val expanded by vm.expanded.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize().background(DeckColors.bg)) {
@@ -63,7 +64,8 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
             clock = now,
             alertChip = chip,
             onWifi = { onOpen(Route.Wifi) },
-            onMachine = { id -> onOpen(Route.Machine(id)) }
+            onMachine = { id -> onOpen(Route.Machine(id)) },
+            use24h = prefs.clock24h
         )
 
         val empty = HomeEmpty.of(team)
@@ -133,7 +135,7 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
     }
 }
 
-/** With nothing paired, "Projects" is a dead end; offer "Pair" in its place. */
+/** With nothing paired, "Projects" is a dead end; offer "Pair" in its place. The gear opens Settings (wifi lives there). */
 internal fun homeSecondary(empty: HomeEmpty?, onOpen: (Route) -> Unit): List<Pair<String, () -> Unit>> = listOf(
     if (empty is HomeEmpty.NoMachines) {
         "Pair" to { onOpen(Route.Pairing) }

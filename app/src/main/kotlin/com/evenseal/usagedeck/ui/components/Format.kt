@@ -14,6 +14,11 @@ import kotlin.math.roundToLong
 object Format {
     private val HOUR_MINUTE: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.UK)
     private val DAY_HOUR_MINUTE: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE HH:mm", Locale.UK)
+    private val TWELVE_HOUR: DateTimeFormatter = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
+
+    /** The status-bar clock: `18:21`, or `6:21 PM` when the deck is set to a 12-hour clock. */
+    fun clock(at: Instant, zone: ZoneId, use24h: Boolean): String =
+        if (use24h) HOUR_MINUTE.format(at.atZone(zone)) else TWELVE_HOUR.format(at.atZone(zone))
 
     /** `0`, `999`, `4.2k`, `1.2M`, `12.4M`, `3.1B` — a trailing `.0` is always dropped. */
     fun tokens(n: Long): String = compact(n)

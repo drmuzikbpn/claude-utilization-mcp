@@ -102,4 +102,15 @@ class NotifierTest {
             )
         }
     }
+
+    @Test
+    fun `the chime plays only when sound is on and hours are not quiet`() = runTest {
+        val notifier = Notifier(context, TestScope(StandardTestDispatcher(testScheduler)))
+        var chimes = 0
+        notifier.chime = { chimes++ }
+        notifier.raise(alert(AlertKind.WARN), DeckMode.DOCK, quiet = false, sound = true)
+        notifier.raise(alert(AlertKind.WARN), DeckMode.DOCK, quiet = true, sound = true)
+        notifier.raise(alert(AlertKind.WARN), DeckMode.DOCK, quiet = false, sound = false)
+        assertEquals(1, chimes)
+    }
 }

@@ -48,8 +48,9 @@ internal fun WifiRoute(graph: DeckGraph, vm: DeckViewModel, onBack: () -> Unit) 
 }
 
 @Composable
-internal fun SettingsRoute(graph: DeckGraph, onBack: () -> Unit) {
+internal fun SettingsRoute(graph: DeckGraph, onBack: () -> Unit, onWifi: () -> Unit = {}) {
     val settings by graph.settings.settings.collectAsStateWithLifecycle()
+    val wifi by graph.wifi.status.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val checks = graph.updateChecks
     val label by (checks?.label ?: MutableStateFlow(NO_UPDATER)).collectAsStateWithLifecycle()
@@ -64,7 +65,9 @@ internal fun SettingsRoute(graph: DeckGraph, onBack: () -> Unit) {
             graph.settings.update { it.copy(pinSet = true) }
         },
         onCheckUpdate = { checks?.let { c -> scope.launch { c.checkNow() } } },
-        onBack = onBack
+        onBack = onBack,
+        wifiLabel = if (wifi.connected) wifi.ssid.orEmpty() else "not connected",
+        onWifi = onWifi
     )
 }
 

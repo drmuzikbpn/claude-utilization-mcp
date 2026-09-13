@@ -22,7 +22,15 @@ data class Settings(
     val quietStart: LocalTime = LocalTime.of(23, 0),
     val quietEnd: LocalTime = LocalTime.of(7, 0),
     val nightDim: Float = 0.35f,
-    val pinSet: Boolean = false
+    val pinSet: Boolean = false,
+    /** Dim to [nightDim] during quiet hours. Off keeps full brightness around the clock. */
+    val autoDim: Boolean = true,
+    /** Hold the screen on even off the charger. */
+    val keepScreenOn: Boolean = true,
+    /** `18:21` versus `6:21 PM` in the status bar. */
+    val clock24h: Boolean = true,
+    /** Play the chime when an alert shows (quiet hours still silence it). */
+    val sound: Boolean = true
 )
 
 /**
@@ -73,6 +81,10 @@ class SettingsStore(private val prefs: SharedPreferences) {
             .putString(KEY_QUIET_END, next.quietEnd.toString())
             .putFloat(KEY_NIGHT_DIM, next.nightDim)
             .putBoolean(KEY_PIN_SET, next.pinSet)
+            .putBoolean(KEY_AUTO_DIM, next.autoDim)
+            .putBoolean(KEY_KEEP_SCREEN_ON, next.keepScreenOn)
+            .putBoolean(KEY_CLOCK_24H, next.clock24h)
+            .putBoolean(KEY_SOUND, next.sound)
             .apply()
         _settings.value = next
     }
@@ -109,7 +121,11 @@ class SettingsStore(private val prefs: SharedPreferences) {
             quietStart = prefs.timeOf(KEY_QUIET_START, defaults.quietStart),
             quietEnd = prefs.timeOf(KEY_QUIET_END, defaults.quietEnd),
             nightDim = prefs.getFloat(KEY_NIGHT_DIM, defaults.nightDim),
-            pinSet = prefs.getBoolean(KEY_PIN_SET, defaults.pinSet)
+            pinSet = prefs.getBoolean(KEY_PIN_SET, defaults.pinSet),
+            autoDim = prefs.getBoolean(KEY_AUTO_DIM, defaults.autoDim),
+            keepScreenOn = prefs.getBoolean(KEY_KEEP_SCREEN_ON, defaults.keepScreenOn),
+            clock24h = prefs.getBoolean(KEY_CLOCK_24H, defaults.clock24h),
+            sound = prefs.getBoolean(KEY_SOUND, defaults.sound)
         )
     }
 
@@ -122,6 +138,10 @@ class SettingsStore(private val prefs: SharedPreferences) {
         const val ESCALATION_OFF = -1
 
         const val KEY_WARN = "warn"
+        const val KEY_AUTO_DIM = "auto_dim"
+        const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
+        const val KEY_CLOCK_24H = "clock_24h"
+        const val KEY_SOUND = "sound"
         const val KEY_CRITICAL = "critical"
         const val KEY_ESCALATION = "escalation_seconds"
         const val KEY_QUIET_START = "quiet_start"

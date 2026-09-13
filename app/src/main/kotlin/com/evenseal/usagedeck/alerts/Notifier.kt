@@ -49,9 +49,10 @@ class Notifier(
         }
     }
 
-    fun raise(alert: Alert, mode: DeckMode, quiet: Boolean) {
+    fun raise(alert: Alert, mode: DeckMode, quiet: Boolean, sound: Boolean = false) {
         _latest.value = alert
         if (!quiet) vibrate(alert.kind)
+        if (!quiet && sound) chime()
         if (mode == DeckMode.DOCK) {
             showOverlay(alert)
         } else {
@@ -84,6 +85,9 @@ class Notifier(
             .build()
         manager.notify(alert.key.hashCode(), notification)
     }
+
+    /** Overridable so tests can observe the chime without an AudioTrack. */
+    internal var chime: () -> Unit = { Chime.play() }
 
     private fun vibrate(kind: AlertKind) {
         val v = vibrator ?: return

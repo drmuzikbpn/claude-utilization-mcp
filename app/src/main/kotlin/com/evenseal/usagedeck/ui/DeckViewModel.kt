@@ -118,7 +118,7 @@ class DeckViewModel(
 
     /** The night scrim multiplier: full brightness unless quiet hours are on (spec §5). */
     val dimLevel: StateFlow<Float> = combine(now, settings) { instant, current ->
-        if (isQuiet(instant.atZone(zone).toLocalTime())) current.nightDim else 1f
+        if (current.autoDim && isQuiet(instant.atZone(zone).toLocalTime())) current.nightDim else 1f
     }.stateIn(work, SharingStarted.Eagerly, 1f)
 
     init {
