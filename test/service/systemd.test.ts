@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SystemdService } from '../../src/service/systemd.js';
-import { buildUnit, ServiceError, SYSTEMD_UNIT } from '../../src/service/index.js';
+import { buildUnit, ServiceError, SYSTEMD_UNIT, UPDATE_RESTART_EXIT_CODE } from '../../src/service/index.js';
 import { NoopService } from '../../src/service/noop.js';
 import { createServiceManager } from '../../src/service/index.js';
 import { cleanupAllTempHomes, fakeExec, tempHome } from '../install/helpers.js';
@@ -32,6 +32,27 @@ describe('unit file', () => {
     expect(text).toContain('Environment=XDG_DATA_HOME=/data');
     expect(text).toContain('Restart=on-failure');
     expect(text).toContain('[Install]\nWantedBy=default.target');
+  });
+
+  /**
+   * §20 vs §23.9: §20 assumed a clean `exit(0)` would be relaunched, but
+   * `Restart=on-failure` does not restart on exit 0 — and neither does launchd's
+   * `KeepAlive: { SuccessfulExit: false }`. §23.9 wins, so the unit keeps
+   * on-failure and the updater exits non-zero instead.
+   */
+  it('keeps Restart=on-failure — exit 0 stops the service, the updater exits non-zero', async () => {
+    const h = tempHome();
+    const svc = new SystemdService({ env: h.env, exec: fakeExec().runner });
+    await svc.install(unit());
+    const text = readFileSync(svc.unitPath, 'utf8');
+
+    expect(text).toContain('Restart=on-failure');
+    expect(text).not.toContain('Restart=always');
+    // Nothing may declare the updater's exit code a success, or it would never restart.
+    expect(text).not.toMatch(/^SuccessExitStatus=/m);
+    // The policy is documented in the unit itself, naming the exit code.
+    expect(text).toContain(`# ${String(UPDATE_RESTART_EXIT_CODE)} (EX_TEMPFAIL)`);
+    expect(UPDATE_RESTART_EXIT_CODE).not.toBe(0);
   });
 });
 
