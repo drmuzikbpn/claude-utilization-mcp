@@ -171,6 +171,17 @@ describe('transcript back-fill (§17.2)', () => {
     expect(list[0]?.tokens.messages).toBe(2);
   });
 
+  it('a transcript written in the last 10 minutes reads alive; older than 24 h is omitted', () => {
+    const h = makeHarness();
+    h.tokens.add('fresh', { lastActivityAt: '2026-09-13T11:58:00.000Z' });
+    h.tokens.add('stale', { lastActivityAt: '2026-09-11T12:00:00.000Z' });
+    h.tokens.add('hour-old', { lastActivityAt: '2026-09-13T11:00:00.000Z' });
+    const byId = new Map(h.subsystem.registry.list().map((v) => [v.sessionId, v]));
+    expect(byId.get('fresh')).toMatchObject({ alive: true, discovered: 'transcript', pid: null });
+    expect(byId.get('hour-old')).toMatchObject({ alive: false, discovered: 'transcript' });
+    expect(byId.has('stale')).toBe(false);
+  });
+
   it('a registered session wins over its transcript entry', () => {
     const h = makeHarness();
     h.tokens.add('sess-1', { cwd: MAIN });
