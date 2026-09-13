@@ -132,6 +132,11 @@ export class SpendStore {
     return this.#store.sessionTotals(sessionId);
   }
 
+  /** W3 §17.2: transcript-known sessions, for `/v1/sessions`' back-fill. */
+  listSessions(): { sessionId: string; projectKey: string; lastActivityAt: string; cwd: string }[] {
+    return this.#store.listSessions();
+  }
+
   sessionModel(sessionId: string): string | null {
     return this.#store.sessionModel(sessionId);
   }
