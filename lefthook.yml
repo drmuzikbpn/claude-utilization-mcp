@@ -1,0 +1,7 @@
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      run: npx eslint .
+    typecheck:
+      run: npx tsc --noEmit
