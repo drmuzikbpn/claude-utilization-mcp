@@ -91,6 +91,11 @@ function isoOf(ms: number): string {
   return new Date(ms).toISOString();
 }
 
+/** A transcript written within this window counts as a live (pre-install) session. */
+export const TRANSCRIPT_ALIVE_MS = 10 * 60_000;
+/** Transcript-only sessions older than this are not back-filled into `/v1/sessions`. */
+export const TRANSCRIPT_BACKFILL_MS = 24 * 60 * 60_000;
+
 export class SessionRegistry {
   readonly configDir: string;
   #sessions = new Map<string, StoredSession>();
@@ -347,15 +352,21 @@ export class SessionRegistry {
     const known = new Set(views.map((v) => v.sessionId));
     const tokens = this.#tokens;
     if (tokens !== null && typeof tokens.listSessions === 'function') {
+      const now = this.#now();
       for (const entry of tokens.listSessions()) {
         if (known.has(entry.sessionId)) continue;
+        // Pre-install sessions have no SessionStart registration. A transcript that is still
+        // being written is treated as alive; anything older than the back-fill window is
+        // omitted so a snapshot doesn't carry every session from the last 90 days.
+        const age = now - Date.parse(entry.lastActivityAt);
+        if (!(age < TRANSCRIPT_BACKFILL_MS)) continue;
         const cwd = entry.cwd ?? '';
         const { project, worktree } = resolveProject(cwd, null);
         const { pause } = this.#resolvePause({ sessionId: entry.sessionId, gitCommonDir: null, cwd });
         views.push({
           sessionId: entry.sessionId,
           pid: null,
-          alive: false,
+          alive: age < TRANSCRIPT_ALIVE_MS,
           discovered: 'transcript',
           cwd,
           transcriptPath: null,
