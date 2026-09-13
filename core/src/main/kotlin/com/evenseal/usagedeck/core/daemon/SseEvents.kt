@@ -28,6 +28,11 @@ sealed interface DaemonEvent {
      */
     data class Limits(val limits: List<LimitDto>, val fetchedAt: String?, val stale: Boolean) : DaemonEvent
 
+    /**
+     * Machine-wide spend. [today] is cumulative and authoritative; [delta] is **per-event** — the
+     * sum of the increments inside the daemon's 1 s coalesce window, not a running total. Burn
+     * rates are derived from [today], never from [delta].
+     */
     data class Spend(val today: TokensCountsDto, val delta: TokensCountsDto) : DaemonEvent
 
     /** [type] is one of `start`, `end`, `update`. */
@@ -44,8 +49,8 @@ sealed interface DaemonEvent {
 }
 
 /**
- * `snapshot` payload. `summary` is byte-for-byte the `/v1/summary` body; `limits` is the
- * `/v1/limits` body minus `raw`; `rules` is the `/v1/pause/rules` body.
+ * `snapshot` payload. `summary` is byte-for-byte the `/v1/summary` body, `limits` the
+ * `/v1/limits` body minus `raw`, and `sessions` the §17.3 session objects as a bare array.
  */
 @Serializable
 internal data class SnapshotDto(
@@ -54,8 +59,7 @@ internal data class SnapshotDto(
     val user: UserDto? = null,
     val summary: SummaryDto = SummaryDto(),
     val limits: LimitsBodyDto = LimitsBodyDto(),
-    @Serializable(with = SessionsTolerant::class)
-    val sessions: SessionsDto = SessionsDto(),
+    val sessions: List<SessionDto> = emptyList(),
     /** Either the `/v1/pause/rules` body or a bare array of rules; both are accepted. */
     val rules: JsonElement? = null,
     val update: UpdateDto? = null,
@@ -114,7 +118,7 @@ object SseParser {
         status = dto.summary.status,
         thresholds = dto.summary.thresholds,
         today = dto.summary.today,
-        sessions = dto.sessions.sessions,
+        sessions = dto.sessions,
         rules = rulesOf(dto.rules),
         update = dto.update,
         rev = dto.rev

@@ -77,7 +77,7 @@ class SseEventsTest {
           "summary":{"limits":{"limits":[{"id":"session","kind":"session","percent":42}],"fetchedAt":"2026-09-13T14:00:00Z","stale":false,"error":null},
                      "status":{"byId":{"session":"ok"},"overall":"ok"},"thresholds":{"warn":80,"critical":95},"today":{"ready":true,"input":1}},
           "limits":{"limits":[{"id":"session","kind":"session","percent":42}],"fetchedAt":"2026-09-13T14:00:00Z","stale":false,"error":null},
-          "sessions":{"rev":7,"sessions":[]},"rules":[{"id":"r","scope":"all","mode":"soft","createdAt":"2026-09-13T00:00:00Z"}],"update":{"state":"idle"},"rev":7}"""
+          "sessions":[],"rules":[{"id":"r","scope":"all","mode":"soft","createdAt":"2026-09-13T00:00:00Z"}],"update":{"state":"idle"},"rev":7}"""
         val s = SseParser.parse("snapshot", json) as DaemonEvent.Snapshot
         assertEquals("alans-mbp", s.name)
         assertEquals(42, s.limits.single().percent)
@@ -94,7 +94,7 @@ class SseEventsTest {
     fun `snapshot accepts rules wrapped in object`() {
         val s = SseParser.parse(
             "snapshot",
-            """{"summary":{},"sessions":{},"rules":{"rev":1,"rules":[]},"rev":1}"""
+            """{"summary":{},"sessions":[],"rules":{"rev":1,"rules":[]},"rev":1}"""
         ) as DaemonEvent.Snapshot
         assertTrue(s.rules.isEmpty())
     }
