@@ -66,7 +66,8 @@ describe('dispatch', () => {
     expect(r.out).toBe('');
   });
 
-  it.each(['install', 'configure', 'uninstall', 'mcp', 'sessions', 'pause', 'resume'])(
+  // install/configure/uninstall landed in W6; they are covered by test/install/**.
+  it.each(['mcp', 'sessions', 'pause', 'resume'])(
     'exits 1 with "not implemented yet" for %s',
     async (cmd) => {
       const r = await cli([cmd]);

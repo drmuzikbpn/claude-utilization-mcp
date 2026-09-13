@@ -18,7 +18,7 @@ export interface CliIO {
 }
 
 /** Subcommands other waves own; they exist so `help` is honest about the surface. */
-const PLANNED = ['install', 'configure', 'uninstall', 'mcp', 'sessions', 'pause', 'resume'];
+const PLANNED = ['mcp', 'sessions', 'pause', 'resume'];
 
 const HELP = `claude-usage — local usage service for Claude Code sessions
 
@@ -27,6 +27,10 @@ Usage: claude-usage <command> [options]
   serve [--verbose]                 run the daemon in the foreground
   status                            daemon state, limits and today's tokens
   tokens [--since <v>] [--by <g>]   token spend table (since: today|7d|24h|ISO)
+  install [--yes] [--no-service]    install the service, hooks and MCP server
+          [--no-hook] [--no-mcp] [--statusline] [--tailscale] [--linger]
+  configure [<setting> <on|off>]    interactive menu, or a scriptable setting
+  uninstall [--purge]               remove everything install added
   hook                              UserPromptSubmit hook (always exits 0)
   statusline                        one-line status for statusLine.command
   --version                         print the version
@@ -172,6 +176,59 @@ async function cmdTokens(argv: readonly string[], io: Required<Pick<CliIO, 'stdo
   return 0;
 }
 
+// ─────────────────────────── W6 (feat/install) block ───────────────────────────
+// `install` / `uninstall` / `configure`, plus the service diagnostics `status`
+// prints when the daemon is down (§23.9). Everything here is self-contained: the
+// install and service modules are imported lazily so `serve`, `hook` and
+// `statusline` never pay for them, and nothing outside this block changes except
+// the three dispatch cases and the one `status` call marked "W6".
+
+/** §23.9: `status` prints the last 20 stderr lines when the daemon is down. */
+export const W6_LOG_TAIL = 20;
+
+type W6Io = Required<Pick<CliIO, 'stdout' | 'stderr'>> & CliIO;
+
+function w6InstallIo(io: W6Io): {
+  stdout: (t: string) => void;
+  stderr: (t: string) => void;
+  configDir?: string;
+  env?: NodeJS.ProcessEnv;
+} {
+  return {
+    stdout: io.stdout,
+    stderr: io.stderr,
+    ...(io.configDir === undefined ? {} : { configDir: io.configDir }),
+    ...(io.env === undefined ? {} : { env: io.env }),
+  };
+}
+
+async function w6Dispatch(cmd: 'install' | 'uninstall' | 'configure', argv: readonly string[], io: W6Io): Promise<number> {
+  const install = await import('./install/index.js');
+  const installIo = w6InstallIo(io);
+  if (cmd === 'install') return install.runInstall(argv, installIo);
+  if (cmd === 'uninstall') return install.runUninstall(argv, installIo);
+  return install.runConfigure(argv, installIo);
+}
+
+/** Service state + log tail, appended to `status` when the daemon is not answering. */
+async function w6ServiceDiagnostics(io: W6Io): Promise<void> {
+  try {
+    const { createServiceManager } = await import('./service/index.js');
+    const service = await createServiceManager(io.env === undefined ? {} : { env: io.env });
+    io.stdout(`service: ${service.kind} — ${await service.status()}\n`);
+    const lines = await service.logTail(W6_LOG_TAIL);
+    if (lines.length === 0) {
+      io.stdout('log: no stderr output captured\n');
+      return;
+    }
+    io.stdout(`log: last ${String(lines.length)} stderr lines\n`);
+    for (const line of lines) io.stdout(`  ${line}\n`);
+  } catch (err) {
+    io.stderr(`service: could not read the service state (${(err as Error).message})\n`);
+  }
+}
+// ───────────────────────── end W6 (feat/install) block ─────────────────────────
+
 /** Subcommand dispatch. Returns the process exit code; never calls `process.exit`. */
 export async function run(argv: readonly string[], io: CliIO = {}): Promise<number> {
   const stdout = io.stdout ?? ((t: string) => process.stdout.write(t));
@@ -185,8 +242,16 @@ export async function run(argv: readonly string[], io: CliIO = {}): Promise<numb
       const opts = { verbose: rest.includes('--verbose') || rest.includes('-v') };
       return serve(io.configDir === undefined ? opts : { ...opts, configDir: io.configDir });
     }
-    case 'status':
-      return cmdStatus(base);
+    case 'status': {
+      const code = await cmdStatus(base);
+      if (code !== 0) await w6ServiceDiagnostics(base); // W6
+      return code;
+    }
+    // W6
+    case 'install':
+    case 'uninstall':
+    case 'configure':
+      return w6Dispatch(cmd, rest, base);
     case 'tokens':
       return cmdTokens(rest, base);
     case 'hook': {
