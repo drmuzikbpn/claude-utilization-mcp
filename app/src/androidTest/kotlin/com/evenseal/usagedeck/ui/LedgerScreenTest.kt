@@ -15,6 +15,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.evenseal.usagedeck.core.model.Health
 import com.evenseal.usagedeck.core.model.MachineConfig
 import com.evenseal.usagedeck.core.model.MachineState
+import com.evenseal.usagedeck.core.model.PauseMode
+import com.evenseal.usagedeck.core.model.PauseState
 import com.evenseal.usagedeck.core.model.TeamState
 import com.evenseal.usagedeck.core.pause.Escalation
 import com.evenseal.usagedeck.core.pause.PauseTarget
@@ -234,5 +236,27 @@ class LedgerScreenTest {
 
         assertEquals(mapOf("uuid-m1" to "Team seat"), settings.value.userNames)
         compose.onNodeWithContentDescription("expand Team seat").assertExists()
+    }
+
+    @Test
+    fun aSessionFrozenAgainSaysSoOnItsRow() {
+        val refrozen =
+            PauseState(PauseMode.HARD, "r9", "session:a1b2c3d4", Fx.NOW.minusSeconds(30), emptyList(), freezes = 2)
+        val team = TeamState(
+            listOf(
+                Fx.machine(
+                    "m1",
+                    "Alan",
+                    "alan@example.com",
+                    fiveHour = 12,
+                    sevenDay = 30,
+                    sessions = listOf(Fx.session("a1b2c3d4").copy(pause = refrozen))
+                )
+            )
+        )
+        show(fakeViewModel(team = team))
+        expand("calendarpa")
+
+        compose.onNodeWithText("frozen again ×2").assertExists()
     }
 }

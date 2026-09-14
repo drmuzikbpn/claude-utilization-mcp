@@ -432,7 +432,10 @@ class FakeDaemon(
                         ruleId = rule.id,
                         scope = request.scope,
                         since = rule.createdAt,
-                        frozenPids = if (request.mode == "hard") listOfNotNull(session.pid) else emptyList()
+                        // §23.16: only tool subprocesses are stopped, never the session's own pid; the
+                        // fake has no subprocesses, so a hard pause is "held at the gate" with freezes 1.
+                        frozenPids = emptyList(),
+                        freezes = if (request.mode == "hard") (session.pause?.freezes ?: 0) + 1 else 0
                     )
                 )
             )

@@ -195,7 +195,7 @@ class EndToEndTest {
     private fun sessionJson(): String {
         val pause = if (frozen.get()) {
             ""","pause":{"mode":"hard","ruleId":"r-freeze","scope":"session:$SESSION_ID",""" +
-                """"since":"$WHEN","frozenPids":[4242]}"""
+                """"since":"$WHEN","frozenPids":[],"freezes":1}"""
         } else {
             ""
         }

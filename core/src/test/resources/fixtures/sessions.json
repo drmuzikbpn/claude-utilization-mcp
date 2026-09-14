@@ -19,7 +19,8 @@
         "ruleId": "r_k3m7qz4ub2ah6ptc",
         "scope": "session:3f1c0a52-9d64-4f2e-8b71-2c5a0d9e4411",
         "since": "2026-09-13T14:03:10.000Z",
-        "frozenPids": [4242, 4251, 4252]
+        "frozenPids": [4251, 4252],
+        "freezes": 1
       },
       "lastTool": { "name": "Bash", "at": "2026-09-13T14:02:50.000Z" }
     },

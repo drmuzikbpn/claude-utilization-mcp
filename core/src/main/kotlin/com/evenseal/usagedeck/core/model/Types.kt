@@ -66,7 +66,10 @@ data class PauseState(
     val ruleId: String,
     val scope: String,
     val since: Instant,
-    val frozenPids: List<Int>
+    /** Stopped tool subprocesses (daemon §23.16). Empty under a hard rule means "held at the gate", not a failure. */
+    val frozenPids: List<Int>,
+    /** 0 under soft; 1 frozen once; 2+ frozen again under the same standing rule (re-registered or daemon restart). */
+    val freezes: Int = 0
 )
 
 data class LastTool(val name: String, val at: Instant)

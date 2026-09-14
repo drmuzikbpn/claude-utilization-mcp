@@ -64,6 +64,16 @@ object Format {
         return "${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}"
     }
 
+    /**
+     * `frozen` the first time; `frozen again ×N` once the daemon has re-frozen the session under the
+     * same rule (daemon §23.16 `freezes`). An empty frozenPids list under a hard rule is normal —
+     * the session is held at the gate — so the tag never reads as a failure.
+     */
+    fun frozenTag(freezes: Int): String = when {
+        freezes >= 2 -> "$FROZEN_AGAIN_TAG ×$freezes"
+        else -> FROZEN_TAG
+    }
+
     /** The first four characters of a session id, which is enough to tell rows apart. */
     fun shortId(sessionId: String) = sessionId.take(4) + "…"
 

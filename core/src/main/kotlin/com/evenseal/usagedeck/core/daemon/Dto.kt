@@ -103,7 +103,8 @@ data class PauseStateDto(
     val ruleId: String,
     val scope: String,
     val since: String,
-    val frozenPids: List<Int> = emptyList()
+    val frozenPids: List<Int> = emptyList(),
+    val freezes: Int = 0
 )
 
 @Serializable

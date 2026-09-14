@@ -75,8 +75,10 @@ pushing by accident ships an APK to every deck.
 - Daemons before 0.1.66 resume exactly the scope they are given (the Studio is on 0.1.0); newer ones
   cascade a project resume and keep one rule per scope. The phone fans a project resume out to the
   session rules under it so both behave; resuming an already-lifted scope is a no-op.
-- A hard freeze SIGSTOPs an interactive `claude`; zsh then shows "suspended (signal)" and the user
-  must `fg` after resume. Not a phone bug — raised with Ethan.
+- Hard freeze (daemon §23.16, from the release after 0.1.65) stops only tool subprocesses and holds
+  the next tool at the gate; `pause.frozenPids` never holds the session pid and an empty list under a
+  hard rule is normal. `pause.freezes` ≥ 2 means re-frozen under a standing rule (rendered "frozen again ×N").
+  On 0.1.65 and earlier the freeze SIGSTOPs the TUI itself; zsh shows "suspended (signal)" and needs `fg`.
 
 - Compose: `Modifier.clickable` merges descendant semantics, so pause buttons inside a clickable
   row are only addressable with `useUnmergedTree = true`.

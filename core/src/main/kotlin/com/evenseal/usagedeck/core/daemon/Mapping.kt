@@ -58,7 +58,8 @@ fun PauseStateDto.toModel() = PauseState(
     ruleId,
     scope,
     since.toInstantOr(Instant.EPOCH),
-    frozenPids
+    frozenPids,
+    freezes
 )
 
 fun PauseRuleDto.toModel() = PauseRule(
