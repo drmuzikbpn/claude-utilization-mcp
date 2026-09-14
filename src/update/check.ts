@@ -67,6 +67,15 @@ export function releasesLatestUrl(repo: string, origin = GITHUB_API_ORIGIN): str
   return `${origin}/repos/${repo}/releases/latest`;
 }
 
+/** Release-tag prefixes owned by other artifacts in this repo (§23.17). */
+export const FOREIGN_TAG_PREFIXES = ['deck-'] as const;
+
+/** Does `tag` belong to something other than the daemon? Case-insensitive. */
+export function isForeignTag(tag: string): boolean {
+  const lower = tag.toLowerCase();
+  return FOREIGN_TAG_PREFIXES.some((prefix) => lower.startsWith(prefix));
+}
+
 export function userAgent(version: string): string {
   return `claude-usage/${version}`;
 }
@@ -131,6 +140,13 @@ export async function check(opts: CheckOptions): Promise<CheckResult> {
   }
   if (typeof body.tag_name !== 'string' || body.tag_name.length === 0) {
     return { release: null, etag, notModified: false, error: 'malformed: release has no tag_name' };
+  }
+  // The Android dashboard ships its APK from this same repo under `deck-*` tags, published
+  // so they never become "latest". If one ever does, it is not ours and not an error: report
+  // "nothing available" rather than poisoning the update state with a malformed-release
+  // message that would also hide the next real daemon release.
+  if (isForeignTag(body.tag_name)) {
+    return { release: null, etag, notModified: false, error: null };
   }
   const version = body.tag_name.replace(/^v/, '');
   const tarballUrl = assetUrl(body.assets, tarballName(version));

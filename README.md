@@ -319,9 +319,9 @@ their defaults (10 minutes, 90 days). See the deviations section of
 
 ## Auto-update
 
-**Landing in the next merge.** `claude-usage update` / `rollback`, the release pipeline and
-the `update` fields in `/health` are being implemented concurrently; today `/health.update`
-always reports `{ "state": "disabled" }`. The design:
+`claude-usage update` / `rollback`, the release pipeline and the `update` fields in
+`/health` are live. `/health.update` reports `{ "state": "disabled" }` only when auto-update
+is genuinely off — no `current` symlink, or `configure autoupdate off`.
 
 - Versioning `MAJOR.MINOR.<commit-count>+<short-sha>`, computed in CI from
   `git rev-list --count HEAD` on `main`.
@@ -338,6 +338,10 @@ always reports `{ "state": "disabled" }`. The design:
   `install`), or with `claude-usage configure autoupdate off`.
 - Signature verification (minisign) is a follow-up; today integrity rests on sha256 over
   TLS from the same release.
+- The Android dashboard ships its APK from this same repo under `deck-<version>` tags,
+  published as pre-releases so they are never `releases/latest`. The updater also skips any
+  `deck-` tag outright, reporting *no update* rather than an error — an error would mask the
+  next real daemon release, since `releases/latest` returns only one.
 
 ## Platform support
 
