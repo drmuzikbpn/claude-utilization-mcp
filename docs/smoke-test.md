@@ -353,3 +353,67 @@ echo '{}' | node bin/claude-usage hook; echo "exit=$?"   # exit=0, always
 With the daemon stopped, every one of those must be quiet and harmless: `status` prints
 the service state and the last 20 stderr lines and exits 1; `hook` and `statusline` print
 nothing and exit 0.
+
+## 8. The supervisor is really supervising (§23.18, §23.20)
+
+Every fault in this section hid behind a healthy-looking daemon for a day. `install` ends
+with `kickstart`, so the service is always up the moment you finish installing, and every
+manual fix restores it too — nothing reveals the problem until the process dies on its own.
+Test the *supervisor*, not the daemon.
+
+```bash
+# macOS. The answer that matters is on the second line, not the first.
+launchctl print gui/$(id -u)/com.github.drmuzikbpn.claude-usage | grep -E 'runs =|pended'
+#   runs = 8                        ← good: launchd has actually spawned it
+#   runs = 0 / pended nondemand spawn = speculative
+#                                   ← bad: registered but never supervised
+```
+
+`runs = 0` with `pended nondemand spawn` means this machine was installed from a non-GUI
+session (ssh). `install` prints a warning saying so. The daemon runs and updates restart it,
+but **launchd will not bring it back after a crash or a reboot**. Re-run `install` from a
+terminal on that machine's own desktop.
+
+Then prove it rather than trusting the plist:
+
+```bash
+PID=$(launchctl list | awk '/claude-usage/ {print $1}')
+sleep 15          # clear `minimum runtime = 10`, or the kill looks like a crash loop
+kill -9 $PID
+sleep 25
+curl -s localhost:47291/health >/dev/null && echo "KeepAlive works" || echo "NOT SUPERVISED"
+```
+
+**Auto-update on a machine you have not watched before.** Publish a release, then leave the
+machine completely alone — no ssh, no `claude-usage update`, nothing. Within the check
+interval it must reach the new version *and still answer*. A daemon that updates and never
+comes back is the exact failure §23.18 exists for, and it is invisible if you help it.
+
+## 9. Tailnet that is not up yet (§23.21)
+
+```bash
+tailscale status | head -1            # "Tailscale is stopped." is a normal state here
+tailscale ip -4                       # still prints the last-known address — it lies
+grep 'could not bind' ~/Library/Logs/claude-usage/daemon.err.log | tail -3
+```
+
+With Tailscale stopped, `tailscale ip -4` keeps reporting the last-known address, so the
+daemon resolves one and the bind fails. Expected behaviour: **exactly one** `could not bind`
+line per distinct failure, not one per retry, and the daemon serving loopback and LAN
+normally. Then start Tailscale and wait: within the backoff window (60 s, doubling to 10 min)
+the log must show `net: tailnet address is now available` and `/health` must be reachable on
+the `100.x` address, with no SIGHUP from anyone.
+
+## 10. Updating around a hard freeze (§23.22)
+
+```bash
+node bin/claude-usage pause session:<id> --hard
+node bin/claude-usage update                    # must refuse, naming the session, exit 1
+node bin/claude-usage update --force            # proceeds
+```
+
+And watch the leak the refusal exists to prevent: with a hard rule standing, restart the
+daemon by hand and watch the frozen session's output. It gets **one** tool boundary — the
+old daemon SIGCONTs the tree on shutdown, and the new daemon's sweep re-freezes it. That is
+known and accepted (a stuck tree is worse than a one-call slip); what must not happen is the
+session running freely afterwards.
