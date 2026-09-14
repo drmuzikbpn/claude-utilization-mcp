@@ -117,10 +117,12 @@ Every one of those writes is atomic: a temp file in the same directory, `chmod`,
 
 ## Hard freeze and the escape hatch
 
-Hard pause sends `SIGSTOP` to a session's whole descendant process tree (children deepest
-first, then the parent, so nothing gets reparented onto a running shell mid-freeze).
-Resume sends `SIGCONT` parent first. `ESRCH` and `EPERM` are ignored — a process that
-already exited is not an error.
+Hard pause sends `SIGSTOP` to the tool subprocesses **below** a session, deepest first so
+nothing gets reparented onto a running shell mid-freeze. The session's own `claude` process
+is deliberately left running: stopping it would suspend the user's foreground job and cost
+them their terminal until they typed `fg`. The next tool call is stopped by the `PreToolUse`
+gate instead. Resume sends `SIGCONT` nearest-first. `ESRCH` and `EPERM` are ignored — a
+process that already exited is not an error.
 
 A stopped process cannot ask to be resumed. So there are four safety nets:
 

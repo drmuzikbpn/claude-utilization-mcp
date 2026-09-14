@@ -286,7 +286,8 @@ never regress:
 
 ```bash
 node bin/claude-usage pause session:<id> --hard
-ps -o stat= -p <pid>                                   # T
+ps -o stat= -p <pid>                                   # S/R — the `claude` process keeps running
+ps -o stat= -p <tool-pid>                              # T — a tool subprocess below it is stopped
 kill -9 $(python3 -c 'import json;print(json.load(open("'$HOME'/.config/claude-usage/daemon.json"))["pid"])')
 curl -s localhost:47291/health || echo "daemon gone ✓"
 node bin/claude-usage resume --all
@@ -297,7 +298,7 @@ python3 -c "import json;print(json.load(open('$HOME/.config/claude-usage/pause.j
 ```
 
 **Orphan sweep on restart.** With the daemon still down, hand-edit `sessions.json` so a
-session has `frozenPids` for a pid that matches no rule, `SIGSTOP` that pid yourself, then
+session has `frozenPids` for a tool pid that matches no rule, `SIGSTOP` that pid yourself, then
 start the daemon: the pid must be SIGCONTed within startup, and `sessions.json` must show
 `frozenPids: []`.
 

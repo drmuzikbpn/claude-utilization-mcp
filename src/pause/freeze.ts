@@ -147,9 +147,22 @@ export function signalIgnoringEsrch(deps: FreezeDeps, pid: number, signal: NodeJ
 }
 
 /**
- * Freeze the whole descendant tree of `pid`: children first, then the parent, so no child
- * can be reparented onto a still-running shell mid-freeze. Returns the recorded
- * `frozenPids` **parent first** — the order `thaw()` wants.
+ * Freeze the tool subprocesses **below** `pid`, deepest first — and deliberately **not**
+ * `pid` itself (§23.16).
+ *
+ * `pid` is the interactive `claude` process. `SIGSTOP`ing it stops the session's own TUI,
+ * which the shell reports as `suspended` and hands the prompt back; after `SIGCONT` it is a
+ * background job that cannot read the terminal until the user types `fg`. A hard pause is
+ * meant to stop Claude's *work*, not to take away the terminal — so the root is left
+ * runnable and the session is held at the `PreToolUse` gate instead (§18.2). The freeze is
+ * what stops the work already in flight; the gate is what stops the next piece of it.
+ *
+ * Consequence, and it is the intended one: freezing a session that has no tool running is a
+ * no-op on the process table. Nothing is stopped because nothing is running, and the very
+ * next tool call blocks at the gate.
+ *
+ * Returns the recorded `frozenPids` nearest-first — the order `thaw()` wants, so a parent
+ * shell is resumed before the children it owns.
  */
 export function freezeTree(pid: number | null, deps: FreezeDeps = defaultFreezeDeps()): number[] {
   if (pid === null || !Number.isInteger(pid) || pid <= 0) {
@@ -165,15 +178,15 @@ export function freezeTree(pid: number | null, deps: FreezeDeps = defaultFreezeD
   }
   const table = deps.listProcesses();
   const children = descendantsOf(pid, table).filter((child) => deps.uidOf(child) === self);
-  // Deepest first: the BFS list is nearest-first, so walk it backwards.
+  // Deepest first, so no child can be reparented onto a still-running shell mid-freeze.
+  // The BFS list is nearest-first, so walk it backwards.
   for (let i = children.length - 1; i >= 0; i -= 1) {
     signalIgnoringEsrch(deps, children[i] as number, 'SIGSTOP');
   }
-  signalIgnoringEsrch(deps, pid, 'SIGSTOP');
-  return [pid, ...children];
+  return children;
 }
 
-/** SIGCONT parent first, then children (§18.3). Ignores `ESRCH`. */
+/** SIGCONT in recorded order — nearest-first, so a shell resumes before its children (§18.3). Ignores `ESRCH`. */
 export function thaw(pids: readonly number[], deps: FreezeDeps = defaultFreezeDeps()): number[] {
   const resumed: number[] = [];
   for (const pid of pids) {
@@ -213,6 +226,8 @@ export function resumeAll(configDir: string, deps: FreezeDeps = defaultFreezeDep
     const pids = Array.isArray(session.frozenPids) ? session.frozenPids : [];
     for (const pid of thaw(pids, deps)) resumed.push(pid);
     session.frozenPids = [];
+    session.frozenPid = null;
+    session.freezes = 0;
     session.pausedSince = null;
   }
 

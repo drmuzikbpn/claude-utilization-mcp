@@ -40,7 +40,14 @@ export interface SessionPause {
   ruleId: string;
   scope: string;
   since: string;
+  /** Tool subprocesses currently SIGSTOPped. The `claude` process itself is never in here (§23.16). */
   frozenPids: number[];
+  /**
+   * How many times this pause has frozen the session's tool tree (§23.16). `0` under a soft
+   * rule; `1` for a session frozen once; `2+` once a re-registered session (`claude --resume`,
+   * a new pid) or a daemon restart sweep has frozen it again under the same standing rule.
+   */
+  freezes: number;
 }
 
 /** One entry of `<configDir>/sessions.json`. */
@@ -56,8 +63,12 @@ export interface StoredSession {
   alive: boolean;
   /** Epoch ms the pid was first seen dead; drives the 5 min drop (§17.2). */
   deadSince: number | null;
-  /** Recorded by hard freeze, parent first (§18.3). */
+  /** Recorded by hard freeze, nearest-first (§18.3). Never contains `pid` itself (§23.16). */
   frozenPids: number[];
+  /** The pid whose tree the recorded freeze belongs to; `null` when nothing is frozen. */
+  frozenPid: number | null;
+  /** Freezes applied under the current pause; survives a re-register so `2+` means "frozen again" (§23.16). */
+  freezes: number;
   /** ISO instant the current effective pause started, `null` when not paused. */
   pausedSince: string | null;
   lastTool: LastTool | null;

@@ -188,6 +188,11 @@ function shortId(id: string): string {
   return id.length > 12 ? `${id.slice(0, 8)}…` : id;
 }
 
+/**
+ * `soft`, or `hard(<n>)` where `n` is the tool subprocesses currently SIGSTOPped. `hard(0)`
+ * is normal and not a failure: the session had nothing running, so there was nothing to
+ * stop, and it is held at the `PreToolUse` gate instead (§23.16).
+ */
 function pauseLabel(session: SessionView): string {
   if (session.pause === null) return '-';
   const frozen = session.pause.frozenPids.length;

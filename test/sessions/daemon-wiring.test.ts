@@ -69,17 +69,19 @@ describe('startDaemon + sessions', () => {
     spawned.push(child);
     const pid = child.pid as number;
     for (let i = 0; i < 40 && descendantsOf(pid, listProcesses()).length < 2; i += 1) await sleepMs(50);
-    const tree = [pid, ...descendantsOf(pid, listProcesses())];
+    // Only the tool subprocesses are ever stopped — the `claude` process keeps its terminal.
+    const tools = descendantsOf(pid, listProcesses());
 
     const handle = await startDaemon({ configDir, config: testConfig({ port: 0 }), tokens: null, poll: false, port: 0 });
     handle.sessions?.registry.register({ sessionId: 'sess-1', pid, cwd: '/tmp' });
     const outcome = handle.sessions?.pause.pause({ scope: 'session:sess-1', mode: 'hard', reason: '', createdBy: 'cli' });
     expect(outcome?.ok).toBe(true);
-    for (let i = 0; i < 40 && !tree.every(stopped); i += 1) await sleepMs(50);
-    expect(tree.every(stopped)).toBe(true);
+    for (let i = 0; i < 40 && !tools.every(stopped); i += 1) await sleepMs(50);
+    expect(tools.every(stopped)).toBe(true);
+    expect(stopped(pid)).toBe(false);
 
     await handle.stop();
-    for (let i = 0; i < 40 && tree.some(stopped); i += 1) await sleepMs(50);
-    expect(tree.some(stopped)).toBe(false);
+    for (let i = 0; i < 40 && tools.some(stopped); i += 1) await sleepMs(50);
+    expect(tools.some(stopped)).toBe(false);
   });
 });
