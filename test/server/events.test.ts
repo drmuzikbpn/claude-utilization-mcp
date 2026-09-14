@@ -430,9 +430,12 @@ describe('GET /v1/events — limits and lifecycle', () => {
     await fast.waitFor('snapshot');
 
     slow.pause();
-    // A payload far larger than any socket buffer: the write cannot drain while paused.
-    bus.publish('session', { type: 'update', session: { id: 'sess-a', blob: 'x'.repeat(8 * 1024 * 1024) } });
-    await new Promise<void>((r) => setTimeout(r, 50));
+    // Far more than loopback socket buffers can absorb on any platform (Linux autotunes
+    // send+receive buffers to several MB each): the writes cannot drain while paused.
+    for (let i = 0; i < 8; i += 1) {
+      bus.publish('session', { type: 'update', session: { id: `sess-${String(i)}`, blob: 'x'.repeat(8 * 1024 * 1024) } });
+    }
+    await new Promise<void>((r) => setTimeout(r, 100));
 
     await timers.advance(29_000);
     expect(server.events.clientCount).toBe(2);
