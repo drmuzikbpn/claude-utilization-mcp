@@ -74,9 +74,13 @@ Before shipping a release that touches kiosk, wifi, pairing or update, run
 
 ## Releases
 
-CI runs ktlint, all JVM tests and the instrumented suite on an API 29 emulator. On `main` it also
-assembles a signed release, names it `usage-deck-<version>.apk` with a `SHA256SUMS` beside it, and
-publishes a GitHub release — which is exactly what the deck's own updater polls.
+The app lives on the `usage-deck` branch of the daemon's repo, `drmuzikbpn/claude-utilization-mcp`.
+CI runs ktlint, all JVM tests and the instrumented suite on an API 29 emulator. On `usage-deck`,
+once the signing secrets exist, it also assembles a signed release and publishes it under the
+namespace the two updaters agreed on (daemon spec §23.17): tag `deck-<version>`, assets
+`usage-deck.apk` and `usage-deck.apk.sha256`, always flagged pre-release so the daemon's
+`/releases/latest` never returns an APK. The deck's updater lists releases and considers `deck-`
+tags only, so a daemon tarball never looks installable to it.
 
 Versions are `0.MINOR.<commit-count>+<short-sha>`; `versionCode` is the commit count.
 

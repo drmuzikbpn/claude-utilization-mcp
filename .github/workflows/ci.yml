@@ -1,5 +1,7 @@
 name: ci
-on: { push: { branches: [main] }, pull_request: {} }
+# The app lives on the `usage-deck` branch of the daemon's repo. Scoped to that branch on purpose
+# (no wildcard): the daemon's own release job runs on `main` and must never race this one.
+on: { push: { branches: [usage-deck] }, pull_request: {} }
 permissions: { contents: write }
 jobs:
   build:
@@ -19,12 +21,19 @@ jobs:
           arch: x86_64
           target: default
           script: ./gradlew :app:connectedDebugAndroidTest
+      # Release only from usage-deck, and only once the signing secrets exist (see README › Releases);
+      # without them the tests still gate the branch and nothing is published.
+      - name: Signing available?
+        if: github.ref == 'refs/heads/usage-deck'
+        id: signing
+        run: echo "ok=$([ -n "$SIGNING_KEYSTORE_B64" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+        env: { SIGNING_KEYSTORE_B64: "${{ secrets.SIGNING_KEYSTORE_B64 }}" }
       - name: Decode keystore
-        if: github.ref == 'refs/heads/main'
+        if: steps.signing.outputs.ok == 'true'
         run: echo "$SIGNING_KEYSTORE_B64" | base64 -d > /tmp/release.jks
         env: { SIGNING_KEYSTORE_B64: "${{ secrets.SIGNING_KEYSTORE_B64 }}" }
       - name: Assemble release
-        if: github.ref == 'refs/heads/main'
+        if: steps.signing.outputs.ok == 'true'
         run: ./gradlew :app:assembleRelease
         env:
           SIGNING_KEYSTORE_PATH: /tmp/release.jks
@@ -32,19 +41,23 @@ jobs:
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
       - name: Version
-        if: github.ref == 'refs/heads/main'
+        if: steps.signing.outputs.ok == 'true'
         id: v
         run: echo "version=0.1.$(git rev-list --count HEAD)+$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      # Spec §23.17: tag `deck-<version>`, assets `usage-deck.apk` + `usage-deck.apk.sha256`, always a
+      # pre-release so the daemon's /releases/latest never returns an APK.
       - name: Package
-        if: github.ref == 'refs/heads/main'
+        if: steps.signing.outputs.ok == 'true'
         run: |
-          cp app/build/outputs/apk/release/app-release.apk "usage-deck-${{ steps.v.outputs.version }}.apk"
-          sha256sum "usage-deck-${{ steps.v.outputs.version }}.apk" > SHA256SUMS
+          cp app/build/outputs/apk/release/app-release.apk usage-deck.apk
+          sha256sum usage-deck.apk > usage-deck.apk.sha256
       - name: Release
-        if: github.ref == 'refs/heads/main'
+        if: steps.signing.outputs.ok == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.v.outputs.version }}
+          tag_name: deck-${{ steps.v.outputs.version }}
+          name: Usage Deck ${{ steps.v.outputs.version }}
+          prerelease: true
           files: |
-            usage-deck-${{ steps.v.outputs.version }}.apk
-            SHA256SUMS
+            usage-deck.apk
+            usage-deck.apk.sha256

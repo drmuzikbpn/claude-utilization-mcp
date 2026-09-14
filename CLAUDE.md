@@ -56,7 +56,7 @@ hook is missing.
 - Aging: fresh < 30 s since heartbeat, stale < 120 s, dead ≥ 120 s. Dead disables pause controls.
 - Escalation default 90 s; range 30 s–600 s or off; persisted across process death.
 - Self-update defers while a gesture is in progress, a hold is mid-press, or any escalation is pending.
-- Version: `versionName = 0.MINOR.<commit-count>+<sha>`, `versionCode = commit-count`. Release repo `BuildConfig.RELEASE_REPO`, default `drmuzikbpn/android-project` (owner confirmed by Alan 2026-09-13; the daemon lives at `drmuzikbpn/claude-utilization-mcp`).
+- Version: `versionName = 0.MINOR.<commit-count>+<sha>`, `versionCode = commit-count`. Release repo `BuildConfig.RELEASE_REPO`, default `drmuzikbpn/claude-utilization-mcp` (shared with the daemon): APK releases are tags `deck-<version>`, pre-release, assets `usage-deck.apk` + `usage-deck.apk.sha256`; the checker considers `deck-` tags only.
 - Every error shown to the user comes from the daemon envelope: `hint` → `message` → per-code default.
 - Single dark theme, colours and fonts from spec §11.6. Tabular numerals everywhere.
 - Commit after every task with a conventional-commit message ending in `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Never push.
@@ -66,9 +66,9 @@ hook is missing.
 
 This project lives on the orphan branch `usage-deck` of `drmuzikbpn/claude-utilization-mcp` (the
 daemon's repo; local `main` tracks `origin/usage-deck`, pushed 2026-09-14 with Alan's approval).
-Do not `git push` without explicit approval in the session. Release-on-green-push for the APK is
-NOT wired on that branch yet: the repo's Releases are the daemon's, and the two updaters must
-agree on a tag namespace (`deck-<version>` proposed) before any APK release is published there.
+Do not `git push` without explicit approval in the session. CI runs on pushes to `usage-deck` only
+(never a wildcard: the daemon's release job runs on `main`) and publishes a `deck-<version>`
+pre-release once the signing secrets exist; until then it only tests.
 
 ## Gotchas
 

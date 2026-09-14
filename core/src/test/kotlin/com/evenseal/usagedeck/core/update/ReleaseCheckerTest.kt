@@ -21,7 +21,7 @@ class ReleaseCheckerTest {
     fun up() {
         server.start()
         checker = ReleaseChecker(
-            repo = "drmuzikbpn/android-project",
+            repo = "drmuzikbpn/claude-utilization-mcp",
             client = OkHttpClient(),
             baseUrl = server.url("/").toString().trimEnd('/')
         )
@@ -32,44 +32,66 @@ class ReleaseCheckerTest {
         runCatching { server.shutdown() }
     }
 
+    /** The shared repo's list: a newer daemon release, an older deck release and the deck release we want. */
     private fun releaseJson(sumsUrl: String, apkUrl: String) = """
-        { "tag_name":"v0.1.418+abc",
-          "assets":[
-            {"name":"usage-deck-0.1.418+abc.apk","browser_download_url":"$apkUrl"},
-            {"name":"SHA256SUMS","browser_download_url":"$sumsUrl"}
-          ] }
+        [
+          { "tag_name":"v0.1.900+daemon", "prerelease":false,
+            "assets":[{"name":"claude-usage-0.1.900.tgz","browser_download_url":"x"},{"name":"SHA256SUMS","browser_download_url":"y"}] },
+          { "tag_name":"deck-0.1.417+old", "prerelease":true,
+            "assets":[{"name":"usage-deck.apk","browser_download_url":"old"},{"name":"usage-deck.apk.sha256","browser_download_url":"old"}] },
+          { "tag_name":"deck-0.1.418+abc", "prerelease":true,
+            "assets":[
+              {"name":"usage-deck.apk","browser_download_url":"$apkUrl"},
+              {"name":"usage-deck.apk.sha256","browser_download_url":"$sumsUrl"}
+            ] },
+          { "tag_name":"deck-0.1.419+draft", "draft":true, "prerelease":true,
+            "assets":[{"name":"usage-deck.apk","browser_download_url":"draft"},{"name":"usage-deck.apk.sha256","browser_download_url":"draft"}] }
+        ]
     """.trimIndent()
 
     @Test
-    fun `latest parses the tag and both assets`() = runTest {
-        val apkUrl = server.url("/assets/usage-deck-0.1.418+abc.apk").toString()
-        val sumsUrl = server.url("/assets/SHA256SUMS").toString()
+    fun `latest picks the newest deck release, ignoring daemon releases and drafts`() = runTest {
+        val apkUrl = server.url("/assets/usage-deck.apk").toString()
+        val sumsUrl = server.url("/assets/usage-deck.apk.sha256").toString()
         server.enqueue(MockResponse().setBody(releaseJson(sumsUrl, apkUrl)))
 
         val info = checker.latest()!!
         assertEquals(Version(0, 1, 418, "abc"), info.version)
-        assertEquals("usage-deck-0.1.418+abc.apk", info.apkName)
+        assertEquals("usage-deck.apk", info.apkName)
         assertEquals(apkUrl, info.apkUrl)
         assertEquals(sumsUrl, info.sumsUrl)
-        assertEquals("/repos/drmuzikbpn/android-project/releases/latest", server.takeRequest().path)
+        assertEquals("/repos/drmuzikbpn/claude-utilization-mcp/releases?per_page=30", server.takeRequest().path)
     }
 
     @Test
-    fun `a release with no matching apk asset yields null`() = runTest {
+    fun `a daemon tarball release alone never looks installable`() = runTest {
         server.enqueue(
             MockResponse().setBody(
-                """{"tag_name":"v0.1.418+abc","assets":[{"name":"SHA256SUMS","browser_download_url":"x"}]}"""
+                """[{"tag_name":"v0.1.900+daemon","assets":[""" +
+                    """{"name":"claude-usage-0.1.900.tgz","browser_download_url":"x"},""" +
+                    """{"name":"SHA256SUMS","browser_download_url":"y"}]}]"""
             )
         )
         assertNull(checker.latest())
     }
 
     @Test
-    fun `an unparseable tag yields null`() = runTest {
+    fun `a deck release with no apk asset yields null`() = runTest {
         server.enqueue(
             MockResponse().setBody(
-                """{"tag_name":"nightly","assets":[{"name":"usage-deck-x.apk","browser_download_url":"x"},""" +
-                    """{"name":"SHA256SUMS","browser_download_url":"y"}]}"""
+                """[{"tag_name":"deck-0.1.418+abc","assets":[""" +
+                    """{"name":"usage-deck.apk.sha256","browser_download_url":"x"}]}]"""
+            )
+        )
+        assertNull(checker.latest())
+    }
+
+    @Test
+    fun `an unparseable deck tag yields null`() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"tag_name":"deck-nightly","assets":[{"name":"usage-deck.apk","browser_download_url":"x"},""" +
+                    """{"name":"usage-deck.apk.sha256","browser_download_url":"y"}]}]"""
             )
         )
         assertNull(checker.latest())
@@ -81,30 +103,35 @@ class ReleaseCheckerTest {
         assertNull(checker.latest())
     }
 
-    @Test
-    fun `expectedSha256 finds the line for this apk`() = runTest {
-        val apkUrl = server.url("/assets/usage-deck-0.1.418+abc.apk").toString()
-        val sumsUrl = server.url("/assets/SHA256SUMS").toString()
+    private suspend fun infoFor(): ReleaseInfo {
+        val apkUrl = server.url("/assets/usage-deck.apk").toString()
+        val sumsUrl = server.url("/assets/usage-deck.apk.sha256").toString()
         server.enqueue(MockResponse().setBody(releaseJson(sumsUrl, apkUrl)))
         val info = checker.latest()!!
         server.takeRequest()
+        return info
+    }
 
+    @Test
+    fun `expectedSha256 finds the line for this apk`() = runTest {
+        val info = infoFor()
         val hex = "a".repeat(64)
-        server.enqueue(
-            MockResponse().setBody("${"b".repeat(64)}  other.apk\n$hex  usage-deck-0.1.418+abc.apk\n")
-        )
+        server.enqueue(MockResponse().setBody("${"b".repeat(64)}  other.apk\n$hex  usage-deck.apk\n"))
         assertEquals(hex, checker.expectedSha256(info))
-        assertEquals("/assets/SHA256SUMS", server.takeRequest().path)
+        assertEquals("/assets/usage-deck.apk.sha256", server.takeRequest().path)
+    }
+
+    @Test
+    fun `expectedSha256 accepts a bare hex`() = runTest {
+        val info = infoFor()
+        val hex = "c".repeat(64)
+        server.enqueue(MockResponse().setBody("$hex\n"))
+        assertEquals(hex, checker.expectedSha256(info))
     }
 
     @Test
     fun `expectedSha256 is null when the apk is not listed`() = runTest {
-        val apkUrl = server.url("/assets/usage-deck-0.1.418+abc.apk").toString()
-        val sumsUrl = server.url("/assets/SHA256SUMS").toString()
-        server.enqueue(MockResponse().setBody(releaseJson(sumsUrl, apkUrl)))
-        val info = checker.latest()!!
-        server.takeRequest()
-
+        val info = infoFor()
         server.enqueue(MockResponse().setBody("${"b".repeat(64)}  something-else.apk\n"))
         assertNull(checker.expectedSha256(info))
     }
