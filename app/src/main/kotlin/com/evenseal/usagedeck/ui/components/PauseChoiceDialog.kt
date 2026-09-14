@@ -50,7 +50,8 @@ fun PauseChoiceDialog(subject: String, onSoft: () -> Unit, onFreeze: () -> Unit,
                 )
                 Choice(
                     title = PauseChoiceDefaults.FREEZE,
-                    body = "Stops the process immediately (SIGSTOP). The terminal will look hung until you resume.",
+                    body = "Stops the running tool now and holds the next one; the session itself stays open. " +
+                        "A freeze longer than a couple of minutes ends the tool that was running.",
                     color = DeckColors.crit,
                     onClick = {
                         onDismiss()
