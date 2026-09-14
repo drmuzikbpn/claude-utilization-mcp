@@ -338,6 +338,9 @@ Full three-session example including a `discovered: "transcript"` one:
   terminal, and the next tool call is stopped by the gate instead. An empty list under
   `mode: "hard"` means the session had nothing running when the pause landed; it is held at
   the gate.
+- A `discovered: "transcript"` session reports `alive: false` once the daemon has seen it
+  stop, even while its transcript is recent — a recently-written transcript is evidence of
+  recent activity, never of a running process (§23.24).
 - `pause.freezes` counts how many times this pause has frozen the session's tool tree: `0`
   under a soft rule, `1` for a session frozen once, and `2+` once a re-registered session
   (`claude --resume`, new pid) or a daemon restart sweep has frozen it again under the same

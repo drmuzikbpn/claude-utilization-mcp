@@ -215,6 +215,11 @@ session at its next prompt or tool boundary (the hook sleeps and re-polls once a
 session — the work in flight, not the `claude` process itself, so you keep your terminal.
 Whatever it would do next is stopped at the same gate soft pause uses.
 
+> **A long hard pause costs the frozen tool call.** Claude Code's tool timeout keeps running
+> while a subprocess is stopped, so a freeze outlasting it (2 minutes by default for Bash)
+> kills the command that was in flight — the session survives and sees a timeout error.
+> Short freezes are lossless; hold one for minutes and expect to lose the running tool.
+
 Other subcommands: `serve [--verbose]`, `install`, `configure`, `uninstall`, `mcp`,
 `hook`, `statusline`, `--version`, `help`.
 
