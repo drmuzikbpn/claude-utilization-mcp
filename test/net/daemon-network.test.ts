@@ -223,3 +223,44 @@ describe('serve() wiring', () => {
     expect(process.listenerCount('SIGHUP')).toBe(before);
   });
 });
+
+describe('tailnet bind retry (§23.21)', () => {
+  it('keeps looking for a tailnet address that is not up yet, with no SIGHUP', async () => {
+    // Tailscale is down at boot — the Mac Studio's actual situation. The daemon used to
+    // serve loopback for ever and only notice on a SIGHUP nobody was there to send.
+    const net = new FakeNetwork();
+    net.ip = null;
+    const h = await start(['127.0.0.1', 'tailscale'], net, { tailnetRetryMs: 20 });
+    expect(h.addresses).toEqual(['127.0.0.1']);
+
+    // Tailscale comes up. `127.0.0.1` stands in for the tailnet address, as elsewhere in
+    // this file: macOS aliases no other loopback address, so nothing else is bindable here.
+    net.ip = '127.0.0.1';
+    net.dns = MAGIC_DNS;
+    for (let i = 0; i < 100 && h.magicDnsName === null; i += 1) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(h.magicDnsName).toBe(MAGIC_DNS);
+    expect(net.calls.ip).toBeGreaterThan(1);
+  });
+
+  it('does not poll at all once the tailnet address is bound', async () => {
+    const net = new FakeNetwork();
+    net.ip = '127.0.0.1';
+    const h = await start(['127.0.0.1', 'tailscale'], net, { tailnetRetryMs: 20 });
+    expect(h.addresses).toEqual(['127.0.0.1']);
+    const after = net.calls.ip;
+    await new Promise((r) => setTimeout(r, 120));
+    // Steady state is free: SIGHUP takes over once everything we want is listening.
+    expect(net.calls.ip).toBe(after);
+  });
+
+  it('does not poll when the config never asked for a tailnet address', async () => {
+    const net = new FakeNetwork();
+    const h = await start(['127.0.0.1'], net, { tailnetRetryMs: 20 });
+    const after = net.calls.ip;
+    await new Promise((r) => setTimeout(r, 120));
+    expect(net.calls.ip).toBe(after);
+    expect(h.addresses).toEqual(['127.0.0.1']);
+  });
+});

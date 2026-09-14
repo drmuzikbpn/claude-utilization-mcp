@@ -7,7 +7,7 @@ import { currentLink, versionDir } from '../../src/paths.js';
 import { repointSymlink } from '../../src/install/versions.js';
 import { currentVersion } from '../../src/update/apply.js';
 import { releasesLatestUrl } from '../../src/update/check.js';
-import { createUpdater } from '../../src/update/index.js';
+import { createUpdater, runUpdateCli, type UpdateCliIo } from '../../src/update/index.js';
 import { fakeFetch, makeTarball, releaseJson, seedVersion, TempDirs, type FakeResponseSpec } from './helpers.js';
 
 const dirs = new TempDirs();
@@ -147,5 +147,92 @@ describe('help', () => {
     expect(out.join('')).toMatch(/^\s+update \[--check\]/m);
     expect(out.join('')).toMatch(/^\s+rollback\s+/m);
     expect(out.join('')).not.toMatch(/Not implemented yet:.*update/);
+  });
+});
+
+/**
+ * §23.22: a manual `update` gets the same hard-freeze protection the daemon's loop has.
+ *
+ * Measured by the Android session: a restart under a hard rule thaws the frozen tree on
+ * shutdown, the session gets one tool boundary it was not supposed to get, and the new
+ * daemon's sweep re-freezes. The daemon's own updater defers for exactly this reason; the
+ * CLI path did not, and a manual `claude-usage update` leaked a tick.
+ */
+describe('update --force and the hard-freeze guard (§23.22)', () => {
+  const io = (over: Partial<UpdateCliIo> = {}): UpdateCliIo & { out: string[]; err: string[] } => {
+    const out: string[] = [];
+    const err: string[] = [];
+    return {
+      out,
+      err,
+      stdout: (t) => out.push(t),
+      stderr: (t) => err.push(t),
+      configDir: dirs.make(),
+      restartService: async () => 'service: restarted (test)',
+      ...over,
+    };
+  };
+
+  it('refuses, names the sessions, and installs nothing', async () => {
+    let ran = false;
+    const o = io({
+      hardFrozenSessions: async () => ['sess-a', 'sess-b'],
+      updater: {
+        runOnce: async () => {
+          ran = true;
+          throw new Error('must not run');
+        },
+      } as never,
+    });
+    expect(await runUpdateCli('update', [], o)).toBe(1);
+    expect(ran).toBe(false);
+    const err = o.err.join('');
+    expect(err).toMatch(/2 session\(s\) are hard-frozen/);
+    expect(err).toMatch(/sess-a/);
+    expect(err).toMatch(/sess-b/);
+    expect(err).toMatch(/--force/);
+  });
+
+  it('--force goes ahead anyway — the operator may well mean it', async () => {
+    let ran = false;
+    const o = io({
+      hardFrozenSessions: async () => ['sess-a'],
+      updater: {
+        runOnce: async () => {
+          ran = true;
+          return { state: 'idle', current: '1.0.0', available: null, deferredReason: null, channel: 'stable' };
+        },
+      } as never,
+    });
+    expect(await runUpdateCli('update', ['--force'], o)).toBe(0);
+    expect(ran).toBe(true);
+  });
+
+  it('does not ask at all for --check, which restarts nothing', async () => {
+    let asked = false;
+    const o = io({
+      hardFrozenSessions: async () => {
+        asked = true;
+        return ['sess-a'];
+      },
+      updater: { checkOnly: async () => ({ current: '1.0.0', available: null, error: null }) } as never,
+    });
+    expect(await runUpdateCli('update', ['--check'], o)).toBe(0);
+    expect(asked).toBe(false);
+  });
+
+  it('proceeds when the daemon is unreachable — nothing is running to disturb', async () => {
+    let ran = false;
+    const o = io({
+      hardFrozenSessions: async () => [],
+      updater: {
+        runOnce: async () => {
+          ran = true;
+          return { state: 'idle', current: '1.0.0', available: null, deferredReason: null, channel: 'stable' };
+        },
+      } as never,
+    });
+    expect(await runUpdateCli('update', [], o)).toBe(0);
+    expect(ran).toBe(true);
   });
 });
