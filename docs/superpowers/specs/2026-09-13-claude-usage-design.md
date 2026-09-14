@@ -493,6 +493,35 @@ CLI mirrors: `claude-usage sessions`, `claude-usage pause <all|project:<path>|se
 
 # Part III — Part I amendments from the 2026-09-13 audit
 
+**Part III overrides Parts I and II wherever they disagree.** Sections 23.1–23.12 came out
+of the pre-implementation audit; everything from 23.13 on came out of running the thing —
+QA from the Android dashboard, and two Macs in daily use.
+
+| Section | Subject |
+| --- | --- |
+| §23.1 | Name & trademark |
+| §23.2 | Local trust boundary (supersedes §4 preamble, §13 "authentication") |
+| §23.3 | Limits normalization (supersedes §4 `/v1/limits` and the `limits` part of `/v1/summary`) |
+| §23.4 | Transcript discovery (amends §5.3 source) |
+| §23.5 | Line filter & dedup key (amends §5.3) |
+| §23.6 | Project key (amends §4 `groupBy=project`, §5.3) |
+| §23.7 | Memory & time budget (amends §5.3 scanner/store, §6) |
+| §23.8 | Truncation (amends §5.3) |
+| §23.9 | launchd / systemd details (amends §6 logging, §8 service) |
+| §23.10 | `~/.claude.json` is Claude Code's live state file (amends §7.2, §8 step 3) |
+| §23.11 | Hook registration shape (amends §7.1, §8) |
+| §23.12 | Additional tests (amends §11) |
+| §23.13 | Dashboard contract clarifications (from the Android spec audit, 2026-09-13) |
+| §23.14 | Session titles from `/rename` (2026-09-13) |
+| §23.15 | Pause-rule semantics refined by QA (2026-09-13 evening) |
+| §23.16 | Hard freeze spares the session's own process (2026-09-13 evening) |
+| §23.17 | Release-tag namespace shared with the Android dashboard (2026-09-14) |
+| §23.18 | The update restart cannot rely on the exit code alone (2026-09-14) |
+| §23.19 | The last good limits survive a restart (2026-09-14) |
+| §23.20 | An install over ssh yields a service launchd will not supervise (2026-09-14) |
+| §23.21 | Keep looking for the tailnet address (2026-09-14) |
+| §23.22 | A manual update gets the daemon's hard-freeze guard (2026-09-14) |
+
 15 findings survived a 3-vote adversarial review (56 unique candidates). Where Part I
 conflicts with this section, this section wins.
 
@@ -641,6 +670,28 @@ our once-written `.bak`; `limits` normalizer against the fixture incl. `unknown_
 - The error envelope **always** carries a non-empty `message` (and `hint` where one exists),
   including `401`/`403`/`421`: e.g. `{ error: { code: "unauthorized", message: "Bearer token
   missing or invalid", hint: "run `claude-usage configure pairing` on the host" } }`.
+
+## 23.14 Session titles from `/rename` (2026-09-13)
+
+Claude Code's `/rename` gives a session a human title, and the dashboard wants it — a row
+reading "Ethan - Launch Daemon" beats one reading `3f1c0a52-…`. `SessionView` therefore
+carries `title: string | null`, `null` when the session was never renamed.
+
+Two sources, in order, because neither alone is complete:
+
+1. **The transcript.** `/rename` writes a `{"type":"custom-title","customTitle":…}` record
+   into the session's JSONL. The spend scanner already reads every line of every transcript,
+   so it reports these through a `TitleSink` as it goes — no second pass. Last one wins.
+2. **The sidecar**, `<transcriptDir>/<sessionId>/custom-title.json`, read on demand when the
+   store has no title for that session. This is what covers a rename that happened before
+   the daemon existed, or one in a transcript we have not re-scanned.
+
+A title is trimmed, and an empty string is `null` — "renamed to nothing" is not a title.
+
+`refreshTitles()` runs on every token-store change and publishes a `session` `update` for
+any session whose title actually changed, so a rename reaches an open dashboard without
+waiting for another event. The cache exists to make that comparison: a session seen for the
+first time is recorded silently rather than announced as a change.
 
 ## 23.15 Pause-rule semantics refined by QA (2026-09-13 evening)
 - **One rule per scope.** Posting a rule for a scope that already has one in the *other*
