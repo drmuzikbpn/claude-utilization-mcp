@@ -343,6 +343,15 @@ is genuinely off — no `current` symlink, or `configure autoupdate off`.
   `deck-` tag outright, reporting *no update* rather than an error — an error would mask the
   next real daemon release, since `releases/latest` returns only one.
 
+### Installing on a remote machine
+
+`claude-usage install` over ssh works, but macOS gives you a service launchd will **not**
+supervise: a LaunchAgent bootstrapped from a non-GUI session has its spawns pended, so
+`RunAtLoad` and `KeepAlive` never fire. The daemon runs, and auto-update restarts it, but
+launchd will not bring it back after a crash or a reboot. `install` detects this and says
+so. To get a self-healing service, run `install` from a terminal on that machine's own
+desktop — over Screen Sharing if need be.
+
 ## Platform support
 
 - **macOS** — launchd; credentials from the Keychain item `Claude Code-credentials`.

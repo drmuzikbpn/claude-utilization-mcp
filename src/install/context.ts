@@ -3,6 +3,7 @@ import { DaemonClient } from '../clients/http.js';
 import { loadConfig, resolveConfigDir, saveConfig, type Config } from '../config.js';
 import { currentBin, claudeJsonPath, settingsPath } from '../paths.js';
 import { createServiceManager, type ExecRunner, type ServiceManager } from '../service/index.js';
+import type { LaunchdService } from '../service/launchd.js';
 import type { SystemdService } from '../service/systemd.js';
 import { getVersion } from '../version.js';
 import type { Prompter } from './plan.js';
@@ -75,6 +76,17 @@ export async function resolveContext(io: InstallIO): Promise<ResolvedContext> {
 }
 
 /** Does this manager know how to enable lingering? Only systemd does (§23.9). */
+/**
+ * The launchd manager, when that is what we have — for `diagnose()`, which is launchd's
+ * own problem and does not belong on the cross-platform interface (§23.20).
+ */
+export function asLaunchd(service: ServiceManager): LaunchdService | null {
+  // Structural, not `kind === 'launchd'`: fakes in tests (and any future partial
+  // implementation) declare the kind without carrying the launchd-only methods.
+  if (service.kind !== 'launchd') return null;
+  return typeof (service as Partial<LaunchdService>).diagnose === 'function' ? (service as LaunchdService) : null;
+}
+
 export function asSystemd(service: ServiceManager): SystemdService | null {
   return service.kind === 'systemd' ? (service as SystemdService) : null;
 }

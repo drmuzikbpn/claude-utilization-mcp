@@ -2,6 +2,7 @@ import { versionDir } from '../paths.js';
 import { buildUnit } from '../service/index.js';
 import { addMcpServer } from './claude-json.js';
 import {
+  asLaunchd,
   asSystemd,
   loadConfigWithToken,
   persistConfig,
@@ -98,6 +99,9 @@ export async function runInstall(argv: readonly string[], io: InstallIO): Promis
   if (chosen.service) {
     await ctx.service.install(buildUnit({ nodePath: ctx.nodePath, binPath: ctx.binPath, env: ctx.env }));
     io.stdout(`service: ${ctx.service.kind} ${ctx.service.unitPath}\n`);
+    // An install over ssh produces a job launchd will not restart on its own; say so rather
+    // than hand back a service that only looks healthy (§23.20).
+    for (const warning of (await asLaunchd(ctx.service)?.diagnose()) ?? []) notes.push(warning);
     if (flags.linger) {
       const systemd = asSystemd(ctx.service);
       if (systemd === null) notes.push('--linger only applies to systemd; ignored');

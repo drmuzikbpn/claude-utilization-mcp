@@ -165,6 +165,41 @@ export class LaunchdService implements ServiceManager {
     return /^\s*pid\s*=\s*\d+/m.test(result.stdout) ? 'running' : 'stopped';
   }
 
+  /**
+   * Problems that leave a *loaded, running* job unable to look after itself (§23.20).
+   *
+   * The one that has actually bitten: bootstrapping from a non-GUI session — an `install`
+   * run over SSH — registers the job in `gui/<uid>` but leaves its spawns
+   * `pended nondemand spawn = speculative`. `RunAtLoad` never fires, and neither does
+   * `KeepAlive`: on the Mac Studio a `kill -9` on a job up well past `minimum runtime = 10`
+   * left it down indefinitely, while the same job on a locally-installed Mac came straight
+   * back. `kickstart` still works, which is exactly why this hides — every manual fix, and
+   * `install` itself, makes the machine look healthy.
+   *
+   * Returns human-readable warnings, empty when nothing is wrong. Never throws: a
+   * diagnostic that fails must not fail an install.
+   */
+  async diagnose(): Promise<string[]> {
+    let out: string;
+    try {
+      const result = await this.exec('launchctl', ['print', this.target]);
+      if (result.code !== 0) return [];
+      out = result.stdout;
+    } catch {
+      return [];
+    }
+    const warnings: string[] = [];
+    if (/pended nondemand spawn/.test(out)) {
+      warnings.push(
+        'launchd registered the service but will not start it on its own: this looks like an ' +
+          'install from a non-GUI session (ssh). The daemon runs, and updates restart it, but ' +
+          'launchd will NOT bring it back after a crash or a reboot. Re-run `claude-usage install` ' +
+          'from a terminal on that machine\'s own desktop to get a self-healing service.',
+      );
+    }
+    return warnings;
+  }
+
   async logTail(n: number): Promise<string[]> {
     try {
       return tailLines(readFileSync(this.stderrLog, 'utf8'), n);
