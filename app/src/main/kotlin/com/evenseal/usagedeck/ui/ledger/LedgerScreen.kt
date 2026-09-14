@@ -1,7 +1,9 @@
 package com.evenseal.usagedeck.ui.ledger
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +18,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -40,6 +45,7 @@ import com.evenseal.usagedeck.ui.components.HomeEmpty
 import com.evenseal.usagedeck.ui.components.HomeEmptyBody
 import com.evenseal.usagedeck.ui.components.LimitBar
 import com.evenseal.usagedeck.ui.components.PauseButton
+import com.evenseal.usagedeck.ui.components.RenameDialog
 import com.evenseal.usagedeck.ui.components.SessionRow
 import com.evenseal.usagedeck.ui.components.Sparkline
 import com.evenseal.usagedeck.ui.components.StatusBar
@@ -72,13 +78,26 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
 
         val empty = HomeEmpty.of(team)
 
+        var renaming by remember { mutableStateOf<UserView?>(null) }
+        renaming?.let { user ->
+            RenameDialog(
+                user = user,
+                current = prefs.userNames[user.key].orEmpty(),
+                onSave = { name ->
+                    vm.renameUser(user.key, name)
+                    renaming = null
+                },
+                onDismiss = { renaming = null }
+            )
+        }
         team.usersWithData().forEach { user ->
             UserBlock(
                 user = user,
                 name = prefs.nameFor(user),
                 now = now,
                 expanded = DeckViewModel.userId(user.key) in expanded,
-                onToggle = { vm.toggleUserExpanded(user.key) }
+                onToggle = { vm.toggleUserExpanded(user.key) },
+                onRename = { renaming = user }
             )
         }
 
@@ -157,11 +176,12 @@ internal fun homeSecondary(empty: HomeEmpty?, onOpen: (Route) -> Unit): List<Pai
 const val GEAR = "⚙"
 
 /**
- * A person's quota. Folded (the default) it is one line — name, then the 5 h and 7 d percentages —
+ * A person's quota. Long-press renames the person. Folded (the default) it is one line — name, then the 5 h and 7 d percentages —
  * so two people cost the sessions list two rows, not half the screen. Tapping unfolds the full
  * block: e-mail, both bars with their resets, and any model-scoped windows. A teammate's block
  * fades to 55 % once their machine stops checking in (spec §11.1).
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun UserBlock(
     user: UserView,
@@ -169,14 +189,16 @@ internal fun UserBlock(
     now: Instant,
     expanded: Boolean,
     onToggle: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Long-press on the row; the Ledger opens the rename dialog. */
+    onRename: () -> Unit = {}
 ) {
     val faded = user.health != Health.FRESH
     Column(
         modifier = modifier
             .fillMaxWidth()
             .alpha(if (faded) STALE_ALPHA else 1f)
-            .clickable(onClick = onToggle)
+            .combinedClickable(onClick = onToggle, onLongClick = onRename)
             .semantics { contentDescription = "${if (expanded) "collapse" else "expand"} $name" }
             .padding(
                 start = 6.dp,

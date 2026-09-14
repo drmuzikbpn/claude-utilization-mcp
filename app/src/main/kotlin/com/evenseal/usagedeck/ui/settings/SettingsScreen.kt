@@ -12,7 +12,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -41,6 +40,8 @@ import com.evenseal.usagedeck.settings.ESCALATION_CHOICES
 import com.evenseal.usagedeck.settings.Settings
 import com.evenseal.usagedeck.settings.WARN_MAX
 import com.evenseal.usagedeck.settings.WARN_MIN
+import com.evenseal.usagedeck.ui.components.RenameDialog
+import com.evenseal.usagedeck.ui.components.identity
 import com.evenseal.usagedeck.ui.theme.DeckColors
 import com.evenseal.usagedeck.ui.theme.DeckType
 import java.time.LocalTime
@@ -256,52 +257,6 @@ private fun UserRow(user: UserView, name: String, onClick: () -> Unit) {
     }
 }
 
-/** Edits the display name for one person. Saving a blank name goes back to what the daemon reports. */
-@Composable
-private fun RenameDialog(user: UserView, current: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
-    var entry by remember(user.key) { mutableStateOf(current) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = DeckColors.surface,
-        titleContentColor = DeckColors.fg,
-        textContentColor = DeckColors.muted,
-        title = { Text(text = "Rename ${user.displayName}", fontFamily = DeckType.text) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = user.identity,
-                    fontFamily = DeckType.mono,
-                    fontSize = 11.sp
-                )
-                OutlinedTextField(
-                    modifier = Modifier.fillMaxWidth().semantics { contentDescription = RENAME_FIELD },
-                    value = entry,
-                    onValueChange = { entry = it.take(NAME_LENGTH) },
-                    singleLine = true,
-                    placeholder = { Text(user.displayName, color = DeckColors.dim) }
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onSave(entry) }) {
-                Text(RENAME_SAVE, color = DeckColors.accent, fontFamily = DeckType.text)
-            }
-        },
-        dismissButton = {
-            Row {
-                if (current.isNotEmpty()) {
-                    TextButton(onClick = { onSave("") }) {
-                        Text(RENAME_RESET, color = DeckColors.muted, fontFamily = DeckType.text)
-                    }
-                }
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel", color = DeckColors.muted, fontFamily = DeckType.text)
-                }
-            }
-        }
-    )
-}
-
 @Composable
 private fun ToggleRow(label: String, description: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(
@@ -435,16 +390,6 @@ const val CRITICAL_SLIDER = "critical threshold"
 const val DIM_SLIDER = "night dim"
 const val PIN_FIELD = "exit pin field"
 
-/** `alan@… · Even Seal Productions`: enough to tell one account's two organisations apart. */
-private val UserView.identity: String
-    get() = listOfNotNull(emailAddress ?: machineIds.joinToString().ifEmpty { null }, organizationName)
-        .joinToString(" · ")
-
-const val RENAME_FIELD = "display name field"
-const val RENAME_SAVE = "Save name"
-const val RENAME_RESET = "Use daemon name"
-
 private const val PIN_LENGTH = 6
-private const val NAME_LENGTH = 24
 private const val PERCENT = 100
 private const val DIM_MIN_PERCENT = 10

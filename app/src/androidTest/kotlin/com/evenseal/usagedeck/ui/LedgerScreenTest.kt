@@ -3,11 +3,14 @@ package com.evenseal.usagedeck.ui
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.evenseal.usagedeck.core.model.Health
 import com.evenseal.usagedeck.core.model.MachineConfig
@@ -17,8 +20,11 @@ import com.evenseal.usagedeck.core.pause.Escalation
 import com.evenseal.usagedeck.core.pause.PauseTarget
 import com.evenseal.usagedeck.settings.Settings
 import com.evenseal.usagedeck.ui.components.PauseButtonDefaults
+import com.evenseal.usagedeck.ui.components.RENAME_FIELD
+import com.evenseal.usagedeck.ui.components.RENAME_SAVE
 import com.evenseal.usagedeck.ui.ledger.LedgerScreen
 import com.evenseal.usagedeck.ui.theme.DeckTheme
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -215,5 +221,18 @@ class LedgerScreenTest {
         compose.onNodeWithContentDescription("expand Sam").assertExists()
         // The machine chip keeps the machine's own name; only the person is renamed.
         compose.onAllNodesWithText("Alan").assertCountEquals(1)
+    }
+
+    @Test
+    fun longPressingAUserRowRenamesThePerson() {
+        val settings = MutableStateFlow(Settings())
+        show(fakeViewModel(settingsFlow = settings))
+
+        compose.onNodeWithContentDescription("expand Alan").performTouchInput { longClick() }
+        compose.onNodeWithContentDescription(RENAME_FIELD).performTextInput("Team seat")
+        compose.onNodeWithText(RENAME_SAVE).performClick()
+
+        assertEquals(mapOf("uuid-m1" to "Team seat"), settings.value.userNames)
+        compose.onNodeWithContentDescription("expand Team seat").assertExists()
     }
 }

@@ -10,6 +10,9 @@ import java.time.Instant
  * `"<machineId>/m"`). A cumulative counter that goes backwards means the underlying thing
  * restarted, so the key's history is discarded and the new sample becomes the baseline —
  * never a negative rate.
+ *
+ * Samples arrive on the SSE thread while Compose reads rates on the main thread, so every
+ * method takes the same lock; a reader works on a snapshot of the key's points.
  */
 class BurnHistory(
     private val retention: Duration = Duration.ofHours(5),
@@ -19,7 +22,7 @@ class BurnHistory(
 
     private val points = LinkedHashMap<String, ArrayDeque<Point>>()
 
-    fun record(key: String, at: Instant, cumulative: Long) {
+    fun record(key: String, at: Instant, cumulative: Long) = synchronized(points) {
         val deque = points.getOrPut(key) { ArrayDeque() }
         val last = deque.lastOrNull()
         if (last != null && cumulative < last.cumulative) {
@@ -36,7 +39,7 @@ class BurnHistory(
     }
 
     fun ratePerMinute(key: String, now: Instant, window: Duration = Duration.ofSeconds(60)): Double {
-        val deque = points[key] ?: return 0.0
+        val deque = snapshot(key) ?: return 0.0
         val from = now.minus(window)
         val inWindow = deque.filter { !it.at.isBefore(from) && !it.at.isAfter(now) }
         if (inWindow.size < 2) return 0.0
@@ -50,7 +53,7 @@ class BurnHistory(
     /** Tokens/min per bucket over [window] ending at [now], oldest first; `0.0` where nothing is known. */
     fun series(key: String, now: Instant, window: Duration, buckets: Int): List<Double> {
         if (buckets <= 0) return emptyList()
-        val deque = points[key] ?: return List(buckets) { 0.0 }
+        val deque = snapshot(key) ?: return List(buckets) { 0.0 }
         val bucketSeconds = window.seconds.toDouble() / buckets
         if (bucketSeconds <= 0.0) return List(buckets) { 0.0 }
         val start = now.minus(window)
@@ -68,8 +71,10 @@ class BurnHistory(
     }
 
     fun forget(key: String) {
-        points.remove(key)
+        synchronized(points) { points.remove(key) }
     }
+
+    private fun snapshot(key: String): List<Point>? = synchronized(points) { points[key]?.toList() }
 
     private companion object {
         const val SECONDS_PER_MINUTE = 60.0

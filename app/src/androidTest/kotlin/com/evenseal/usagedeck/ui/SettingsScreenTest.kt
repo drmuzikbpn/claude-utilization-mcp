@@ -16,10 +16,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.evenseal.usagedeck.core.model.UserView
 import com.evenseal.usagedeck.settings.Settings
 import com.evenseal.usagedeck.settings.normalised
+import com.evenseal.usagedeck.ui.components.RENAME_FIELD
+import com.evenseal.usagedeck.ui.components.RENAME_RESET
+import com.evenseal.usagedeck.ui.components.RENAME_SAVE
 import com.evenseal.usagedeck.ui.settings.CRITICAL_SLIDER
-import com.evenseal.usagedeck.ui.settings.RENAME_FIELD
-import com.evenseal.usagedeck.ui.settings.RENAME_RESET
-import com.evenseal.usagedeck.ui.settings.RENAME_SAVE
 import com.evenseal.usagedeck.ui.settings.SettingsScreen
 import com.evenseal.usagedeck.ui.theme.DeckTheme
 import org.junit.Assert.assertEquals

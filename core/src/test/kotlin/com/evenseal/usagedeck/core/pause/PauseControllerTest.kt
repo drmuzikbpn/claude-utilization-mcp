@@ -389,6 +389,27 @@ class PauseControllerTest {
     }
 
     @Test
+    fun `resuming a project also lifts the session rules under it`() = runTest {
+        val frozen = PauseState(PauseMode.HARD, "r-2", "session:s1", t0, listOf(42))
+        val f = fixture(
+            listOf(
+                machine(
+                    "m1",
+                    sessions = listOf(session("s1", pause = frozen), session("s2")),
+                    rules = listOf(rule("session:s1"), rule("session:s1"))
+                )
+            )
+        )
+        f.controller.start()
+        runCurrent()
+        val project = PauseTarget.Project("m1", "/g/.git")
+        assertTrue(f.controller.isPaused(project))
+
+        f.controller.tap(project)
+        assertEquals(listOf("resume:${project.scope()}", "resume:session:s1"), f.api("m1").calls)
+    }
+
+    @Test
     fun `tap on an unpaused target soft pauses`() = runTest {
         val f = fixture(listOf(machine("m1", sessions = listOf(session("s1")))))
         f.controller.start()
