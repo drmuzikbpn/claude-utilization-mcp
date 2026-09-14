@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { DaemonClient, DaemonUnreachable } from '../src/clients/http.js';
 import {
   formatNudge,
+  HOOK_DEADLINE_MS,
+  REGISTER_DEADLINE_MS,
   formatResetsAt,
   formatResetsIn,
   hookStatePath,
@@ -321,5 +323,95 @@ describe('runHook failure paths', () => {
     });
     expect(code).toBe(0);
     expect(out).toMatch(/^🛑/);
+  });
+});
+
+/**
+ * §23.23: registration must not share the nudge's 200 ms budget.
+ *
+ * Found in QA: two throwaway sessions started 70 s apart from the same command line, one
+ * registered in 4 s and the other not at all. The one that missed came up
+ * `discovered: "transcript"` with `pid: null`, so a session-scope hard pause was refused 409
+ * and a project-scope rule froze nothing — the whole control surface lost, silently, for the
+ * life of that session.
+ */
+describe('SessionStart registration (§23.23)', () => {
+  const start = { hook_event_name: 'SessionStart', session_id: 's1', cwd: '/tmp/x', source: 'startup' };
+
+  it('registers with its own deadline, not the 200 ms nudge budget', async () => {
+    const calls: { path: string; timeoutMs: number | undefined }[] = [];
+    await runHook({
+      stdin: JSON.stringify(start),
+      configDir: tempConfigDir(),
+      ppid: 4242,
+      gitCommonDir: () => null,
+      client: {
+        get: async () => ({}),
+        post: async (path, _body, opts) => {
+          calls.push({ path, timeoutMs: opts?.timeoutMs });
+          return {};
+        },
+      },
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.path).toBe('/v1/sessions/register');
+    expect(calls[0]?.timeoutMs).toBe(REGISTER_DEADLINE_MS);
+    expect(calls[0]?.timeoutMs).toBeGreaterThan(HOOK_DEADLINE_MS);
+  });
+
+  it('re-registers when a later heartbeat is not accepted', async () => {
+    // The daemon does not know this session: the SessionStart register missed its window.
+    const posted: string[] = [];
+    await runHook({
+      stdin: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 's1', cwd: '/tmp/x' }),
+      configDir: tempConfigDir(),
+      ppid: 4242,
+      gitCommonDir: () => null,
+      client: {
+        get: async () => ({ paused: false }),
+        post: async (path) => {
+          posted.push(path);
+          if (path.endsWith('/heartbeat')) throw new Error('404 not found');
+          return {};
+        },
+      },
+    });
+    expect(posted).toEqual(['/v1/sessions/s1/heartbeat', '/v1/sessions/register']);
+  });
+
+  it('does not re-register when the heartbeat is accepted', async () => {
+    const posted: string[] = [];
+    await runHook({
+      stdin: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 's1', cwd: '/tmp/x' }),
+      configDir: tempConfigDir(),
+      ppid: 4242,
+      gitCommonDir: () => null,
+      client: {
+        get: async () => ({ paused: false }),
+        post: async (path) => {
+          posted.push(path);
+          return { ok: true };
+        },
+      },
+    });
+    expect(posted).toEqual(['/v1/sessions/s1/heartbeat']);
+  });
+
+  it('still exits 0 when the re-register also fails — the daemon may simply be gone', async () => {
+    const code = await runHook({
+      stdin: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 's1', cwd: '/tmp/x' }),
+      configDir: tempConfigDir(),
+      ppid: 4242,
+      gitCommonDir: () => null,
+      client: {
+        get: async () => {
+          throw new Error('ECONNREFUSED');
+        },
+        post: async () => {
+          throw new Error('ECONNREFUSED');
+        },
+      },
+    });
+    expect(code).toBe(0);
   });
 });

@@ -9,6 +9,19 @@ import type { NormalizedLimit } from './limits/types.js';
 
 /** §7.1: the hook's own internal HTTP deadline (the registered hook timeout is seconds — §23.11). */
 export const HOOK_DEADLINE_MS = 200;
+/**
+ * `SessionStart` registration gets its own, longer deadline (§23.23).
+ *
+ * The 200 ms budget exists so the §7.1 nudge never delays a *prompt*. Registration is not on
+ * that path — it runs once, before the session is interactive — and it is the one call the
+ * whole session control surface depends on: a register that misses its window leaves the
+ * session discoverable only from its transcript, with `pid: null`, so a hard pause on it is
+ * refused 409 and a project rule freezes nothing. Observed in QA: the same command line
+ * registered in 4 s one time and not at all 70 s earlier.
+ *
+ * Same lesson as the gate's deadline in §23.15, in a different place.
+ */
+export const REGISTER_DEADLINE_MS = 2_000;
 export const HOOK_STATE_FILE = 'hook-state.json';
 export const DEFAULT_DEBOUNCE_MINUTES = 10;
 
@@ -87,6 +100,8 @@ export interface HookIO {
   gatePollMs?: number;
   /** The gate's own HTTP deadline; defaults to `GATE_DEADLINE_MS` (§18.2). */
   gateDeadlineMs?: number;
+  /** Registration's own HTTP deadline; defaults to `REGISTER_DEADLINE_MS` (§23.23). */
+  registerDeadlineMs?: number;
   /** Hard stop for the gate loop, so a test can never hang. */
   gateMaxMs?: number;
 }
@@ -350,6 +365,33 @@ export async function runGate(
   }
 }
 
+/**
+ * `POST /v1/sessions/register` (§17.1). Idempotent, so the `UserPromptSubmit` retry is safe:
+ * re-registering the same id with the same pid changes nothing.
+ */
+async function register(
+  client: HookClient,
+  io: HookIO,
+  input: HookStdin,
+  sessionId: string,
+  cwd: string,
+): Promise<void> {
+  const probe = io.gitCommonDir ?? detectGitCommonDir;
+  await postQuietly(
+    client,
+    '/v1/sessions/register',
+    {
+      sessionId,
+      pid: io.ppid ?? process.ppid,
+      cwd,
+      transcriptPath: typeof input.transcript_path === 'string' ? input.transcript_path : null,
+      gitCommonDir: probe(cwd),
+      source: typeof input.source === 'string' ? input.source : null,
+    },
+    io.registerDeadlineMs ?? REGISTER_DEADLINE_MS,
+  );
+}
+
 /** The §7.1 nudge, unchanged: one `/v1/summary` call with a 200 ms deadline. */
 async function runNudge(io: HookIO, client: HookClient, configDir: string): Promise<number> {
   const out = io.stdout ?? ((text: string) => process.stdout.write(text));
@@ -404,20 +446,7 @@ export async function runHook(io: HookIO = {}): Promise<number> {
 
     if (event === 'SessionStart') {
       if (sessionId.length === 0) return 0;
-      const probe = io.gitCommonDir ?? detectGitCommonDir;
-      await postQuietly(
-        client,
-        '/v1/sessions/register',
-        {
-          sessionId,
-          pid: io.ppid ?? process.ppid,
-          cwd,
-          transcriptPath: typeof input.transcript_path === 'string' ? input.transcript_path : null,
-          gitCommonDir: probe(cwd),
-          source: typeof input.source === 'string' ? input.source : null,
-        },
-        deadlineMs,
-      );
+      await register(client, io, input, sessionId, cwd);
       return 0;
     }
 
@@ -436,7 +465,12 @@ export async function runHook(io: HookIO = {}): Promise<number> {
 
     // `UserPromptSubmit` (and anything we do not recognise): heartbeat, gate, then nudge.
     if (sessionId.length > 0) {
-      await postQuietly(client, `/v1/sessions/${encodeURIComponent(sessionId)}/heartbeat`, {}, deadlineMs);
+      const beat = await postQuietly(client, `/v1/sessions/${encodeURIComponent(sessionId)}/heartbeat`, {}, deadlineMs);
+      // A heartbeat the daemon did not accept means it does not know this session — most
+      // often a `SessionStart` register that missed its window. Re-register rather than
+      // leave the session pid-less for its whole life (§23.23). A daemon that is simply
+      // unreachable fails this too, harmlessly: `postQuietly` never throws.
+      if (beat === null) await register(client, io, input, sessionId, cwd);
       await runGate(client, sessionId, undefined, io, configDir);
     }
     return await runNudge(io, client, configDir);

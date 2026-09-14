@@ -521,6 +521,8 @@ QA from the Android dashboard, and two Macs in daily use.
 | §23.20 | An install over ssh yields a service launchd will not supervise (2026-09-14) |
 | §23.21 | Keep looking for the tailnet address (2026-09-14) |
 | §23.22 | A manual update gets the daemon's hard-freeze guard (2026-09-14) |
+| §23.23 | Registration gets its own deadline, and a retry (2026-09-14) |
+| §23.24 | A session we watched stop must not come back to life (2026-09-14) |
 
 15 findings survived a 3-vote adversarial review (56 unique candidates). Where Part I
 conflicts with this section, this section wins.
@@ -728,6 +730,15 @@ Claude's *work*, not to take the user's terminal away, so:
 - **A fresh pid is not chased.** A session that re-registers (`claude --resume`) under a
   standing hard rule has its new tree frozen on the next reconcile — which for a
   just-started session means freezing nothing — and is then held at its first gate.
+- **A freeze longer than the session's tool timeout costs that tool call.** Claude Code's
+  own tool runner keeps its clock running while the subprocess is stopped: the timeout
+  fires, its termination signal is delivered to a `SIGSTOP`ed process group and stays
+  pending, and on `SIGCONT` the tool gets one boundary in and then dies. Measured: a 3 min
+  56 s freeze against Claude Code's 2-minute default Bash timeout killed the in-flight
+  command; freezes under a minute left the same loop running. The session itself survives
+  and sees a timeout error. This is inherent to stopping subprocesses rather than the TUI —
+  the alternative (stopping the TUI) is what §23.16 exists to avoid — so it is documented,
+  not fixed. **A long hard pause costs the frozen tool call.**
 
 ### Reconciler bookkeeping
 
@@ -882,3 +893,50 @@ hard-frozen and refuses, naming them, unless `--force` is given:
 - `--check` never asks — it restarts nothing.
 - A daemon we cannot reach reports none: there is then nothing running to disturb, and a
   dead daemon must never block a manual update.
+
+## 23.23 Registration gets its own deadline, and a retry (2026-09-14)
+
+Found in QA: two throwaway sessions started 70 s apart from the same command line, on the
+same build. One registered within 4 s; the other never did, came up
+`discovered: "transcript"` with `pid: null`, and so a session-scope hard pause on it was
+refused `409` while a project-scope rule froze nothing (`freezes 0`). The entire session
+control surface was silently absent for the life of that session.
+
+Cause: `SessionStart` registration used `HOOK_DEADLINE_MS` (200 ms). That budget exists so
+the §7.1 nudge never delays a **prompt** — but registration is not on the prompt path, it
+runs once before the session is interactive, and it is the call everything else depends on.
+Exactly the mistake §23.15 fixed for the gate, in a second place.
+
+- `REGISTER_DEADLINE_MS` = 2 000 ms, used for the `SessionStart` register only. The nudge
+  keeps its 200 ms.
+- **Retry:** a `UserPromptSubmit` whose heartbeat the daemon does not accept means the daemon
+  does not know this session — most often a register that missed. The hook re-registers, then
+  gates. `register` is idempotent, so a re-register with the same pid changes nothing.
+- An unreachable daemon fails the retry too, harmlessly: the hook still prints nothing and
+  still exits 0. No hook behaviour is conditional on the daemon existing.
+
+## 23.24 A session we watched stop must not come back to life (2026-09-14)
+
+Reported from the phone: a session killed at 08:33 still read "1 live" at 08:40. Not a
+display bug — the daemon really did say `alive: true`.
+
+Two timers with a gap between them. A registered session whose pid dies is marked dead and
+kept for `DEAD_RETENTION_MS` (5 min) so the dashboard sees the exit, then dropped. Once it
+is gone from `sessions.json`, the transcript back-fill picks it up again as a
+`discovered: "transcript"` session and calls it alive if its transcript was written inside
+`TRANSCRIPT_ALIVE_MS` (10 min) — which, five minutes after the kill, it was. So the session
+reappeared as live for the remaining five minutes of that window.
+
+A recently-written transcript is evidence of recent activity, never of a running process.
+The registry now keeps **tombstones**: `sessionId → when we last knew it was not running`,
+set when a dead session is dropped and when `SessionEnd` arrives, and consulted by the
+back-fill.
+
+- The back-fill's `alive` becomes `age < TRANSCRIPT_ALIVE_MS && !buried(id)`. The session is
+  still listed, with its tokens — it is reported honestly as not alive, not hidden.
+- Tombstones are persisted in `sessions.json` (`ended`), so a daemon restart inside the
+  window does not resurrect what the previous process had already buried.
+- They expire after `TRANSCRIPT_ALIVE_MS`, past which they decide nothing, and are pruned on
+  every save.
+- `register` lifts a tombstone immediately: a session that registers again is demonstrably
+  back, whatever we believed a moment ago.

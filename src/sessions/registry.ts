@@ -85,6 +85,8 @@ interface PersistedFile {
   version?: number;
   rev?: number;
   sessions?: StoredSession[];
+  /** §23.24 tombstones: `sessionId → epoch ms we last knew it was not running`. */
+  ended?: Record<string, number>;
 }
 
 function isoOf(ms: number): string {
@@ -134,6 +136,17 @@ export class SessionRegistry {
   }
 
   #titleCache = new Map<string, string | null>();
+  /**
+   * Sessions we have seen stop, and when (§23.24).
+   *
+   * A registered session that dies is marked dead, kept for `DEAD_RETENTION_MS`, then
+   * dropped — at which point the transcript back-fill finds a transcript written five
+   * minutes ago, calls it `alive` (the window is ten), and the session comes back to life on
+   * the dashboard for another five. Observed from the phone: a session killed at 08:33 still
+   * read "1 live" at 08:40. A tombstone is what tells "last written recently" apart from
+   * "last written recently *and* still running".
+   */
+  #ended = new Map<string, number>();
 
   /** Transcript record first (the store already parses those), sidecar file as fallback. */
   #titleFor(sessionId: string, transcriptPath: string | null): string | null {
@@ -148,6 +161,25 @@ export class SessionRegistry {
     } catch {
       return null;
     }
+  }
+
+  /** Record that a session is no longer running, so the back-fill cannot call it alive (§23.24). */
+  #bury(sessionId: string): void {
+    this.#ended.set(sessionId, this.#now());
+  }
+
+  /** Drop tombstones older than the back-fill's own aliveness window — they decide nothing after that. */
+  #pruneEnded(): void {
+    const cutoff = this.#now() - TRANSCRIPT_ALIVE_MS;
+    for (const [id, at] of this.#ended) {
+      if (at < cutoff) this.#ended.delete(id);
+    }
+  }
+
+  /** Has this session been seen to stop recently enough for the back-fill to still be fooled? */
+  #isBuried(sessionId: string): boolean {
+    const at = this.#ended.get(sessionId);
+    return at !== undefined && this.#now() - at < TRANSCRIPT_ALIVE_MS;
   }
 
   /** Called on token-store changes: publish `update` for any registered session whose title changed. */
@@ -214,14 +246,25 @@ export class SessionRegistry {
       });
     }
     if (typeof parsed.rev === 'number' && Number.isFinite(parsed.rev)) this.#rev = parsed.rev;
+    // Tombstones are persisted so a daemon restart inside the back-fill window does not
+    // resurrect a session the previous process had already buried.
+    const ended: unknown = parsed.ended;
+    if (typeof ended === 'object' && ended !== null && !Array.isArray(ended)) {
+      for (const [id, at] of Object.entries(ended as Record<string, unknown>)) {
+        if (typeof at === 'number' && Number.isFinite(at)) this.#ended.set(id, at);
+      }
+    }
+    this.#pruneEnded();
   }
 
   save(): void {
     try {
+      this.#pruneEnded();
       writeJsonFile(sessionsFilePath(this.configDir), {
         version: SESSIONS_FILE_VERSION,
         rev: this.#rev,
         sessions: [...this.#sessions.values()],
+        ended: Object.fromEntries(this.#ended),
       });
     } catch {
       // Persistence is best effort — never fail a request because of bookkeeping.
@@ -260,6 +303,7 @@ export class SessionRegistry {
       lastTool: existing?.lastTool ?? null,
     };
     this.#sessions.set(session.sessionId, session);
+    this.#ended.delete(session.sessionId);
     this.bumpRev();
     this.save();
     this.publish(existing === undefined ? 'start' : 'update', session);
@@ -296,6 +340,7 @@ export class SessionRegistry {
     const session = this.#sessions.get(sessionId);
     if (session === undefined) return null;
     this.#sessions.delete(sessionId);
+    this.#bury(sessionId);
     this.bumpRev();
     this.save();
     this.publish('end', session);
@@ -372,6 +417,7 @@ export class SessionRegistry {
       }
       if (session.deadSince !== null && now - session.deadSince >= DEAD_RETENTION_MS) {
         this.#sessions.delete(session.sessionId);
+        this.#bury(session.sessionId);
         dropped.push(session);
         this.bumpRev();
         this.publish('end', session);
@@ -442,7 +488,9 @@ export class SessionRegistry {
         views.push({
           sessionId: entry.sessionId,
           pid: null,
-          alive: age < TRANSCRIPT_ALIVE_MS,
+          // A recently-written transcript is not proof of life if we watched this session
+          // stop (§23.24) — otherwise a killed session reappears as "live" for ten minutes.
+          alive: age < TRANSCRIPT_ALIVE_MS && !this.#isBuried(entry.sessionId),
           discovered: 'transcript',
           cwd,
           transcriptPath: null,
