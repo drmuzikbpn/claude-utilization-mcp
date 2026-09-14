@@ -753,6 +753,11 @@ Auto-update makes restarts routine, so this is now a regular hole rather than a 
   of the account payload on disk.
 - A cache that is absent, unparseable, of another version, or missing `fetchedAt` is ignored
   — `fetchedAt: null` is indistinguishable from "never fetched".
+- Entries are validated field by field, not cast. This file is ours and 0600, but it is the
+  one input that reaches `/v1/summary` — and a dashboard — without an upstream call to
+  sanity-check it. A limit with no `id`/`kind`, a non-numeric or non-finite `percent`, or an
+  empty list drops the **whole** cache rather than serving a half-believable one; a bad
+  `legacyWindows` entry is dropped on its own.
 - Omitting `configDir` disables the cache entirely, so one-shot CLI reads never touch it.
 - The existing failure path is unchanged: a failed poll still serves the last good snapshot
   with `stale: true` and the error attached, and the interval still backs off.

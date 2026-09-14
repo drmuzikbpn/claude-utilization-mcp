@@ -3,7 +3,13 @@ import { join } from 'node:path';
 import { writeJsonFile } from '../config.js';
 import { defaultFetch, fetchLimits, type FetchLike } from './client.js';
 import { normalizeLimits } from './normalize.js';
-import { LimitsError, emptySnapshot, type LimitsErrorInfo, type LimitsSnapshot } from './types.js';
+import {
+  LimitsError,
+  emptySnapshot,
+  type LimitsErrorInfo,
+  type LimitsSnapshot,
+  type NormalizedLimit,
+} from './types.js';
 
 export const DEFAULT_POLL_INTERVAL_MS = 60_000;
 /** Backoff cap, and the interval an expired token is parked at (§23.3). */
@@ -40,15 +46,66 @@ export function readCachedSnapshot(configDir: string): LimitsSnapshot | null {
   const fetchedAt = typeof rec['fetchedAt'] === 'string' ? rec['fetchedAt'] : null;
   if (fetchedAt === null) return null;
   const base = emptySnapshot();
+  // Validate field by field rather than casting. This file is ours and 0600, but it is the
+  // one input that flows straight into `/v1/summary` — and from there to a dashboard — with
+  // no upstream call to sanity-check it. A half-written or hand-edited entry must degrade
+  // to "no cache", never to a limit with a NaN percent.
+  const limits: NormalizedLimit[] = [];
+  for (const entry of rec['limits'] as unknown[]) {
+    const limit = coerceLimit(entry);
+    if (limit === null) return null;
+    limits.push(limit);
+  }
+  if (limits.length === 0) return null;
   return {
     ...base,
     fetchedAt,
     stale: true,
     error: null,
-    limits: rec['limits'] as LimitsSnapshot['limits'],
-    legacyWindows: (rec['legacyWindows'] as LimitsSnapshot['legacyWindows']) ?? base.legacyWindows,
+    limits,
+    legacyWindows: coerceLegacyWindows(rec['legacyWindows']),
     extraUsage: (rec['extraUsage'] as LimitsSnapshot['extraUsage']) ?? base.extraUsage,
   };
+}
+
+function optionalString(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+/** A cached limit, or `null` when it is not one. `percent` must be a real number or absent. */
+function coerceLimit(value: unknown): NormalizedLimit | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const rec = value as Record<string, unknown>;
+  if (typeof rec['id'] !== 'string' || rec['id'].length === 0) return null;
+  if (typeof rec['kind'] !== 'string') return null;
+  const percent = rec['percent'];
+  if (percent !== null && percent !== undefined && (typeof percent !== 'number' || !Number.isFinite(percent))) {
+    return null;
+  }
+  return {
+    id: rec['id'],
+    kind: rec['kind'],
+    group: optionalString(rec['group']),
+    percent: typeof percent === 'number' ? percent : null,
+    severity: optionalString(rec['severity']),
+    resetsAt: optionalString(rec['resetsAt']),
+    scope: (rec['scope'] as NormalizedLimit['scope']) ?? null,
+    isActive: rec['isActive'] === true,
+  };
+}
+
+/** Drops any window that is not `{ utilization: number|null, resetsAt: string|null }`. */
+function coerceLegacyWindows(value: unknown): LimitsSnapshot['legacyWindows'] {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {};
+  const out: LimitsSnapshot['legacyWindows'] = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof raw !== 'object' || raw === null) continue;
+    const win = raw as Record<string, unknown>;
+    const utilization = win['utilization'];
+    if (utilization !== null && (typeof utilization !== 'number' || !Number.isFinite(utilization))) continue;
+    out[key] = { utilization: typeof utilization === 'number' ? utilization : null, resetsAt: optionalString(win['resetsAt']) };
+  }
+  return out;
 }
 
 export interface Timers {
