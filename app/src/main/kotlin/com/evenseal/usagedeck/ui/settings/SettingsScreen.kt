@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -31,8 +32,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.evenseal.usagedeck.core.model.UserView
 import com.evenseal.usagedeck.settings.CRITICAL_MAX
 import com.evenseal.usagedeck.settings.ESCALATION_CHOICES
 import com.evenseal.usagedeck.settings.Settings
@@ -53,8 +56,23 @@ fun SettingsScreen(
     onCheckUpdate: () -> Unit,
     onBack: () -> Unit,
     wifiLabel: String = "",
-    onWifi: () -> Unit = {}
+    onWifi: () -> Unit = {},
+    /** The people on the board, for the Users section; renames go through [onUpdate]. */
+    users: List<UserView> = emptyList()
 ) {
+    var renaming by remember { mutableStateOf<UserView?>(null) }
+    renaming?.let { user ->
+        RenameDialog(
+            user = user,
+            current = settings.userNames[user.key].orEmpty(),
+            onSave = { name ->
+                onUpdate { it.renamed(user.key, name) }
+                renaming = null
+            },
+            onDismiss = { renaming = null }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -97,6 +115,13 @@ fun SettingsScreen(
             )
             Text(text = wifiLabel, color = DeckColors.muted, fontFamily = DeckType.mono, fontSize = 12.sp)
             Text(text = "  ›", color = DeckColors.accent, fontFamily = DeckType.text, fontSize = 18.sp)
+        }
+
+        if (users.isNotEmpty()) {
+            Section("Users")
+            users.forEach { user ->
+                UserRow(user = user, name = settings.nameFor(user), onClick = { renaming = user })
+            }
         }
 
         Section("Display")
@@ -203,6 +228,78 @@ fun SettingsScreen(
             fontSize = 11.sp
         )
     }
+}
+
+/** One person: the name the deck shows, the e-mail it came from, and `›` into the rename dialog. */
+@Composable
+private fun UserRow(user: UserView, name: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "rename $name" }
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = name, color = DeckColors.fg, fontFamily = DeckType.text, fontSize = 14.sp)
+            Text(
+                text = user.identity,
+                color = DeckColors.dim,
+                fontFamily = DeckType.mono,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Text(text = "›", color = DeckColors.accent, fontFamily = DeckType.text, fontSize = 18.sp)
+    }
+}
+
+/** Edits the display name for one person. Saving a blank name goes back to what the daemon reports. */
+@Composable
+private fun RenameDialog(user: UserView, current: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    var entry by remember(user.key) { mutableStateOf(current) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = DeckColors.surface,
+        titleContentColor = DeckColors.fg,
+        textContentColor = DeckColors.muted,
+        title = { Text(text = "Rename ${user.displayName}", fontFamily = DeckType.text) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = user.identity,
+                    fontFamily = DeckType.mono,
+                    fontSize = 11.sp
+                )
+                OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth().semantics { contentDescription = RENAME_FIELD },
+                    value = entry,
+                    onValueChange = { entry = it.take(NAME_LENGTH) },
+                    singleLine = true,
+                    placeholder = { Text(user.displayName, color = DeckColors.dim) }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(entry) }) {
+                Text(RENAME_SAVE, color = DeckColors.accent, fontFamily = DeckType.text)
+            }
+        },
+        dismissButton = {
+            Row {
+                if (current.isNotEmpty()) {
+                    TextButton(onClick = { onSave("") }) {
+                        Text(RENAME_RESET, color = DeckColors.muted, fontFamily = DeckType.text)
+                    }
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel", color = DeckColors.muted, fontFamily = DeckType.text)
+                }
+            }
+        }
+    )
 }
 
 @Composable
@@ -338,6 +435,16 @@ const val CRITICAL_SLIDER = "critical threshold"
 const val DIM_SLIDER = "night dim"
 const val PIN_FIELD = "exit pin field"
 
+/** `alan@… · Even Seal Productions`: enough to tell one account's two organisations apart. */
+private val UserView.identity: String
+    get() = listOfNotNull(emailAddress ?: machineIds.joinToString().ifEmpty { null }, organizationName)
+        .joinToString(" · ")
+
+const val RENAME_FIELD = "display name field"
+const val RENAME_SAVE = "Save name"
+const val RENAME_RESET = "Use daemon name"
+
 private const val PIN_LENGTH = 6
+private const val NAME_LENGTH = 24
 private const val PERCENT = 100
 private const val DIM_MIN_PERCENT = 10

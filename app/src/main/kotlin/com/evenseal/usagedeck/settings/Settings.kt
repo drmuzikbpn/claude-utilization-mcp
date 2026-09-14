@@ -2,6 +2,7 @@ package com.evenseal.usagedeck.settings
 
 import android.content.SharedPreferences
 import com.evenseal.usagedeck.core.alerts.AlertThresholds
+import com.evenseal.usagedeck.core.model.UserView
 import com.evenseal.usagedeck.core.pause.PauseSettings
 import java.time.LocalTime
 import kotlinx.coroutines.CoroutineScope
@@ -12,6 +13,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 
 /** Everything the Settings screen owns (spec §11.5). */
 data class Settings(
@@ -30,8 +34,19 @@ data class Settings(
     /** `18:21` versus `6:21 PM` in the status bar. */
     val clock24h: Boolean = true,
     /** Play the chime when an alert shows (quiet hours still silence it). */
-    val sound: Boolean = true
-)
+    val sound: Boolean = true,
+    /** Names the deck's owner chose for people, keyed by [UserView.key]. Blank entries are dropped. */
+    val userNames: Map<String, String> = emptyMap()
+) {
+    /** The name to draw for [user]: the deck's own rename first, the daemon's display name otherwise. */
+    fun nameFor(user: UserView): String = userNames[user.key]?.takeIf { it.isNotBlank() } ?: user.displayName
+
+    /** Sets or, with a blank [name], clears the rename for [key]. */
+    fun renamed(key: String, name: String): Settings {
+        val trimmed = name.trim()
+        return copy(userNames = if (trimmed.isEmpty()) userNames - key else userNames + (key to trimmed))
+    }
+}
 
 /**
  * Clamps the Settings screen's controls to ranges that cannot produce nonsense: critical always
@@ -43,7 +58,8 @@ internal fun Settings.normalised(): Settings {
         warn = clampedWarn,
         critical = critical.coerceIn(clampedWarn + 1, CRITICAL_MAX),
         escalationSeconds = escalationSeconds?.coerceIn(ESCALATION_MIN, ESCALATION_MAX),
-        nightDim = nightDim.coerceIn(DIM_MIN, 1f)
+        nightDim = nightDim.coerceIn(DIM_MIN, 1f),
+        userNames = userNames.mapValues { it.value.trim() }.filterValues { it.isNotEmpty() }
     )
 }
 
@@ -85,6 +101,7 @@ class SettingsStore(private val prefs: SharedPreferences) {
             .putBoolean(KEY_KEEP_SCREEN_ON, next.keepScreenOn)
             .putBoolean(KEY_CLOCK_24H, next.clock24h)
             .putBoolean(KEY_SOUND, next.sound)
+            .putString(KEY_USER_NAMES, json.encodeToString(NAMES, next.userNames))
             .apply()
         _settings.value = next
     }
@@ -125,8 +142,14 @@ class SettingsStore(private val prefs: SharedPreferences) {
             autoDim = prefs.getBoolean(KEY_AUTO_DIM, defaults.autoDim),
             keepScreenOn = prefs.getBoolean(KEY_KEEP_SCREEN_ON, defaults.keepScreenOn),
             clock24h = prefs.getBoolean(KEY_CLOCK_24H, defaults.clock24h),
-            sound = prefs.getBoolean(KEY_SOUND, defaults.sound)
+            sound = prefs.getBoolean(KEY_SOUND, defaults.sound),
+            userNames = prefs.names()
         )
+    }
+
+    private fun SharedPreferences.names(): Map<String, String> {
+        val raw = getString(KEY_USER_NAMES, null) ?: return emptyMap()
+        return runCatching { json.decodeFromString(NAMES, raw) }.getOrDefault(emptyMap())
     }
 
     private fun SharedPreferences.timeOf(key: String, fallback: LocalTime): LocalTime {
@@ -136,12 +159,15 @@ class SettingsStore(private val prefs: SharedPreferences) {
 
     private companion object {
         const val ESCALATION_OFF = -1
+        val json = Json { ignoreUnknownKeys = true }
+        val NAMES = MapSerializer(String.serializer(), String.serializer())
 
         const val KEY_WARN = "warn"
         const val KEY_AUTO_DIM = "auto_dim"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         const val KEY_CLOCK_24H = "clock_24h"
         const val KEY_SOUND = "sound"
+        const val KEY_USER_NAMES = "user_names"
         const val KEY_CRITICAL = "critical"
         const val KEY_ESCALATION = "escalation_seconds"
         const val KEY_QUIET_START = "quiet_start"

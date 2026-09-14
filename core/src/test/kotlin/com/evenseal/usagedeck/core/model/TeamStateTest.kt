@@ -104,6 +104,29 @@ class TeamStateTest {
     }
 
     @Test
+    fun `one account in two organisations is two quotas`() {
+        val team = TeamState(
+            listOf(
+                machine(
+                    "m1",
+                    alan.copy(organizationUuid = "org-a", organizationName = "Even Seal Productions"),
+                    limits = listOf(limit("session", 100)),
+                    limitsFetchedAt = t0
+                ),
+                machine(
+                    "m2",
+                    alan.copy(organizationUuid = "org-b", organizationName = "Testing"),
+                    limits = listOf(limit("session", 5)),
+                    limitsFetchedAt = t0
+                )
+            )
+        )
+        assertEquals(listOf("uuid-alan/org-a", "uuid-alan/org-b"), team.users.map { it.key })
+        assertEquals(listOf(100, 5), team.users.map { it.fiveHour!!.percent })
+        assertEquals(listOf("Even Seal Productions", "Testing"), team.users.map { it.organizationName })
+    }
+
+    @Test
     fun `two different users stay separate`() {
         val team = TeamState(
             listOf(

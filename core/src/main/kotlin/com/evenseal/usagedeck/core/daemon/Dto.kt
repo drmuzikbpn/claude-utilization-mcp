@@ -26,6 +26,7 @@ data class UserDto(
     val emailAddress: String? = null,
     val accountUuid: String? = null,
     val organizationUuid: String? = null,
+    val organizationName: String? = null,
     val displayName: String? = null
 )
 

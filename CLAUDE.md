@@ -49,6 +49,9 @@ hook is missing.
 - `/v1/tokens` is the spend endpoint (not `/v1/spend`). `groupBy=project` returns `{ key, label, …counts }`, `label` = cwd.
 - Pause `reason` is exactly `"usage-deck:<installId>"`. Only rules whose `reason` equals this phone's string ever escalate.
 - Session and project pause scopes go to one machine. Only `all` fans out.
+- Users are keyed by account **and** organisation (`accountUuid/organizationUuid`): team-plan limits are
+  per org, and Alan's one account sits in two orgs. Display names are the deck's own renames
+  (`Settings.userNames`, Settings › Users) falling back to the daemon's `displayName`, then the e-mail's local part.
 - Gesture grammar everywhere: tap = soft, hold 600 ms = hard, tap on paused = resume. Red styling only on hold actions.
 - Aging: fresh < 30 s since heartbeat, stale < 120 s, dead ≥ 120 s. Dead disables pause controls.
 - Escalation default 90 s; range 30 s–600 s or off; persisted across process death.

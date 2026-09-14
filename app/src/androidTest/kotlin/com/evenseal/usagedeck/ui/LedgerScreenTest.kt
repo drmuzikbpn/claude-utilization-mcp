@@ -15,6 +15,7 @@ import com.evenseal.usagedeck.core.model.MachineState
 import com.evenseal.usagedeck.core.model.TeamState
 import com.evenseal.usagedeck.core.pause.Escalation
 import com.evenseal.usagedeck.core.pause.PauseTarget
+import com.evenseal.usagedeck.settings.Settings
 import com.evenseal.usagedeck.ui.components.PauseButtonDefaults
 import com.evenseal.usagedeck.ui.ledger.LedgerScreen
 import com.evenseal.usagedeck.ui.theme.DeckTheme
@@ -192,5 +193,27 @@ class LedgerScreenTest {
         expand("calendarpa")
         compose.onNodeWithText("a1b2…").assertExists()
         compose.onNodeWithContentDescription("collapse calendarpa").assertExists()
+    }
+
+    @Test
+    fun userBlocksStartFoldedToOneLineAndUnfoldOnTap() {
+        show(fakeViewModel())
+
+        compose.onNodeWithText("42%").assertExists()
+        compose.onNodeWithText("alan@evensealproductions.com").assertDoesNotExist()
+        compose.onNodeWithContentDescription("expand Alan").performClick()
+        compose.onNodeWithText("alan@evensealproductions.com").assertExists()
+        compose.onNodeWithContentDescription("collapse Alan").assertExists()
+        compose.onNodeWithText("sam@evensealproductions.com").assertDoesNotExist()
+    }
+
+    @Test
+    fun aRenamedUserShowsTheDeckNameInsteadOfTheDaemons() {
+        show(fakeViewModel(settings = Settings(userNames = mapOf("uuid-m1" to "Studio"))))
+
+        compose.onNodeWithContentDescription("expand Studio").assertExists()
+        compose.onNodeWithContentDescription("expand Sam").assertExists()
+        // The machine chip keeps the machine's own name; only the person is renamed.
+        compose.onAllNodesWithText("Alan").assertCountEquals(1)
     }
 }

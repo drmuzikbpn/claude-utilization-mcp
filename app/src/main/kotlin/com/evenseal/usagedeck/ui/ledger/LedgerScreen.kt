@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evenseal.usagedeck.core.model.Health
+import com.evenseal.usagedeck.core.model.Limit
 import com.evenseal.usagedeck.core.model.ProjectView
 import com.evenseal.usagedeck.core.model.UserView
 import com.evenseal.usagedeck.core.pause.PauseTarget
@@ -71,7 +73,13 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
         val empty = HomeEmpty.of(team)
 
         team.usersWithData().forEach { user ->
-            UserBlock(user = user, now = now)
+            UserBlock(
+                user = user,
+                name = prefs.nameFor(user),
+                now = now,
+                expanded = DeckViewModel.userId(user.key) in expanded,
+                onToggle = { vm.toggleUserExpanded(user.key) }
+            )
         }
 
         if (empty is HomeEmpty.NoMachines || empty is HomeEmpty.Connecting) {
@@ -148,48 +156,117 @@ internal fun homeSecondary(empty: HomeEmpty?, onOpen: (Route) -> Unit): List<Pai
 /** The gear glyph on the home bottom bars; Settings is where wifi, display and sound live now. */
 const val GEAR = "⚙"
 
-/** A teammate's block fades to 55 % once their machine stops checking in (spec §11.1). */
+/**
+ * A person's quota. Folded (the default) it is one line — name, then the 5 h and 7 d percentages —
+ * so two people cost the sessions list two rows, not half the screen. Tapping unfolds the full
+ * block: e-mail, both bars with their resets, and any model-scoped windows. A teammate's block
+ * fades to 55 % once their machine stops checking in (spec §11.1).
+ */
 @Composable
-internal fun UserBlock(user: UserView, now: Instant, modifier: Modifier = Modifier) {
+internal fun UserBlock(
+    user: UserView,
+    name: String,
+    now: Instant,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val faded = user.health != Health.FRESH
     Column(
         modifier = modifier
             .fillMaxWidth()
             .alpha(if (faded) STALE_ALPHA else 1f)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .clickable(onClick = onToggle)
+            .semantics { contentDescription = "${if (expanded) "collapse" else "expand"} $name" }
+            .padding(
+                start = 6.dp,
+                end = 10.dp,
+                top = if (expanded) 8.dp else 5.dp,
+                bottom = if (expanded) 8.dp else 5.dp
+            ),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = user.displayName,
+                text = if (expanded) "▾" else "▸",
+                color = DeckColors.dim,
+                fontFamily = DeckType.text,
+                fontSize = 12.sp,
+                modifier = Modifier.width(12.dp)
+            )
+            Text(
+                text = name,
                 color = DeckColors.fg,
                 fontFamily = DeckType.text,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 15.sp
-            )
-            Text(
-                text = if (faded) "last seen ${Format.age(user.limitsFetchedAt, now)}" else user.emailAddress.orEmpty(),
-                color = DeckColors.dim,
-                fontFamily = DeckType.mono,
-                fontSize = 11.sp,
+                fontSize = 15.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 12.dp).weight(1f, fill = false)
+                modifier = Modifier.weight(1f, fill = false)
             )
+            if (expanded) {
+                Text(
+                    text = if (faded) "last seen ${Format.age(user.limitsFetchedAt, now)}" else user.identity,
+                    color = DeckColors.dim,
+                    fontFamily = DeckType.mono,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.weight(1f)
+                )
+            } else {
+                Spacer(modifier = Modifier.weight(1f))
+                if (faded) {
+                    Text(
+                        text = "last seen ${Format.age(user.limitsFetchedAt, now)}",
+                        color = DeckColors.dim,
+                        fontFamily = DeckType.mono,
+                        fontSize = 10.sp,
+                        maxLines = 1
+                    )
+                }
+                QuotaGlance(label = "5h", limit = user.fiveHour)
+                QuotaGlance(label = "7d", limit = user.sevenDay)
+            }
         }
-        LimitBar(label = "5h", limit = user.fiveHour, now = now)
-        LimitBar(label = "7d", limit = user.sevenDay, now = now)
-        if (user.scoped.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                user.scoped.forEach { limit ->
-                    Tag(text = "${limit.scopeModel ?: limit.id} ${limit.percent}%", color = DeckColors.of(limit.status))
+        if (expanded) {
+            LimitBar(label = "5h", limit = user.fiveHour, now = now)
+            LimitBar(label = "7d", limit = user.sevenDay, now = now)
+            if (user.scoped.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    user.scoped.forEach { limit ->
+                        Tag(
+                            text = "${limit.scopeModel ?: limit.id} ${limit.percent}%",
+                            color = DeckColors.of(limit.status)
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+/** The organisation tells two quotas of one account apart; otherwise the e-mail does. */
+private val UserView.identity: String get() = organizationName ?: emailAddress.orEmpty()
+
+/** `5h 42%` at a glance for the folded user row; colour carries the window's status. */
+@Composable
+private fun QuotaGlance(label: String, limit: Limit?) {
+    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(text = label, color = DeckColors.muted, fontFamily = DeckType.mono, fontSize = 11.sp)
+        Text(
+            text = limit?.percent?.let { "$it%" } ?: "—",
+            color = limit?.let { DeckColors.of(it.status) } ?: DeckColors.dim,
+            fontFamily = DeckType.numeral,
+            fontWeight = FontWeight.Medium,
+            fontSize = 16.sp,
+            modifier = Modifier.width(QUOTA_WIDTH)
+        )
     }
 }
 
@@ -305,3 +382,4 @@ internal fun ProjectHeader(
 }
 
 private const val STALE_ALPHA = 0.55f
+private val QUOTA_WIDTH = 44.dp

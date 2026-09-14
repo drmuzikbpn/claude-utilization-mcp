@@ -73,7 +73,7 @@ fun WideDockScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
         )
 
         Row(modifier = Modifier.weight(1f)) {
-            Rail(team = team, now = now, modifier = Modifier.width(RAIL_WIDTH).fillMaxHeight())
+            Rail(team = team, now = now, nameOf = prefs::nameFor, modifier = Modifier.width(RAIL_WIDTH).fillMaxHeight())
 
             Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 if (empty != null) {
@@ -148,7 +148,7 @@ private fun ColumnHeader(liveCount: Int) {
 }
 
 @Composable
-private fun Rail(team: TeamState, now: Instant, modifier: Modifier) {
+private fun Rail(team: TeamState, now: Instant, nameOf: (UserView) -> String, modifier: Modifier) {
     Column(
         modifier = modifier
             .drawBehind {
@@ -166,7 +166,7 @@ private fun Rail(team: TeamState, now: Instant, modifier: Modifier) {
             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            team.usersWithData().forEach { user -> RailUser(user = user, now = now) }
+            team.usersWithData().forEach { user -> RailUser(user = user, name = nameOf(user), now = now) }
             if (team.usersWithData().isEmpty()) {
                 Text(
                     text = if (team.machines.isEmpty()) "nothing paired" else "waiting for data",
@@ -190,11 +190,11 @@ private fun Rail(team: TeamState, now: Instant, modifier: Modifier) {
 }
 
 @Composable
-private fun RailUser(user: UserView, now: Instant) {
+private fun RailUser(user: UserView, name: String, now: Instant) {
     val faded = user.health != Health.FRESH
     Column(modifier = Modifier.fillMaxWidth().alpha(if (faded) STALE_ALPHA else 1f)) {
         Text(
-            text = user.displayName.uppercase(),
+            text = name.uppercase(),
             color = DeckColors.muted,
             fontFamily = DeckType.text,
             fontWeight = FontWeight.SemiBold,

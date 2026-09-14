@@ -10,10 +10,16 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.evenseal.usagedeck.core.model.UserView
 import com.evenseal.usagedeck.settings.Settings
 import com.evenseal.usagedeck.settings.normalised
 import com.evenseal.usagedeck.ui.settings.CRITICAL_SLIDER
+import com.evenseal.usagedeck.ui.settings.RENAME_FIELD
+import com.evenseal.usagedeck.ui.settings.RENAME_RESET
+import com.evenseal.usagedeck.ui.settings.RENAME_SAVE
 import com.evenseal.usagedeck.ui.settings.SettingsScreen
 import com.evenseal.usagedeck.ui.theme.DeckTheme
 import org.junit.Assert.assertEquals
@@ -31,7 +37,7 @@ class SettingsScreenTest {
     private lateinit var latest: () -> Settings
 
     /** Mirrors `SettingsStore.update`, which normalises before it persists. */
-    private fun show(initial: Settings = Settings()) {
+    private fun show(initial: Settings = Settings(), users: List<UserView> = emptyList()) {
         compose.setContent {
             var state by androidx.compose.runtime.remember { mutableStateOf(initial) }
             latest = { state }
@@ -43,7 +49,8 @@ class SettingsScreenTest {
                     onUpdate = { transform -> state = transform(state).normalised() },
                     onSetPin = {},
                     onCheckUpdate = {},
-                    onBack = {}
+                    onBack = {},
+                    users = users
                 )
             }
         }
@@ -128,5 +135,21 @@ class SettingsScreenTest {
         assertEquals(false, latest().sound)
         compose.onNodeWithText("Keep screen on").performClick()
         assertEquals(false, latest().keepScreenOn)
+    }
+
+    @Test
+    fun renamingAUserWritesTheOverrideAndResettingClearsIt() {
+        show(users = Fx.twoUsers().users)
+
+        compose.onNodeWithContentDescription("rename Alan").performScrollTo().performClick()
+        compose.onNodeWithContentDescription(RENAME_FIELD).performTextClearance()
+        compose.onNodeWithContentDescription(RENAME_FIELD).performTextInput("Studio")
+        compose.onNodeWithText(RENAME_SAVE).performClick()
+        assertEquals(mapOf("uuid-m1" to "Studio"), latest().userNames)
+        compose.onNodeWithContentDescription("rename Studio").assertExists()
+
+        compose.onNodeWithContentDescription("rename Studio").performClick()
+        compose.onNodeWithText(RENAME_RESET).performClick()
+        assertTrue(latest().userNames.isEmpty())
     }
 }

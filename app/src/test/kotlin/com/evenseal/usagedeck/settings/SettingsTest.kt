@@ -3,6 +3,8 @@ package com.evenseal.usagedeck.settings
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
+import com.evenseal.usagedeck.core.model.Health
+import com.evenseal.usagedeck.core.model.UserView
 import java.time.LocalTime
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -136,5 +138,21 @@ class SettingsTest {
         assertFalse(again.keepScreenOn)
         assertFalse(again.clock24h)
         assertFalse(again.sound)
+    }
+
+    @Test
+    fun `user renames round-trip and a blank name clears the entry`() {
+        store.update { it.renamed("uuid-1", "  Studio  ") }
+        assertEquals(mapOf("uuid-1" to "Studio"), SettingsStore(prefs).settings.value.userNames)
+        store.update { it.renamed("uuid-1", " ") }
+        assertTrue(SettingsStore(prefs).settings.value.userNames.isEmpty())
+    }
+
+    @Test
+    fun `nameFor prefers the rename and falls back to the daemon's display name`() {
+        val user = UserView("uuid-1", "alan", "alan@example.com", null, listOf("m1"), emptyList(), null, Health.FRESH)
+        assertEquals("alan", Settings().nameFor(user))
+        assertEquals("Testing", Settings().renamed("uuid-1", "Testing").nameFor(user))
+        assertEquals("alan", Settings(userNames = mapOf("uuid-1" to "   ")).nameFor(user))
     }
 }
