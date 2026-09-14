@@ -10,6 +10,7 @@ import com.evenseal.usagedeck.BuildConfig
 import com.evenseal.usagedeck.core.daemon.DaemonException
 import com.evenseal.usagedeck.core.daemon.OkHttpDaemonApi
 import com.evenseal.usagedeck.service.DeckGraph
+import com.evenseal.usagedeck.ui.components.usersWithData
 import com.evenseal.usagedeck.ui.machine.MachineScreen
 import com.evenseal.usagedeck.ui.pairing.PairingScreen
 import com.evenseal.usagedeck.ui.settings.SettingsScreen
@@ -51,6 +52,7 @@ internal fun WifiRoute(graph: DeckGraph, vm: DeckViewModel, onBack: () -> Unit) 
 internal fun SettingsRoute(graph: DeckGraph, onBack: () -> Unit, onWifi: () -> Unit = {}) {
     val settings by graph.settings.settings.collectAsStateWithLifecycle()
     val wifi by graph.wifi.status.collectAsStateWithLifecycle()
+    val team by graph.team.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val checks = graph.updateChecks
     val label by (checks?.label ?: MutableStateFlow(NO_UPDATER)).collectAsStateWithLifecycle()
@@ -67,7 +69,8 @@ internal fun SettingsRoute(graph: DeckGraph, onBack: () -> Unit, onWifi: () -> U
         onCheckUpdate = { checks?.let { c -> scope.launch { c.checkNow() } } },
         onBack = onBack,
         wifiLabel = if (wifi.connected) wifi.ssid.orEmpty() else "not connected",
-        onWifi = onWifi
+        onWifi = onWifi,
+        users = team.usersWithData()
     )
 }
 

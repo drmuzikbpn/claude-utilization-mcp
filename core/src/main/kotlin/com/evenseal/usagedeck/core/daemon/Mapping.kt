@@ -22,7 +22,7 @@ fun TokensCountsDto.toModel() = Tokens(input, output, cacheCreate, cacheRead, me
 
 fun TokensGroupDto.toModel() = ProjectTokens(key, label, Tokens(input, output, cacheCreate, cacheRead, messages))
 
-fun UserDto.toModel() = User(emailAddress, accountUuid, displayName)
+fun UserDto.toModel() = User(emailAddress, accountUuid, displayName, organizationUuid, organizationName)
 
 fun UpdateDto.toModel() = UpdateState(channel, current, available, state, deferredReason)
 

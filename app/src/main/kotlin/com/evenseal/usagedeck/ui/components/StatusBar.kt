@@ -60,23 +60,32 @@ fun StatusBar(
             onClick = onWifi
         )
 
-        if (alertChip != null) {
-            Chip(
-                text = alertChip,
-                dot = DeckColors.warn,
-                tint = DeckColors.warn,
-                modifier = Modifier.weight(1f, fill = false)
-            )
-        }
-
-        Box(modifier = Modifier.weight(1f))
-
-        machines.forEach { machine ->
-            Chip(
-                text = Format.hostShort(machine.name ?: machine.config.name),
-                dot = dotColor(machine.health),
-                onClick = { onMachine(machine.config.id) }
-            )
+        // Everything between wifi and the clock shares one flexible region, so the clock keeps its
+        // width and never wraps a character per line when two machine chips crowd it. While an
+        // alert is up it takes the whole region: the machines come back when the chip clears.
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End)
+        ) {
+            if (alertChip != null) {
+                Chip(
+                    text = alertChip,
+                    dot = DeckColors.warn,
+                    tint = DeckColors.warn,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+            }
+            if (alertChip == null) {
+                machines.forEach { machine ->
+                    Chip(
+                        text = Format.hostShort(machine.name ?: machine.config.name),
+                        dot = dotColor(machine.health),
+                        onClick = { onMachine(machine.config.id) },
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                }
+            }
         }
 
         Text(
@@ -84,7 +93,9 @@ fun StatusBar(
             color = DeckColors.fg,
             fontFamily = DeckType.numeral,
             fontWeight = FontWeight.Medium,
-            fontSize = 16.sp
+            fontSize = 16.sp,
+            maxLines = 1,
+            softWrap = false
         )
     }
 }

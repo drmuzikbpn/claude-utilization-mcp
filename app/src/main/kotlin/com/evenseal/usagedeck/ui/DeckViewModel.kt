@@ -159,6 +159,14 @@ class DeckViewModel(
         _expanded.value = if (id in _expanded.value) _expanded.value - id else _expanded.value + id
     }
 
+    /** The Ledger's user quota blocks fold to one line by default; this is the set the user has opened. */
+    fun isUserExpanded(userKey: String) = userId(userKey) in _expanded.value
+
+    fun toggleUserExpanded(userKey: String) {
+        val id = userId(userKey)
+        _expanded.value = if (id in _expanded.value) _expanded.value - id else _expanded.value + id
+    }
+
     fun machineToday(machineId: String) = team.value.machine(machineId)?.today
 
     /**
@@ -216,10 +224,13 @@ class DeckViewModel(
         return team.value.machine(id)?.health == Health.DEAD
     }
 
-    private companion object {
-        const val TICK_MILLIS = 1_000L
-        const val CHIP_MILLIS = 60_000L
-        const val PROJECT_BUCKETS = 30
+    companion object {
+        /** Users share the [expanded] set with projects under their own prefix. */
+        fun userId(userKey: String) = "user|$userKey"
+
+        private const val TICK_MILLIS = 1_000L
+        private const val CHIP_MILLIS = 60_000L
+        private const val PROJECT_BUCKETS = 30
     }
 }
 

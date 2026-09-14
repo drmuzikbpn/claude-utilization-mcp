@@ -3,15 +3,17 @@ package com.evenseal.usagedeck.core.model
 import java.time.Instant
 
 /**
- * One person across however many machines they are logged into. Limits are account-wide, so
- * when the same account appears on two machines the copy with the freshest `limitsFetchedAt`
- * wins and both machine ids are listed.
+ * One person's quota across however many machines they are logged into. Limits are per account
+ * and organisation, so when the same account appears on two machines in the same org the copy
+ * with the freshest `limitsFetchedAt` wins and both machine ids are listed; the same account in
+ * two organisations is two quotas and stays two users.
  */
 data class UserView(
-    /** `accountUuid ?: emailAddress ?: machineId`. */
+    /** `accountUuid ?: emailAddress ?: machineId`, suffixed with `/organizationUuid` when known. */
     val key: String,
     val displayName: String,
     val emailAddress: String?,
+    val organizationName: String?,
     val machineIds: List<String>,
     val limits: List<Limit>,
     val limitsFetchedAt: Instant?,
@@ -64,6 +66,7 @@ data class TeamState(val machines: List<MachineState> = emptyList()) {
             key = key,
             displayName = group.firstNotNullOfOrNull { displayNameOf(it) } ?: key,
             emailAddress = group.firstNotNullOfOrNull { it.user?.emailAddress },
+            organizationName = group.firstNotNullOfOrNull { it.user?.organizationName },
             machineIds = group.map { it.config.id },
             limits = freshest?.limits.orEmpty(),
             limitsFetchedAt = freshest?.limitsFetchedAt,
@@ -71,7 +74,10 @@ data class TeamState(val machines: List<MachineState> = emptyList()) {
         )
     }
 
-    private fun userKey(m: MachineState): String = m.user?.accountUuid ?: m.user?.emailAddress ?: m.config.id
+    private fun userKey(m: MachineState): String {
+        val account = m.user?.accountUuid ?: m.user?.emailAddress ?: m.config.id
+        return m.user?.organizationUuid?.let { "$account/$it" } ?: account
+    }
 
     /** A bare e-mail is a poor headline; its local part reads like a name and fits the rail. */
     private fun displayNameOf(m: MachineState): String? = m.user?.displayName?.takeIf { it.isNotBlank() && '@' !in it }

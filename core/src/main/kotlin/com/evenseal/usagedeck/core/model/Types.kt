@@ -17,7 +17,10 @@ enum class Health { FRESH, STALE, DEAD }
 data class User(
     val emailAddress: String?,
     val accountUuid: String?,
-    val displayName: String?
+    val displayName: String?,
+    /** Team-plan limits are per organisation, so one account in two orgs is two quotas. */
+    val organizationUuid: String? = null,
+    val organizationName: String? = null
 )
 
 enum class LimitStatus { OK, WARN, CRITICAL }
