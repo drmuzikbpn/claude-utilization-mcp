@@ -62,10 +62,13 @@ hook is missing.
 - Commit after every task with a conventional-commit message ending in `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Never push.
 - No `TODO`/`FIXME` left in committed code. No test may be `@Ignore`d.
 
-## Never push
+## Remote and pushing
 
-Do not `git push` without explicit approval in the session. CI publishes releases from `main`;
-pushing by accident ships an APK to every deck.
+This project lives on the orphan branch `usage-deck` of `drmuzikbpn/claude-utilization-mcp` (the
+daemon's repo; local `main` tracks `origin/usage-deck`, pushed 2026-09-14 with Alan's approval).
+Do not `git push` without explicit approval in the session. Release-on-green-push for the APK is
+NOT wired on that branch yet: the repo's Releases are the daemon's, and the two updaters must
+agree on a tag namespace (`deck-<version>` proposed) before any APK release is published there.
 
 ## Gotchas
 
