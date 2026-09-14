@@ -50,6 +50,13 @@ describe('smokeTest (§20)', () => {
     await expect(smokeTest(dest, '1.2.3+aaa')).rejects.toMatchObject({ code: 'smoke_failed' });
   });
 
+  it('accepts a core-only version when the release tag carries +build (real CI shape)', async () => {
+    const dest = join(dirs.make(), 'out');
+    // CI stamps package.json with the core; the release tag has +sha.
+    await extractTarball(makeTarball('0.1.64', { prints: '0.1.64' }), dest);
+    await expect(smokeTest(dest, '0.1.64+bb7fc6f')).resolves.toBeUndefined();
+  });
+
   it('fails when the binary exits non-zero', async () => {
     const f = fakeExec(() => ({ code: 1, stderr: 'boom' }));
     await expect(smokeTest('/nowhere', '1.2.3', { exec: f.exec, nodePath: '/usr/bin/node' })).rejects.toMatchObject({
