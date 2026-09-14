@@ -105,6 +105,8 @@ export class SystemdService implements ServiceManager {
 
   /** Journal, not files — systemd has no log paths (§23.9). */
   async logTail(n: number): Promise<string[]> {
+    // `-q` drops journalctl's informational banners ("-- No entries --", "-- Journal begins…"),
+    // which would otherwise read as captured daemon output; the filter below is belt-and-braces.
     const result = await this.exec('journalctl', [
       '--user',
       '-u',
@@ -112,9 +114,10 @@ export class SystemdService implements ServiceManager {
       '-n',
       String(n),
       '--no-pager',
+      '-q',
     ]);
     if (result.code !== 0) return [];
-    return tailLines(result.stdout, n);
+    return tailLines(result.stdout, n).filter((line) => !line.startsWith('-- '));
   }
 
   /**

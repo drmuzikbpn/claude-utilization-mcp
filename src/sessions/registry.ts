@@ -132,6 +132,37 @@ export class SessionRegistry {
     this.#tokens = tokens;
   }
 
+  #titleCache = new Map<string, string | null>();
+
+  /** Transcript record first (the store already parses those), sidecar file as fallback. */
+  #titleFor(sessionId: string, transcriptPath: string | null): string | null {
+    const fromStore = this.#tokens?.sessionTitle?.(sessionId) ?? null;
+    if (fromStore !== null) return fromStore;
+    if (transcriptPath === null || !transcriptPath.endsWith('.jsonl')) return null;
+    try {
+      const sidecar = join(dirname(transcriptPath), sessionId, 'custom-title.json');
+      const parsed = JSON.parse(readFileSync(sidecar, 'utf8')) as { customTitle?: unknown };
+      const title = typeof parsed.customTitle === 'string' ? parsed.customTitle.trim() : '';
+      return title.length > 0 ? title : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Called on token-store changes: publish `update` for any registered session whose title changed. */
+  refreshTitles(): void {
+    for (const session of this.#sessions.values()) {
+      const title = this.#titleFor(session.sessionId, session.transcriptPath);
+      const previous = this.#titleCache.get(session.sessionId);
+      if (previous !== undefined && previous === title) continue;
+      this.#titleCache.set(session.sessionId, title);
+      if (previous !== undefined) {
+        this.bumpRev();
+        this.publish('update', session);
+      }
+    }
+  }
+
   /** Injected by the pause controller so a rendered session carries its effective pause. */
   setPauseResolver(fn: (target: PauseTarget) => { pause: SessionPause | null }): void {
     this.#resolvePause = fn;
@@ -343,6 +374,7 @@ export class SessionRegistry {
       tokens: this.#tokens?.sessionTotals(session.sessionId) ?? zeroTotals(),
       pause,
       lastTool: session.lastTool,
+      title: this.#titleFor(session.sessionId, session.transcriptPath),
     };
   }
 
@@ -378,6 +410,7 @@ export class SessionRegistry {
           tokens: tokens.sessionTotals(entry.sessionId) ?? zeroTotals(),
           pause,
           lastTool: null,
+          title: this.#titleFor(entry.sessionId, null),
         });
       }
     }

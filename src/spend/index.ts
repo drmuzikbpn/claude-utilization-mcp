@@ -137,6 +137,11 @@ export class SpendStore {
     return this.#store.listSessions();
   }
 
+  /** The session's `/rename` title, or null when never renamed (§17.3). */
+  sessionTitle(sessionId: string): string | null {
+    return this.#store.sessionTitle(sessionId);
+  }
+
   sessionModel(sessionId: string): string | null {
     return this.#store.sessionModel(sessionId);
   }
@@ -254,6 +259,9 @@ export class SpendStore {
       {
         onProgress: (progress) => {
           this.#progress = progress;
+        },
+        onTitle: (sessionId, title) => {
+          if (this.#store.setTitle(sessionId, title)) counted += 1;
         },
       },
     );

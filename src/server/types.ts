@@ -73,6 +73,8 @@ export interface TokensSource {
   readonly stats: ScanStats;
   sessionTotals(sessionId: string): TokenTotals | null;
   sessionModel(sessionId: string): string | null;
+  /** `/rename` title, null when never renamed. Optional for older sources. */
+  sessionTitle?(sessionId: string): string | null;
   sessionStartedAt(sessionId: string): string | null;
   /**
    * Sessions the store has seen in transcripts — the source of §17.2's back-fill, which

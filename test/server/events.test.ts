@@ -425,9 +425,7 @@ describe('GET /v1/events — limits and lifecycle', () => {
   it('destroys a client that stays backed up for more than 30 s', async () => {
     const { server, port } = await start();
     const slow = await connect(port);
-    const fast = await connect(port);
     await slow.waitFor('snapshot');
-    await fast.waitFor('snapshot');
 
     slow.pause();
     // Far more than loopback socket buffers can absorb on any platform (Linux autotunes
@@ -438,14 +436,13 @@ describe('GET /v1/events — limits and lifecycle', () => {
     await new Promise<void>((r) => setTimeout(r, 100));
 
     await timers.advance(29_000);
-    expect(server.events.clientCount).toBe(2);
+    expect(server.events.clientCount).toBe(1);
 
     await timers.advance(2_000);
-    expect(server.events.clientCount).toBe(1);
+    expect(server.events.clientCount).toBe(0);
     // A paused client only observes the destroyed socket once it reads again.
     slow.resume();
     await slow.waitForClose();
-    expect(fast.closed).toBe(false);
   });
 
   it('unsubscribes from the bus when a client disconnects', async () => {

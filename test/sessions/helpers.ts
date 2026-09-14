@@ -25,6 +25,8 @@ export class StubTokens implements TokensSource {
   ready = true;
   stats: ScanStats = { filesTracked: 0, eventsIndexed: 0, parseErrors: 0, lastScanAt: null };
   sessions = new Map<string, { model: string; startedAt: string; totals: TokenTotals; projectKey: string; lastActivityAt: string; cwd: string }>();
+  /** `/rename` titles by sessionId (§23.14). */
+  titles = new Map<string, string>();
 
   add(sessionId: string, over: Partial<{ model: string; startedAt: string; totals: TokenTotals; projectKey: string; lastActivityAt: string; cwd: string }> = {}): void {
     this.sessions.set(sessionId, {
@@ -40,6 +42,10 @@ export class StubTokens implements TokensSource {
 
   query(q: TokensQuery): TokensResponse {
     return { ready: true, stale: false, since: q.since, groupBy: q.groupBy, totals: zeroTotals(), groups: [] };
+  }
+
+  sessionTitle(sessionId: string): string | null {
+    return this.titles.get(sessionId) ?? null;
   }
 
   listSessions(): TranscriptSession[] {

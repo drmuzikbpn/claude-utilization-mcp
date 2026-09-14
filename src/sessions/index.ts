@@ -40,6 +40,7 @@ export interface SessionsSubsystem {
 }
 
 export function createSessionsSubsystem(opts: SessionsSubsystemOptions): SessionsSubsystem {
+  let unsubscribeTokens: (() => void) | null = null;
   const registry = new SessionRegistry({
     configDir: opts.configDir,
     tokens: opts.tokens ?? null,
@@ -75,6 +76,8 @@ export function createSessionsSubsystem(opts: SessionsSubsystemOptions): Session
       registry.start(opts.livenessIntervalMs ?? LIVENESS_INTERVAL_MS);
     },
     stop() {
+      unsubscribeTokens?.();
+      unsubscribeTokens = null;
       registry.stop();
       pause.thawEverything();
       registry.save();
@@ -82,6 +85,9 @@ export function createSessionsSubsystem(opts: SessionsSubsystemOptions): Session
     },
     setTokensSource(tokens) {
       registry.setTokensSource(tokens);
+      unsubscribeTokens?.();
+      unsubscribeTokens = tokens?.onChange(() => registry.refreshTitles()) ?? null;
+      registry.refreshTitles();
     },
   };
 }

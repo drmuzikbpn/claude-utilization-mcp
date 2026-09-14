@@ -79,6 +79,8 @@ export interface SessionView {
   tokens: TokenTotals;
   pause: SessionPause | null;
   lastTool: LastTool | null;
+  /** `/rename` title (§23.14): transcript `custom-title` record, else the sidecar file; null when never renamed. */
+  title: string | null;
 }
 
 /** The subset of a session the pause rules match against. */

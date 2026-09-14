@@ -122,12 +122,19 @@ describe('status and logs', () => {
     const exec = fakeExec((f) => (f === 'journalctl' ? { stdout: 'a\nb\nc\n' } : undefined));
     const svc = new SystemdService({ env: h.env, exec: exec.runner });
     expect(await svc.logTail(20)).toEqual(['a', 'b', 'c']);
-    expect(exec.lines()).toContain('journalctl --user -u claude-usage -n 20 --no-pager');
+    expect(exec.lines()).toContain('journalctl --user -u claude-usage -n 20 --no-pager -q');
   });
 
   it('returns no lines when journalctl is unavailable', async () => {
     const h = tempHome();
     const exec = fakeExec(() => ({ code: 127 }));
+    const svc = new SystemdService({ env: h.env, exec: exec.runner });
+    expect(await svc.logTail(20)).toEqual([]);
+  });
+
+  it('drops journalctl banner lines that would read as captured output', async () => {
+    const h = tempHome();
+    const exec = fakeExec((f) => (f === 'journalctl' ? { stdout: '-- No entries --\n' } : undefined));
     const svc = new SystemdService({ env: h.env, exec: exec.runner });
     expect(await svc.logTail(20)).toEqual([]);
   });
