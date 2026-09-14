@@ -354,25 +354,35 @@ With the daemon stopped, every one of those must be quiet and harmless: `status`
 the service state and the last 20 stderr lines and exits 1; `hook` and `statusline` print
 nothing and exit 0.
 
-## 8. The supervisor is really supervising (§23.18, §23.20)
+## 8. The supervisor is really supervising (§23.18, §23.20, §23.25)
 
 Every fault in this section hid behind a healthy-looking daemon for a day. `install` ends
 with `kickstart`, so the service is always up the moment you finish installing, and every
 manual fix restores it too — nothing reveals the problem until the process dies on its own.
 Test the *supervisor*, not the daemon.
 
+**There is no `launchctl print` field that answers this.** While the job is up, a supervised
+Mac and an unsupervised one are byte-identical apart from the node path — `runs`,
+`properties = runatload` and `immediate reason` were each checked and none of them separate
+the two (§23.25). What you can read cheaply is the session type:
+
 ```bash
-# macOS. The answer that matters is on the second line, not the first.
-launchctl print gui/$(id -u)/com.github.drmuzikbpn.claude-usage | grep -E 'runs =|pended'
-#   runs = 8                        ← good: launchd has actually spawned it
-#   runs = 0 / pended nondemand spawn = speculative
-#                                   ← bad: registered but never supervised
+# macOS. Aqua = this shell can install a supervised service; anything else cannot.
+launchctl managername
+#   Aqua                            ← a GUI login session
+#   Background / StandardIO         ← ssh: install here and launchd will not supervise it
 ```
 
-`runs = 0` with `pended nondemand spawn` means this machine was installed from a non-GUI
-session (ssh). `install` prints a warning saying so. The daemon runs and updates restart it,
-but **launchd will not bring it back after a crash or a reboot**. Re-run `install` from a
-terminal on that machine's own desktop.
+A non-`Aqua` install means **launchd will not bring the daemon back after a crash or a
+reboot**, though it runs fine and auto-update restarts it. `install` prints a warning saying
+so. The fix is to re-run `install` from a terminal on that machine's own desktop — Screen
+Sharing counts, ssh does not.
+
+`pended nondemand spawn` in `launchctl print` is the same fault caught in the act, but it is
+**only printed while the job is not running**, so it is absent during and after any install.
+If you do grep for it, grep the whole phrase: `pended` is a substring of
+`started suspended = 0`, which every healthy job prints twice, so `grep -c pended` returns 2
+on a perfectly good machine.
 
 Then prove it rather than trusting the plist:
 
