@@ -77,6 +77,8 @@ describe('launchctl commands', () => {
     expect(exec.lines()).toEqual([
       `launchctl bootout gui/501/${LAUNCHD_LABEL}`,
       `launchctl bootstrap gui/501 ${svc.unitPath}`,
+      // RunAtLoad does not fire reliably when bootstrapping from a non-GUI session.
+      `launchctl kickstart -k gui/501/${LAUNCHD_LABEL}`,
     ]);
   });
 
@@ -87,9 +89,18 @@ describe('launchctl commands', () => {
     await expect(svc.install(unit())).resolves.toBeUndefined();
   });
 
-  it('throws ServiceError when bootstrap fails', async () => {
+  it('still starts the job when bootstrap reports it already loaded', async () => {
     const h = tempHome();
+    // A bootstrap failure used to abort install *after* bootout, leaving the daemon down.
     const exec = fakeExec((f, a) => (a[0] === 'bootstrap' ? { code: 5, stderr: 'Load failed' } : undefined));
+    const svc = new LaunchdService({ env: h.env, exec: exec.runner, uid: 501 });
+    await expect(svc.install(unit())).resolves.toBeUndefined();
+    expect(exec.lines().at(-1)).toBe(`launchctl kickstart -k gui/501/${LAUNCHD_LABEL}`);
+  });
+
+  it('throws ServiceError when the job cannot be started at all', async () => {
+    const h = tempHome();
+    const exec = fakeExec((f, a) => (a[0] === 'kickstart' ? { code: 3, stderr: 'No such process' } : undefined));
     const svc = new LaunchdService({ env: h.env, exec: exec.runner, uid: 501 });
     await expect(svc.install(unit())).rejects.toBeInstanceOf(ServiceError);
   });

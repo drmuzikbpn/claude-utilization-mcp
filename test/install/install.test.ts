@@ -139,12 +139,13 @@ describe('--yes accepts the defaults', () => {
     expect(b.out).not.toContain('already installed');
   });
 
-  it('skips the copy when the version is already laid out', async () => {
+  it('re-copies the package on a second run so a rebuilt checkout actually lands', async () => {
     const b = bed();
     await b.run(['--yes']);
     b.out = '';
     await b.run(['--yes']);
-    expect(b.out).toContain('already installed');
+    expect(b.out).not.toContain('already installed');
+    expect(b.out).toContain('package:');
   });
 
   it('is idempotent — a second run changes nothing in settings.json', async () => {
