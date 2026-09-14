@@ -47,11 +47,14 @@ function isStopped(pid: number): boolean {
   return statOf(pid).startsWith('T');
 }
 
-/** Wait until `pid` has at least `count` descendants, returning the tree parent-first. */
-async function treeOf(pid: number, count = 2): Promise<number[]> {
+/**
+ * Wait until `pid` has at least `count` descendants, returning **only** the descendants —
+ * a hard freeze stops the tool subprocesses and never the session's own process (§23.16).
+ */
+async function toolsOf(pid: number, count = 2): Promise<number[]> {
   for (let i = 0; i < 60; i += 1) {
     const kids = descendantsOf(pid, listProcesses());
-    if (kids.length >= count) return [pid, ...kids];
+    if (kids.length >= count) return kids;
     await sleep(50);
   }
   throw new Error(`process ${pid} never spawned ${count} children`);
@@ -107,18 +110,30 @@ describe('process table parsing', () => {
 });
 
 describe('freeze and thaw a real tree (§18.3)', () => {
-  it('SIGSTOPs children then the parent, and SIGCONTs on resume', async () => {
+  it('SIGSTOPs the tool subprocesses and leaves the session itself runnable (§23.16)', async () => {
     const child = spawnTree();
-    const tree = await treeOf(child.pid as number);
-    expect(tree.length).toBeGreaterThanOrEqual(3);
+    const tools = await toolsOf(child.pid as number);
+    expect(tools.length).toBeGreaterThanOrEqual(2);
 
     const frozen = freezeTree(child.pid as number);
-    expect(frozen[0]).toBe(child.pid);
-    expect(frozen.length).toBe(tree.length);
-    await waitFor(() => frozen.every(isStopped), 'the whole tree to stop');
+    expect(frozen).toEqual(tools);
+    expect(frozen).not.toContain(child.pid);
+    await waitFor(() => frozen.every(isStopped), 'the tool subprocesses to stop');
+    // The root keeps its terminal: SIGSTOP here is what makes zsh print "suspended" and
+    // demand an `fg` after the resume.
+    expect(isStopped(child.pid as number)).toBe(false);
 
     thaw(frozen);
-    await waitFor(() => frozen.every((p) => !isStopped(p)), 'the whole tree to resume');
+    await waitFor(() => frozen.every((p) => !isStopped(p)), 'the tool subprocesses to resume');
+  });
+
+  it('freezes an idle session to an empty list rather than stopping it (§23.16)', () => {
+    // `sleep` with no children: nothing below it, so nothing to stop. The session is held at
+    // the PreToolUse gate instead, and it must not read as "never frozen".
+    const idle = spawn('sleep', ['30'], { stdio: 'ignore' });
+    children.push(idle);
+    expect(freezeTree(idle.pid as number)).toEqual([]);
+    expect(isStopped(idle.pid as number)).toBe(false);
   });
 
   it('ignores ESRCH for pids that already exited', () => {
@@ -147,24 +162,25 @@ describe('safety invariants (§18.3)', () => {
   it('SIGCONTs every frozen pid when the daemon shuts down', async () => {
     const configDir = tempDir('cu-freeze-');
     const child = spawnTree();
-    const tree = await treeOf(child.pid as number);
+    const tools = await toolsOf(child.pid as number);
     const subsystem = createSessionsSubsystem({ configDir });
     subsystem.start();
     subsystem.registry.register({ sessionId: 's', pid: child.pid as number, cwd: '/tmp' });
     const outcome = subsystem.pause.pause({ scope: 'session:s', mode: 'hard', reason: 'stop', createdBy: 'cli' });
     expect(outcome.ok).toBe(true);
-    await waitFor(() => tree.every(isStopped), 'the tree to stop');
+    await waitFor(() => tools.every(isStopped), 'the tool subprocesses to stop');
+    expect(subsystem.registry.get('s')?.freezes).toBe(1);
 
     subsystem.stop();
-    await waitFor(() => tree.every((p) => !isStopped(p)), 'shutdown to resume the tree');
+    await waitFor(() => tools.every((p) => !isStopped(p)), 'shutdown to resume the tools');
   });
 
   it('resumes with no daemon at all — `claude-usage resume --all`', async () => {
     const configDir = tempDir('cu-freeze-');
     const child = spawnTree();
-    const tree = await treeOf(child.pid as number);
+    const tools = await toolsOf(child.pid as number);
     const frozen = freezeTree(child.pid as number);
-    await waitFor(() => tree.every(isStopped), 'the tree to stop');
+    await waitFor(() => tools.every(isStopped), 'the tool subprocesses to stop');
 
     // Exactly what a daemon would have left behind on disk.
     writeJsonFile(sessionsFilePath(configDir), {
@@ -183,6 +199,8 @@ describe('safety invariants (§18.3)', () => {
           alive: true,
           deadSince: null,
           frozenPids: frozen,
+          frozenPid: child.pid,
+          freezes: 1,
           pausedSince: '2026-09-13T12:00:00.000Z',
           lastTool: null,
         },
@@ -196,7 +214,7 @@ describe('safety invariants (§18.3)', () => {
     const result = resumeAll(configDir);
     expect(result.removed).toEqual(['r_x']);
     expect(result.resumed.length).toBe(frozen.length);
-    await waitFor(() => tree.every((p) => !isStopped(p)), 'offline resume to thaw the tree');
+    await waitFor(() => tools.every((p) => !isStopped(p)), 'offline resume to thaw the tools');
 
     const rules = JSON.parse(execFileSync('cat', [pauseFilePath(configDir)], { encoding: 'utf8' })) as { rules: unknown[] };
     expect(rules.rules).toEqual([]);
@@ -206,11 +224,11 @@ describe('safety invariants (§18.3)', () => {
     const configDir = tempDir('cu-freeze-');
     const orphan = spawnTree();
     const kept = spawnTree();
-    const orphanTree = await treeOf(orphan.pid as number);
-    const keptTree = await treeOf(kept.pid as number);
+    const orphanTools = await toolsOf(orphan.pid as number);
+    const keptTools = await toolsOf(kept.pid as number);
 
     const orphanFrozen = freezeTree(orphan.pid as number);
-    await waitFor(() => orphanTree.every(isStopped), 'the orphan tree to stop');
+    await waitFor(() => orphanTools.every(isStopped), 'the orphan tools to stop');
 
     writeJsonFile(sessionsFilePath(configDir), {
       version: 1,
@@ -228,6 +246,8 @@ describe('safety invariants (§18.3)', () => {
           alive: true,
           deadSince: null,
           frozenPids: orphanFrozen,
+          frozenPid: orphan.pid,
+          freezes: 1,
           pausedSince: '2026-09-13T12:00:00.000Z',
           lastTool: null,
         },
@@ -244,6 +264,8 @@ describe('safety invariants (§18.3)', () => {
           deadSince: null,
           // Stale pids from before the restart: the sweep must re-resolve the tree.
           frozenPids: [kept.pid as number],
+          frozenPid: kept.pid,
+          freezes: 1,
           pausedSince: '2026-09-13T12:00:00.000Z',
           lastTool: null,
         },
@@ -257,12 +279,14 @@ describe('safety invariants (§18.3)', () => {
     const subsystem = createSessionsSubsystem({ configDir });
     subsystem.start();
     try {
-      await waitFor(() => orphanTree.every((p) => !isStopped(p)), 'the orphan tree to be resumed');
-      await waitFor(() => keptTree.every(isStopped), 'the still-matching tree to be re-frozen');
-      expect(subsystem.registry.get('kept')?.frozenPids.length).toBe(keptTree.length);
+      await waitFor(() => orphanTools.every((p) => !isStopped(p)), 'the orphan tools to be resumed');
+      await waitFor(() => keptTools.every(isStopped), 'the still-matching tools to be re-frozen');
+      expect(subsystem.registry.get('kept')?.frozenPids.length).toBe(keptTools.length);
+      // A restart sweep is a second freeze, and the dashboard can see that (§23.16).
+      expect(subsystem.registry.get('kept')?.freezes).toBe(2);
     } finally {
       subsystem.stop();
     }
-    await waitFor(() => keptTree.every((p) => !isStopped(p)), 'shutdown to resume the kept tree');
+    await waitFor(() => keptTools.every((p) => !isStopped(p)), 'shutdown to resume the kept tools');
   });
 });

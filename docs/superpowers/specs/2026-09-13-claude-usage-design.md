@@ -396,6 +396,9 @@ pid). `install` adds all four hook entries; `configure hook off` removes them to
   statusline can show `⏸ paused from dashboard`; removed on resume.
 
 ### 18.3 Hard freeze (SIGSTOP)
+> **Superseded in part by §23.16:** the session's own `claude` process is no longer
+> `SIGSTOP`ed — only the tool subprocesses below it are.
+
 - Resolve `pid` → the full descendant tree (`ps -axo pid=,ppid=` walk; Linux may use
   `/proc/*/stat`), `SIGSTOP` children first then the parent; record `frozenPids` on the session.
 - Resume → `SIGCONT` parent first then children; ignore `ESRCH`.
@@ -654,3 +657,41 @@ our once-written `.bak`; `limits` normalizer against the fixture incl. `unknown_
   an `unref()`ed timer let Node exit mid-sleep, returning from the hook after one poll and
   running the tool anyway. A single transient poll failure no longer releases a pause;
   `GATE_FAILURE_TOLERANCE` (3) consecutive failures do (fail open, never wedge a session).
+
+## 23.16 Hard freeze spares the session's own process (2026-09-13 evening)
+
+`SIGSTOP` on the interactive `claude` process stops the session's TUI. The shell reports it
+as `suspended`, takes the foreground back, and after `SIGCONT` the session is a background
+job that cannot read the terminal until the user types `fg`. Hard pause is meant to stop
+Claude's *work*, not to take the user's terminal away, so:
+
+- **`freezeTree(pid)` `SIGSTOP`s the descendants of `pid`, deepest first, and never `pid`
+  itself.** `frozenPids` therefore never contains the session's own pid. Resume `SIGCONT`s
+  them nearest-first so a parent shell resumes before the children it owns.
+- **The gate does the rest.** Work already in flight is what the freeze stops; the next
+  piece of work is stopped by the `PreToolUse` gate (§18.2), which holds for `hard` exactly
+  as it does for `soft`. Together they are the pause.
+- **Freezing an idle session is a no-op on the process table** and that is correct:
+  `frozenPids: []`, nothing stopped because nothing was running, and the next tool call
+  blocks at the gate. The CLI renders this as `hard(0)`.
+- **A fresh pid is not chased.** A session that re-registers (`claude --resume`) under a
+  standing hard rule has its new tree frozen on the next reconcile — which for a
+  just-started session means freezing nothing — and is then held at its first gate.
+
+### Reconciler bookkeeping
+
+Because an empty `frozenPids` is now a legitimate frozen state, "already frozen" can no
+longer be `frozenPids.length > 0`. Two fields on the stored session carry it:
+
+| Field | Meaning |
+| --- | --- |
+| `frozenPid` | The root pid the recorded freeze belongs to; `null` when nothing is frozen. `apply()` freezes when `frozenPid !== pid`, which also makes a re-registered session freeze its new tree. Not on the wire. |
+| `freezes` | How many times this pause has frozen the session's tool tree. Survives a re-register; reset to `0` when the pause ends. Exposed on `SessionPause`. |
+
+`SessionPause` gains `freezes: number` — `0` under a soft rule, `1` for a session frozen
+once, `2+` once a re-register or a daemon restart sweep has frozen it again under the same
+standing rule. That is what lets a dashboard tell "frozen again after re-register" from
+"frozen once".
+
+A hard → soft downgrade clears `frozenPid` (so a later re-escalation freezes again) but
+keeps `freezes`; only ending the pause resets the counter.

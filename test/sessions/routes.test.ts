@@ -321,7 +321,7 @@ describe('hard-freeze refusals (§18.3)', () => {
     expect((await call('/v1/pause/rules')).body['rules']).toEqual([]);
   });
 
-  it('freezes a live, owned pid and records frozenPids', async () => {
+  it('freezes the tool subprocesses, never the session itself (§23.16)', async () => {
     const live = makeHarness({
       table: [
         { pid: 4242, ppid: 1 },
@@ -338,11 +338,10 @@ describe('hard-freeze refusals (§18.3)', () => {
         body: JSON.stringify({ mode: 'hard', reason: 'stop now' }),
       });
       expect(res.status).toBe(200);
-      expect(live.signals).toEqual([
-        { pid: 4251, signal: 'SIGSTOP' },
-        { pid: 4242, signal: 'SIGSTOP' },
-      ]);
-      expect(live.subsystem.registry.get('sess-1')?.frozenPids).toEqual([4242, 4251]);
+      // 4242 is the `claude` process: it keeps running so the user keeps their terminal.
+      expect(live.signals).toEqual([{ pid: 4251, signal: 'SIGSTOP' }]);
+      expect(live.subsystem.registry.get('sess-1')?.frozenPids).toEqual([4251]);
+      expect(live.subsystem.registry.get('sess-1')?.freezes).toBe(1);
 
       live.signals.length = 0;
       await fetch(`http://127.0.0.1:${started.port}/v1/sessions/sess-1/resume`, {
@@ -350,15 +349,41 @@ describe('hard-freeze refusals (§18.3)', () => {
         headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
         body: '{}',
       });
-      expect(live.signals).toEqual([
-        { pid: 4242, signal: 'SIGCONT' },
-        { pid: 4251, signal: 'SIGCONT' },
-      ]);
+      expect(live.signals).toEqual([{ pid: 4251, signal: 'SIGCONT' }]);
+      expect(live.subsystem.registry.get('sess-1')?.freezes).toBe(0);
     } finally {
       live.subsystem.stop();
       await started.server.close();
     }
   });
+
+  it('counts a second freeze after a re-register, so "frozen again" is visible (§23.16)', async () => {
+    const live = makeHarness({
+      table: [
+        { pid: 4242, ppid: 1 },
+        { pid: 4251, ppid: 4242 },
+        { pid: 4390, ppid: 1 },
+        { pid: 4391, ppid: 4390 },
+      ],
+    });
+    try {
+      live.alive.add(4242);
+      live.alive.add(4390);
+      live.subsystem.registry.register({ sessionId: 'sess-1', pid: 4242, cwd: '/tmp/x/foo' });
+      expect(live.subsystem.pause.pause({ scope: 'session:sess-1', mode: 'hard', createdBy: 'cli' }).ok).toBe(true);
+      expect(live.subsystem.registry.get('sess-1')?.freezes).toBe(1);
+
+      // `claude --resume`: same session id, new pid. The old tree is gone; the new one is
+      // frozen, and the counter is what tells the two states apart.
+      live.subsystem.registry.register({ sessionId: 'sess-1', pid: 4390, cwd: '/tmp/x/foo' });
+      live.subsystem.pause.apply();
+      expect(live.subsystem.registry.get('sess-1')?.frozenPids).toEqual([4391]);
+      expect(live.subsystem.registry.get('sess-1')?.freezes).toBe(2);
+    } finally {
+      live.subsystem.stop();
+    }
+  });
+
   it('SIGCONTs a frozen tree when the session ends (§18.3)', async () => {
     const live = makeHarness({
       table: [
@@ -384,10 +409,7 @@ describe('hard-freeze refusals (§18.3)', () => {
         body: '{}',
       });
       expect(ended.status).toBe(200);
-      expect(live.signals).toEqual([
-        { pid: 4242, signal: 'SIGCONT' },
-        { pid: 4251, signal: 'SIGCONT' },
-      ]);
+      expect(live.signals).toEqual([{ pid: 4251, signal: 'SIGCONT' }]);
     } finally {
       live.subsystem.stop();
       await started.server.close();

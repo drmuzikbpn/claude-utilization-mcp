@@ -211,7 +211,9 @@ $ claude-usage resume --all      # works even with the daemon dead — see below
 
 Scopes: `all`, `project:<gitCommonDir>`, `session:<sessionId>`. **Soft** pause stops the
 session at its next prompt or tool boundary (the hook sleeps and re-polls once a second).
-**Hard** pause `SIGSTOP`s the whole process tree.
+**Hard** pause additionally `SIGSTOP`s the tool subprocesses already running below the
+session — the work in flight, not the `claude` process itself, so you keep your terminal.
+Whatever it would do next is stopped at the same gate soft pause uses.
 
 Other subcommands: `serve [--verbose]`, `install`, `configure`, `uninstall`, `mcp`,
 `hook`, `statusline`, `--version`, `help`.
@@ -265,7 +267,7 @@ claude-usage resume --all
 This works **with no running daemon**. It reads `sessions.json` and `pause.json` straight
 off disk, `SIGCONT`s every recorded pid and clears every rule.
 
-It exists because hard pause is `SIGSTOP` over a process tree. If the daemon dies — crash,
+It exists because hard pause `SIGSTOP`s real processes. If the daemon dies — crash,
 `kill -9`, a bad update — while your sessions are frozen, they stay frozen, and a stopped
 process cannot ask for help. Every other safety net (SIGCONT on `SIGTERM`, on `uninstall`,
 on `configure service off`, and the orphan sweep at startup) depends on the daemon being

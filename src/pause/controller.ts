@@ -59,6 +59,7 @@ export class PauseController {
       scope: rule.scope,
       since: stored?.pausedSince ?? rule.createdAt,
       frozenPids: stored?.frozenPids ?? [],
+      freezes: stored?.freezes ?? 0,
     };
   }
 
@@ -83,8 +84,13 @@ export class PauseController {
   // --- reconciliation -------------------------------------------------------
 
   /**
-   * Make the world match the rules. `refreeze` re-resolves the process tree even when pids
-   * are already recorded (the startup sweep, where recorded pids may be stale).
+   * Make the world match the rules. `refreeze` re-resolves the process tree even when this
+   * pid's tree is already recorded (the startup sweep, where recorded pids may be stale).
+   *
+   * "Already frozen" is `frozenPid === pid`, not `frozenPids.length > 0`: a hard freeze
+   * stops only the tool subprocesses (§23.16), so an idle session legitimately freezes to an
+   * empty list and must not be re-swept on every reconcile. Keying on the root pid also
+   * makes a re-registered session (`claude --resume`, new pid) freeze its new tree.
    */
   apply(opts: { refreeze?: boolean } = {}): string[] {
     const affected: string[] = [];
@@ -101,34 +107,35 @@ export class PauseController {
 
       const wantHard = rule !== null && rule.mode === 'hard' && session.alive && session.pid !== null;
       if (wantHard) {
-        if (session.frozenPids.length === 0 || opts.refreeze === true) {
-          if (opts.refreeze === true && session.frozenPids.length > 0) {
-            thaw(session.frozenPids, this.#deps);
-          }
+        if (session.frozenPid !== session.pid || opts.refreeze === true) {
+          if (session.frozenPids.length > 0) thaw(session.frozenPids, this.#deps);
           try {
             const pids = freezeTree(session.pid, this.#deps);
-            this.registry.setFrozenPids(session.sessionId, pids, session.pausedSince ?? nowIso);
+            this.registry.recordFreeze(session.sessionId, session.pid, pids, session.pausedSince ?? nowIso);
             changed = true;
           } catch (err) {
             if (!(err instanceof FreezeRefused)) throw err;
-            // Untrusted pid: the rule still stands as a soft stop at the next boundary.
-            this.registry.setFrozenPids(session.sessionId, [], session.pausedSince ?? nowIso);
+            // Untrusted pid: the rule still stands as a soft stop at the next boundary, and
+            // the freeze stays unrecorded so a later reconcile can try again.
+            this.registry.clearFreeze(session.sessionId, session.pausedSince ?? nowIso);
           }
         }
         continue;
       }
 
-      if (session.frozenPids.length > 0) {
+      if (session.frozenPids.length > 0 || session.frozenPid !== null) {
+        // Covers the hard → soft downgrade as well as a full resume: forgetting the root pid
+        // is what lets a re-escalation freeze again.
         thaw(session.frozenPids, this.#deps);
-        this.registry.setFrozenPids(session.sessionId, [], rule === null ? null : (session.pausedSince ?? nowIso));
+        this.registry.clearFreeze(session.sessionId, rule === null ? null : (session.pausedSince ?? nowIso));
         changed = true;
         continue;
       }
       if (rule === null && session.pausedSince !== null) {
-        this.registry.setFrozenPids(session.sessionId, [], null);
+        this.registry.clearFreeze(session.sessionId, null);
         changed = true;
       } else if (rule !== null && session.pausedSince === null) {
-        this.registry.setFrozenPids(session.sessionId, [], nowIso);
+        this.registry.clearFreeze(session.sessionId, nowIso);
         changed = true;
       }
     }
@@ -156,7 +163,7 @@ export class PauseController {
     for (const session of this.registry.all()) {
       if (session.frozenPids.length === 0) continue;
       for (const pid of thaw(session.frozenPids, this.#deps)) resumed.push(pid);
-      this.registry.setFrozenPids(session.sessionId, [], session.pausedSince);
+      this.registry.clearFreeze(session.sessionId, session.pausedSince);
     }
     if (resumed.length > 0) this.registry.save();
     return resumed;

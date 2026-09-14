@@ -193,6 +193,8 @@ export class SessionRegistry {
         alive: entry.alive !== false,
         deadSince: typeof entry.deadSince === 'number' ? entry.deadSince : null,
         frozenPids: Array.isArray(entry.frozenPids) ? entry.frozenPids.filter((p) => typeof p === 'number') : [],
+        frozenPid: typeof entry.frozenPid === 'number' ? entry.frozenPid : null,
+        freezes: typeof entry.freezes === 'number' && entry.freezes > 0 ? Math.floor(entry.freezes) : 0,
         pausedSince: typeof entry.pausedSince === 'string' ? entry.pausedSince : null,
         lastTool:
           entry.lastTool !== null && typeof entry.lastTool === 'object' && typeof entry.lastTool.name === 'string'
@@ -232,8 +234,13 @@ export class SessionRegistry {
       lastActivityAt: nowIso,
       alive: true,
       deadSince: null,
-      // A re-register with a new pid invalidates the old frozen tree.
+      // A re-register with a new pid invalidates the old frozen tree. `frozenPid` is kept
+      // as it was so the reconciler sees it no longer matches `pid` and freezes the new
+      // tree, and `freezes` keeps counting — that is what tells a dashboard "frozen again
+      // after re-register" apart from "frozen once" (§23.16).
       frozenPids: existing !== undefined && existing.pid === (input.pid ?? null) ? existing.frozenPids : [],
+      frozenPid: existing?.frozenPid ?? null,
+      freezes: existing?.freezes ?? 0,
       pausedSince: existing?.pausedSince ?? null,
       lastTool: existing?.lastTool ?? null,
     };
@@ -280,10 +287,32 @@ export class SessionRegistry {
     return session;
   }
 
-  setFrozenPids(sessionId: string, pids: readonly number[], pausedSince: string | null): void {
+  /**
+   * Record a freeze: the stopped tool pids, the root they belong to, and one more tick on
+   * the freeze counter the dashboard reads (§23.16). `pids` may legitimately be empty — a
+   * session with no tool running has nothing to stop.
+   */
+  recordFreeze(sessionId: string, frozenPid: number | null, pids: readonly number[], pausedSince: string): number {
+    const session = this.#sessions.get(sessionId);
+    if (session === undefined) return 0;
+    session.frozenPids = [...pids];
+    session.frozenPid = frozenPid;
+    session.freezes += 1;
+    session.pausedSince = pausedSince;
+    this.save();
+    return session.freezes;
+  }
+
+  /**
+   * Forget the recorded freeze. `pausedSince === null` ends the pause outright and resets the
+   * freeze counter with it; a non-null value keeps the count across a hard → soft downgrade.
+   */
+  clearFreeze(sessionId: string, pausedSince: string | null): void {
     const session = this.#sessions.get(sessionId);
     if (session === undefined) return;
-    session.frozenPids = [...pids];
+    session.frozenPids = [];
+    session.frozenPid = null;
+    if (pausedSince === null) session.freezes = 0;
     session.pausedSince = pausedSince;
     this.save();
   }

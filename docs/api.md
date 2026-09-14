@@ -313,7 +313,7 @@ Auth: loopback GET exempt. `HEAD` allowed. Sets `ETag: W/"<rev>"`; a matching
                   "cacheRead": 1904772, "messages": 143 },
       "pause": { "mode": "hard", "ruleId": "r_k3m7qz4ub2ah6ptc",
                  "scope": "session:3f1c0a52-…", "since": "2026-09-13T14:03:10.000Z",
-                 "frozenPids": [4242, 4251, 4252] },
+                 "frozenPids": [4251, 4252], "freezes": 1 },
       "lastTool": { "name": "Bash", "at": "2026-09-13T14:02:50.000Z" }
     }
   ]
@@ -333,6 +333,15 @@ Full three-session example including a `discovered: "transcript"` one:
   false`; dropped from the list 5 minutes later.
 - `model`, `tokens` and `startedAt` come from the spend store, keyed by `sessionId`.
 - `lastTool` is recorded by the `PreToolUse` hook's gate call.
+- `pause.frozenPids` lists the **tool subprocesses** currently `SIGSTOP`ed. The session's own
+  `claude` process is never among them — a hard pause stops Claude's work, not the user's
+  terminal, and the next tool call is stopped by the gate instead. An empty list under
+  `mode: "hard"` means the session had nothing running when the pause landed; it is held at
+  the gate.
+- `pause.freezes` counts how many times this pause has frozen the session's tool tree: `0`
+  under a soft rule, `1` for a session frozen once, and `2+` once a re-registered session
+  (`claude --resume`, new pid) or a daemon restart sweep has frozen it again under the same
+  standing rule. It resets when the pause ends.
 
 ## Session lifecycle endpoints
 
