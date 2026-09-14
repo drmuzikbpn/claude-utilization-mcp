@@ -756,3 +756,32 @@ Auto-update makes restarts routine, so this is now a regular hole rather than a 
 - Omitting `configDir` disables the cache entirely, so one-shot CLI reads never touch it.
 - The existing failure path is unchanged: a failed poll still serves the last good snapshot
   with `stale: true` and the error attached, and the interval still backs off.
+
+## 23.20 An install over ssh yields a service launchd will not supervise (2026-09-14)
+
+Same root cause as §23.18, stated as the install-time defect it really is.
+
+Bootstrapping a LaunchAgent from a non-GUI session — `claude-usage install` run over ssh —
+registers the job in `gui/<uid>` but leaves its spawns pended. Measured on two Macs running
+the identical plist:
+
+| | installed locally | installed over ssh |
+| --- | --- | --- |
+| `launchctl print` | `state = running`, `runs = 8` | `state = not running`, `runs = 0`, `pended nondemand spawn = speculative` |
+| `RunAtLoad` | fires | does not fire |
+| `KeepAlive` after `kill -9` | back within seconds | still down after 30 s |
+| `kickstart` | works | works |
+
+The last row is why this hides: `install` already ends with `kickstart -k`, so the daemon is
+up and healthy the moment the install finishes, and every later manual fix restores it too.
+Nothing reveals the fault until the process dies on its own.
+
+We cannot fix it from inside an ssh session — putting the job in the right domain needs
+`launchctl asuser`, which needs root, and an unattended install must not ask for that. So
+`LaunchdService.diagnose()` detects the pended spawn and `install` prints it as a note:
+the daemon runs, and updates restart it (§23.18), but **launchd will not bring it back after
+a crash or a reboot** until the user re-runs `install` from a terminal on that machine's own
+desktop.
+
+`diagnose()` returns warnings rather than throwing, and returns nothing when the job is not
+loaded at all — that is a different problem with its own reporting.
