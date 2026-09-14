@@ -359,8 +359,7 @@ describe('SessionStart registration (§23.23)', () => {
     expect(calls[0]?.timeoutMs).toBeGreaterThan(HOOK_DEADLINE_MS);
   });
 
-  it('re-registers when a later heartbeat is not accepted', async () => {
-    // The daemon does not know this session: the SessionStart register missed its window.
+  it('re-registers when the daemon answers 404 — it does not know this session', async () => {
     const posted: string[] = [];
     await runHook({
       stdin: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 's1', cwd: '/tmp/x' }),
@@ -371,12 +370,39 @@ describe('SessionStart registration (§23.23)', () => {
         get: async () => ({ paused: false }),
         post: async (path) => {
           posted.push(path);
-          if (path.endsWith('/heartbeat')) throw new Error('404 not found');
+          if (path.endsWith('/heartbeat')) throw new DaemonUnreachable('unknown session', null, 404);
           return {};
         },
       },
     });
     expect(posted).toEqual(['/v1/sessions/s1/heartbeat', '/v1/sessions/register']);
+  });
+
+  it('does NOT re-register when there is simply no daemon', async () => {
+    // Retrying here would run the git probe on every prompt for as long as the daemon is
+    // down — paying real prompt latency to reach something that is not there.
+    const posted: string[] = [];
+    let probes = 0;
+    await runHook({
+      stdin: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 's1', cwd: '/tmp/x' }),
+      configDir: tempConfigDir(),
+      ppid: 4242,
+      gitCommonDir: () => {
+        probes += 1;
+        return null;
+      },
+      client: {
+        get: async () => {
+          throw new DaemonUnreachable('ECONNREFUSED');
+        },
+        post: async (path) => {
+          posted.push(path);
+          throw new DaemonUnreachable('ECONNREFUSED');
+        },
+      },
+    });
+    expect(posted).toEqual(['/v1/sessions/s1/heartbeat']);
+    expect(probes).toBe(0);
   });
 
   it('does not re-register when the heartbeat is accepted', async () => {
@@ -397,18 +423,17 @@ describe('SessionStart registration (§23.23)', () => {
     expect(posted).toEqual(['/v1/sessions/s1/heartbeat']);
   });
 
-  it('still exits 0 when the re-register also fails — the daemon may simply be gone', async () => {
+  it('still exits 0 when the re-register itself fails', async () => {
     const code = await runHook({
       stdin: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 's1', cwd: '/tmp/x' }),
       configDir: tempConfigDir(),
       ppid: 4242,
       gitCommonDir: () => null,
       client: {
-        get: async () => {
-          throw new Error('ECONNREFUSED');
-        },
-        post: async () => {
-          throw new Error('ECONNREFUSED');
+        get: async () => ({ paused: false }),
+        post: async (path) => {
+          if (path.endsWith('/heartbeat')) throw new DaemonUnreachable('unknown session', null, 404);
+          throw new DaemonUnreachable('died mid-retry');
         },
       },
     });

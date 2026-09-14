@@ -11,12 +11,22 @@ export interface DaemonInfo {
   version: string;
 }
 
-/** Thrown when the daemon cannot be found or reached. Every client treats it as "no information". */
+/**
+ * Thrown when the daemon cannot be found or reached. Every client treats it as "no
+ * information".
+ *
+ * `status` is the HTTP status when the daemon **answered** and the answer was an error, and
+ * `undefined` when there was nothing to answer — no `daemon.json`, connection refused, a
+ * timeout. Callers that must tell "the daemon says no" apart from "there is no daemon" read
+ * this; everyone else keeps treating both the same (§23.23).
+ */
 export class DaemonUnreachable extends Error {
   readonly code = 'daemon_unreachable';
-  constructor(message: string, cause?: unknown) {
+  readonly status: number | undefined;
+  constructor(message: string, cause?: unknown, status?: number) {
     super(message, cause === undefined ? undefined : { cause });
     this.name = 'DaemonUnreachable';
+    this.status = status;
   }
 }
 
@@ -153,7 +163,7 @@ export class DaemonClient {
     if (!res.ok) {
       const envelope = parsed as { error?: { code?: string; message?: string } } | null;
       const message = envelope?.error?.message ?? `HTTP ${res.status}`;
-      throw new DaemonUnreachable(`${method} ${path}: ${message}`, parsed);
+      throw new DaemonUnreachable(`${method} ${path}: ${message}`, parsed, res.status);
     }
     return parsed;
   }

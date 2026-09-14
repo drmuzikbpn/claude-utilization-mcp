@@ -909,11 +909,18 @@ Exactly the mistake §23.15 fixed for the gate, in a second place.
 
 - `REGISTER_DEADLINE_MS` = 2 000 ms, used for the `SessionStart` register only. The nudge
   keeps its 200 ms.
-- **Retry:** a `UserPromptSubmit` whose heartbeat the daemon does not accept means the daemon
-  does not know this session — most often a register that missed. The hook re-registers, then
-  gates. `register` is idempotent, so a re-register with the same pid changes nothing.
-- An unreachable daemon fails the retry too, harmlessly: the hook still prints nothing and
-  still exits 0. No hook behaviour is conditional on the daemon existing.
+- **Retry, but only on a real `404`:** a `UserPromptSubmit` heartbeat that comes back `404`
+  means the daemon answered and does not know this session — most often a register that
+  missed. The hook re-registers, then gates. `register` is idempotent, so a re-register with
+  an unchanged pid is a no-op.
+- **Not on a missing daemon.** A daemon that is down fails the heartbeat too, and retrying
+  there would run the one-shot git probe on *every prompt* for as long as it stayed down —
+  paying real prompt latency to reach something that is not there, which is the exact cost
+  §7.1's 200 ms budget exists to prevent. `DaemonUnreachable` therefore carries `status`: the
+  HTTP status when the daemon answered, `undefined` when there was nothing to answer. Every
+  other caller keeps treating both the same.
+- The hook still prints nothing and still exits 0 whatever happens. No hook behaviour is
+  conditional on the daemon existing.
 
 ## 23.24 A session we watched stop must not come back to life (2026-09-14)
 
