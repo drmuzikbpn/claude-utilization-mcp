@@ -176,6 +176,11 @@ The GitHub Actions secrets of the same four names are populated from that item.
 
 ## Daemon install on the Mac Studio
 
-There is no npm package yet. Install from a git checkout of
-`drmuzikbpn/claude-utilization-mcp` and run `claude-usage install` from there, with
-`bind: tailscale` in the config. Replace this with the npm command once publishing exists.
+Install from a git checkout of `drmuzikbpn/claude-utilization-mcp` and run `claude-usage install`
+from there, with `bind: tailscale` in the config.
+
+**Run `install` from the Mac's own desktop session, not over ssh.** A LaunchAgent bootstrapped
+from an ssh session never gets its spawns scheduled (`launchctl print` shows `runs = 0` and
+`KeepAlive` never fires), so the daemon updates itself fine but does not come back from a crash or
+a reboot. The daemon prints a warning when it detects this; if a machine drops off the deck and
+stays off, this is the first thing to check.
