@@ -46,6 +46,9 @@ class PauseControllerTest {
         var failures = 0
         var failWith: DaemonException = DaemonException("network", 0, null, null)
 
+        /** Resume calls for these scopes throw [failWith] every time. */
+        var refuseResume: Set<String> = emptySet()
+
         override suspend fun health(): HealthDto = HealthDto()
 
         override suspend fun summary(): SummaryDto = SummaryDto()
@@ -74,6 +77,7 @@ class PauseControllerTest {
 
         override suspend fun resume(scope: String): ResumeResponseDto {
             calls += "resume:$scope"
+            if (scope in refuseResume) throw failWith
             if (failures > 0) {
                 failures--
                 throw failWith
@@ -407,6 +411,59 @@ class PauseControllerTest {
 
         f.controller.tap(project)
         assertEquals(listOf("resume:${project.scope()}", "resume:session:s1"), f.api("m1").calls)
+    }
+
+    @Test
+    fun `a nested resume that fails does not stop the others or fail the project`() = runTest {
+        val f = fixture(
+            listOf(
+                machine(
+                    "m1",
+                    sessions = listOf(session("s1"), session("s2")),
+                    rules = listOf(rule("session:s1"), rule("session:s2"))
+                )
+            )
+        )
+        f.api("m1").refuseResume = setOf("session:s1")
+        f.api("m1").failWith = DaemonException("not_found", 404, null, "No such rule")
+        f.controller.start()
+        runCurrent()
+        val project = PauseTarget.Project("m1", "/g/.git")
+
+        val outcome = f.controller.resume(project).single()
+
+        assertTrue(outcome.ok)
+        assertEquals(listOf("resume:${project.scope()}", "resume:session:s1", "resume:session:s2"), f.api("m1").calls)
+    }
+
+    @Test
+    fun `a project resume reports the project's own refusal`() = runTest {
+        val f = fixture(listOf(machine("m1", sessions = listOf(session("s1")), rules = listOf(rule("session:s1")))))
+        val project = PauseTarget.Project("m1", "/g/.git")
+        f.api("m1").refuseResume = setOf(project.scope())
+        f.api("m1").failWith = DaemonException("conflict", 409, null, "Daemon is updating")
+        f.controller.start()
+        runCurrent()
+
+        val outcome = f.controller.resume(project).single()
+
+        assertFalse(outcome.ok)
+        assertEquals("Daemon is updating", outcome.error)
+        assertTrue(f.api("m1").calls.contains("resume:session:s1"))
+    }
+
+    @Test
+    fun `a failed resume keeps the pending escalation`() = runTest {
+        val f = fixture(listOf(machine("m1", sessions = listOf(session("s1")))))
+        f.controller.start()
+        runCurrent()
+        f.controller.soft(PauseTarget.Session("m1", "s1"))
+        assertEquals(1, f.controller.pending.value.size)
+        f.api("m1").refuseResume = setOf("session:s1")
+
+        f.controller.resume(PauseTarget.Session("m1", "s1"))
+
+        assertEquals(1, f.controller.pending.value.size)
     }
 
     @Test

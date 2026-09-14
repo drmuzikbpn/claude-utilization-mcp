@@ -31,7 +31,7 @@ fun RenameDialog(user: UserView, current: String, onSave: (String) -> Unit, onDi
         containerColor = DeckColors.surface,
         titleContentColor = DeckColors.fg,
         textContentColor = DeckColors.muted,
-        title = { Text(text = "Rename ${user.displayName}", fontFamily = DeckType.text) },
+        title = { Text(text = "Rename ${current.ifEmpty { user.displayName }}", fontFamily = DeckType.text) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(

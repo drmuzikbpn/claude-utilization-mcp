@@ -17,6 +17,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,7 +64,8 @@ fun StatusBar(
 
         // Everything between wifi and the clock shares one flexible region, so the clock keeps its
         // width and never wraps a character per line when two machine chips crowd it. While an
-        // alert is up it takes the whole region: the machines come back when the chip clears.
+        // alert is up it takes the words and the machines shrink to their dots, so the drill-in
+        // and the health colours stay reachable at the moment they matter most.
         Row(
             modifier = Modifier.weight(1f),
             verticalAlignment = Alignment.CenterVertically,
@@ -76,15 +79,16 @@ fun StatusBar(
                     modifier = Modifier.weight(1f, fill = false)
                 )
             }
-            if (alertChip == null) {
-                machines.forEach { machine ->
-                    Chip(
-                        text = Format.hostShort(machine.name ?: machine.config.name),
-                        dot = dotColor(machine.health),
-                        onClick = { onMachine(machine.config.id) },
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                }
+            machines.forEach { machine ->
+                val name = Format.hostShort(machine.name ?: machine.config.name)
+                Chip(
+                    text = if (alertChip == null) name else "",
+                    dot = dotColor(machine.health),
+                    onClick = { onMachine(machine.config.id) },
+                    modifier = Modifier
+                        .then(if (alertChip == null) Modifier.weight(1f, fill = false) else Modifier)
+                        .semantics { contentDescription = "$MACHINE_CHIP $name" }
+                )
             }
         }
 
@@ -123,16 +127,21 @@ fun Chip(
         if (dot != null) {
             Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(dot))
         }
-        Text(
-            text = text,
-            color = tint,
-            fontFamily = DeckType.mono,
-            fontSize = 11.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        if (text.isNotEmpty()) {
+            Text(
+                text = text,
+                color = tint,
+                fontFamily = DeckType.mono,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
+
+/** Prefix of every machine chip's content description, so tests and talkback can find one by name. */
+const val MACHINE_CHIP = "machine"
 
 private fun dotColor(health: Health): Color = when (health) {
     Health.FRESH -> DeckColors.ok

@@ -39,7 +39,14 @@ data class Settings(
     val userNames: Map<String, String> = emptyMap()
 ) {
     /** The name to draw for [user]: the deck's own rename first, the daemon's display name otherwise. */
-    fun nameFor(user: UserView): String = userNames[user.key]?.takeIf { it.isNotBlank() } ?: user.displayName
+    fun nameFor(user: UserView): String = renameFor(user) ?: user.displayName
+
+    /**
+     * The rename stored for [user], if any. A name given before the daemon started reporting the
+     * organisation lives under the bare account key, so that key is tried second rather than lost.
+     */
+    fun renameFor(user: UserView): String? =
+        (userNames[user.key] ?: userNames[user.key.substringBefore('/')])?.takeIf { it.isNotBlank() }
 
     /** Sets or, with a blank [name], clears the rename for [key]. */
     fun renamed(key: String, name: String): Settings {

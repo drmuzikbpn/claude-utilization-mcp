@@ -60,7 +60,38 @@ class ReleaseCheckerTest {
         assertEquals("usage-deck.apk", info.apkName)
         assertEquals(apkUrl, info.apkUrl)
         assertEquals(sumsUrl, info.sumsUrl)
-        assertEquals("/repos/drmuzikbpn/claude-utilization-mcp/releases?per_page=30", server.takeRequest().path)
+        assertEquals("/repos/drmuzikbpn/claude-utilization-mcp/releases?per_page=100", server.takeRequest().path)
+    }
+
+    @Test
+    fun `legacy versioned apk and SHA256SUMS assets still install`() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                [{ "tag_name":"deck-0.1.400+leg", "prerelease":true, "assets":[
+                    {"name":"usage-deck-0.1.400+leg.apk","browser_download_url":"apk"},
+                    {"name":"SHA256SUMS","browser_download_url":"sums"} ] }]
+                """.trimIndent()
+            )
+        )
+        val info = checker.latest()!!
+        assertEquals("usage-deck-0.1.400+leg.apk", info.apkName)
+        assertEquals("sums", info.sumsUrl)
+    }
+
+    @Test
+    fun `the apk's own sha256 asset wins over SHA256SUMS whatever the upload order`() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                [{ "tag_name":"deck-0.1.401+both", "prerelease":true, "assets":[
+                    {"name":"SHA256SUMS","browser_download_url":"sums"},
+                    {"name":"usage-deck.apk","browser_download_url":"apk"},
+                    {"name":"usage-deck.apk.sha256","browser_download_url":"own"} ] }]
+                """.trimIndent()
+            )
+        )
+        assertEquals("own", checker.latest()!!.sumsUrl)
     }
 
     @Test

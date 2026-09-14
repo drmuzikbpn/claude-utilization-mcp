@@ -65,7 +65,7 @@ fun SettingsScreen(
     renaming?.let { user ->
         RenameDialog(
             user = user,
-            current = settings.userNames[user.key].orEmpty(),
+            current = settings.renameFor(user).orEmpty(),
             onSave = { name ->
                 onUpdate { it.renamed(user.key, name) }
                 renaming = null

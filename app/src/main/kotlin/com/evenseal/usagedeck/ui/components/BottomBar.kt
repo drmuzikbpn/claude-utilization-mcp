@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,8 +23,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalViewConfiguration
-import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -104,12 +101,6 @@ private fun PrimaryAction(
 ) {
     val haptics = LocalHapticFeedback.current
     var holding by remember { mutableStateOf(false) }
-    val viewConfiguration = LocalViewConfiguration.current
-    val holdConfiguration = remember(viewConfiguration) {
-        object : ViewConfiguration by viewConfiguration {
-            override val longPressTimeoutMillis: Long get() = PauseButtonDefaults.HOLD_MILLIS
-        }
-    }
     val tint = when {
         holding -> DeckColors.crit
         danger -> DeckColors.crit
@@ -122,7 +113,7 @@ private fun PrimaryAction(
         }
     }
 
-    CompositionLocalProvider(LocalViewConfiguration provides holdConfiguration) {
+    HoldTimeout {
         Box(
             modifier = modifier
                 .clip(BUTTON_SHAPE)

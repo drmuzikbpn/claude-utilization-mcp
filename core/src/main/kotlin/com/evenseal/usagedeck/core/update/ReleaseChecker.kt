@@ -62,7 +62,9 @@ class ReleaseChecker(
         val apk = release.assets.firstOrNull {
             it.name.startsWith(apkPrefix) && it.name.endsWith(".apk")
         } ?: return null
-        val sums = release.assets.firstOrNull { it.name == "${apk.name}.sha256" || it.name == SUMS_NAME } ?: return null
+        val sums = release.assets.firstOrNull { it.name == "${apk.name}.sha256" }
+            ?: release.assets.firstOrNull { it.name == SUMS_NAME }
+            ?: return null
         return ReleaseInfo(version, apk.browser_download_url, sums.browser_download_url, apk.name)
     }
 
@@ -98,7 +100,7 @@ class ReleaseChecker(
         /** Spec §23.17: the APK's tag namespace inside the daemon's repo. */
         const val TAG_PREFIX = "deck-"
         private const val SUMS_NAME = "SHA256SUMS"
-        private const val PAGE = 30
+        private const val PAGE = 100
         private val HEX = Regex("^[0-9a-fA-F]{64}$")
     }
 }

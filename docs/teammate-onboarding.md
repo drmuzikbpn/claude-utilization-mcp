@@ -65,8 +65,9 @@ Anyone standing at the phone can:
 - **tap** a session's pause button — a *soft* pause: Claude Code stops at the next tool boundary
   and can be resumed with another tap;
 - **hold** it for 600 ms — a *hard* freeze: whatever tool is running is `SIGSTOP`ped and the next
-  tool call is held. Your `claude` process itself keeps running, so your terminal never shows
-  "suspended" and you never need `fg`. Resuming sends `SIGCONT` and the session carries on.
+  tool call is held. On daemon 0.1.66 or newer your `claude` process itself keeps running, so your
+  terminal never shows "suspended" and you never need `fg` (older daemons stop the TUI too; type
+  `fg` if you see "suspended (signal)"). Resuming sends `SIGCONT` and the session carries on.
 
 A soft pause escalates to a freeze after 90 seconds by default, so a pause you forget about ends
 up as a freeze rather than silently expiring.
