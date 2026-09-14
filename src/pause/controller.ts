@@ -45,6 +45,9 @@ export class PauseController {
     this.#now = opts.now ?? Date.now;
     this.#deps = opts.freezeDeps ?? defaultFreezeDeps();
     this.registry.setPauseResolver((target) => ({ pause: this.resolvePause(target) }));
+    this.registry.setFreezeReleaser((pids) => {
+      thaw(pids, this.#deps);
+    });
   }
 
   // --- resolution -----------------------------------------------------------

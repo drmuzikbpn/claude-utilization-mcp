@@ -107,6 +107,7 @@ export class SessionRegistry {
   #onChange: () => void;
   #timer: NodeJS.Timeout | null = null;
   #resolvePause: (target: PauseTarget) => { pause: SessionPause | null } = () => ({ pause: null });
+  #releaseFreeze: ((pids: readonly number[]) => void) | null = null;
 
   constructor(opts: SessionRegistryOptions) {
     this.configDir = opts.configDir;
@@ -168,6 +169,16 @@ export class SessionRegistry {
     this.#resolvePause = fn;
   }
 
+  /**
+   * Injected by the pause controller: SIGCONT a frozen tree the registry is about to forget.
+   * Without it, `claude --resume` (a new pid for the same session id) drops the old
+   * `frozenPids` on the floor and its stopped tool subprocesses — now reparented to init —
+   * stay stopped for good, which is exactly the invariant hard freeze is not allowed to break.
+   */
+  setFreezeReleaser(fn: (pids: readonly number[]) => void): void {
+    this.#releaseFreeze = fn;
+  }
+
   // --- persistence ----------------------------------------------------------
 
   load(): void {
@@ -223,6 +234,10 @@ export class SessionRegistry {
   register(input: RegisterInput): StoredSession {
     const nowIso = isoOf(this.#now());
     const existing = this.#sessions.get(input.sessionId);
+    const samePid = existing !== undefined && existing.pid === (input.pid ?? null);
+    if (!samePid && existing !== undefined && existing.frozenPids.length > 0) {
+      this.#releaseFreeze?.(existing.frozenPids);
+    }
     const session: StoredSession = {
       sessionId: input.sessionId,
       pid: typeof input.pid === 'number' && input.pid > 0 ? input.pid : null,
@@ -238,7 +253,7 @@ export class SessionRegistry {
       // as it was so the reconciler sees it no longer matches `pid` and freezes the new
       // tree, and `freezes` keeps counting — that is what tells a dashboard "frozen again
       // after re-register" apart from "frozen once" (§23.16).
-      frozenPids: existing !== undefined && existing.pid === (input.pid ?? null) ? existing.frozenPids : [],
+      frozenPids: samePid ? existing.frozenPids : [],
       frozenPid: existing?.frozenPid ?? null,
       freezes: existing?.freezes ?? 0,
       pausedSince: existing?.pausedSince ?? null,

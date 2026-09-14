@@ -168,7 +168,8 @@
         "ruleId": "r_trpikx7bbznr4lgn",
         "scope": "session:3f6c1a2e-8b1d-4c1a-9e1f-5d2a7b9c0e11",
         "since": "2026-09-13T19:01:41.866Z",
-        "frozenPids": []
+        "frozenPids": [],
+        "freezes": 0
       },
       "lastTool": {
         "name": "Bash",
