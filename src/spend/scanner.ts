@@ -54,6 +54,8 @@ export interface ScanProgress {
 }
 
 export interface ScanAllOptions {
+  /** Called for every `custom-title` record (§17.3 `title`). */
+  onTitle?: TitleSink;
   concurrency?: number;
   onProgress?: (progress: ScanProgress) => void;
   onFileStart?: (file: TranscriptFile) => void;
@@ -71,6 +73,7 @@ export interface ScanAllResult extends ScanProgress {
 
 interface RawLine {
   type?: unknown;
+  customTitle?: unknown;
   timestamp?: unknown;
   cwd?: unknown;
   sessionId?: unknown;
@@ -95,8 +98,12 @@ function utcDay(iso: string): string {
 
 export type LineResult =
   | { type: 'event'; event: UsageEvent }
+  | { type: 'title'; sessionId: string; title: string }
   | { type: 'skip' }
   | { type: 'parseError' };
+
+/** Receives `/rename` titles (`{"type":"custom-title"}` transcript records; last one wins). */
+export type TitleSink = (sessionId: string, title: string) => void;
 
 /**
  * Counted iff `type === "assistant"` and `message.model !== "<synthetic>"` and
@@ -116,6 +123,11 @@ export function parseLine(raw: string, ctx: FileContext): LineResult {
   if (!isRecord(parsed)) return { type: 'skip' };
 
   const line = parsed as RawLine;
+  if (line.type === 'custom-title') {
+    const title = typeof line.customTitle === 'string' ? line.customTitle.trim() : '';
+    const sessionId = typeof line.sessionId === 'string' ? line.sessionId : '';
+    return title !== '' && sessionId !== '' ? { type: 'title', sessionId, title } : { type: 'skip' };
+  }
   if (line.type !== 'assistant') return { type: 'skip' };
   if (line.isApiErrorMessage === true) return { type: 'skip' };
   if (!isRecord(line.message)) return { type: 'skip' };
@@ -171,6 +183,7 @@ export async function scanFile(
   ctx: FileContext,
   startOffset: number,
   sink: UsageSink,
+  onTitle?: TitleSink,
 ): Promise<FileScanResult> {
   let handle;
   try {
@@ -212,6 +225,8 @@ export async function scanFile(
         if (result.type === 'event') {
           events += 1;
           sink(result.event);
+        } else if (result.type === 'title') {
+          onTitle?.(result.sessionId, result.title);
         } else if (result.type === 'parseError') {
           parseErrors += 1;
         }
@@ -311,7 +326,7 @@ export async function scanAll(
 
       options.onFileStart?.(file);
       const start = next[file.relPath] ?? 0;
-      const scanned = await scanFile(file.path, file, start, sink);
+      const scanned = await scanFile(file.path, file, start, sink, options.onTitle);
       options.onFileDone?.(file, scanned);
 
       next[file.relPath] = scanned.offset;

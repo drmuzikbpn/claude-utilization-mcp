@@ -1,4 +1,6 @@
-import { readFileSync, statSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DEAD_RETENTION_MS, resolveProject, SessionRegistry, sessionsFilePath } from '../../src/sessions/registry.js';
 import { makeHarness, StubTokens, tempDir } from './helpers.js';
@@ -235,5 +237,47 @@ describe('persistence', () => {
     const h = makeHarness();
     register(h);
     expect(() => statSync(`${h.configDir}/state.json`)).toThrow();
+  });
+});
+
+describe('titles (§23.14)', () => {
+  it('reads the /rename title from the token store for hook and transcript sessions', () => {
+    const h = makeHarness();
+    h.tokens.add('from-transcript', { cwd: '/tmp/x/bar', projectKey: '-tmp-x-bar' });
+    h.tokens.titles.set('from-transcript', 'Jamie - Android OS');
+    h.subsystem.registry.register({ sessionId: 'sess-1', pid: process.pid, cwd: '/tmp/t' });
+    h.tokens.titles.set('sess-1', 'Ethan - Launch Daemon');
+    const byId = new Map(h.subsystem.registry.list().map((v) => [v.sessionId, v]));
+    expect(byId.get('from-transcript')?.title).toBe('Jamie - Android OS');
+    expect(byId.get('sess-1')?.title).toBe('Ethan - Launch Daemon');
+  });
+
+  it('falls back to the custom-title.json sidecar next to the transcript, and is null when never renamed', () => {
+    const h = makeHarness();
+    const dir = mkdtempSync(join(tmpdir(), 'cu-title-'));
+    const transcriptPath = join(dir, 'sess-2.jsonl');
+    writeFileSync(transcriptPath, '');
+    mkdirSync(join(dir, 'sess-2'), { recursive: true });
+    writeFileSync(join(dir, 'sess-2', 'custom-title.json'), JSON.stringify({ customTitle: '  Sidecar Title  ' }));
+    h.subsystem.registry.register({ sessionId: 'sess-2', pid: process.pid, cwd: dir, transcriptPath });
+    h.subsystem.registry.register({ sessionId: 'sess-3', pid: process.pid, cwd: dir });
+    const byId = new Map(h.subsystem.registry.list().map((v) => [v.sessionId, v]));
+    expect(byId.get('sess-2')?.title).toBe('Sidecar Title');
+    expect(byId.get('sess-3')?.title).toBeNull();
+  });
+
+  it('publishes a session update when a registered session is renamed', () => {
+    const h = makeHarness();
+    h.subsystem.registry.register({ sessionId: 'sess-4', pid: process.pid, cwd: '/tmp/t' });
+    h.subsystem.registry.refreshTitles();
+    const seen: Array<{ type: string; session: { sessionId: string; title: string | null } }> = [];
+    h.bus.subscribe('session', (payload) => seen.push(payload as (typeof seen)[number]));
+    h.tokens.titles.set('sess-4', 'Renamed');
+    h.subsystem.registry.refreshTitles();
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.type).toBe('update');
+    expect(seen[0]?.session.title).toBe('Renamed');
+    h.subsystem.registry.refreshTitles();
+    expect(seen).toHaveLength(1);
   });
 });

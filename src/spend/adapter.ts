@@ -23,6 +23,7 @@ export function createSpendTokensSource(options: SpendStoreOptions): TokensSourc
     listSessions: () => store.listSessions(),
     sessionTotals: (id) => store.sessionTotals(id),
     sessionModel: (id) => store.sessionModel(id),
+    sessionTitle: (id) => store.sessionTitle(id),
     sessionStartedAt: (id) => store.sessionStartedAt(id),
     onChange: (cb) => store.onChange(cb),
     start: () => store.start(),
