@@ -808,6 +808,12 @@ and the entire point of the tailnet address is reachability when nobody is at th
   matter, because the two failure modes are "no address found" and "address found, bind
   refused", and only the resolve callback sees the first.
 - The retry timer is `unref`ed and cleared on stop, so it can never hold the process open.
+- **Tailscale switched off on purpose is the common case, not an emergency.** `tailscale ip -4`
+  keeps reporting the last-known address after the daemon is stopped, so the resolve succeeds
+  and the bind fails, every time. Two consequences are handled explicitly: the retry backs off
+  60 s → 10 min (`TAILNET_RETRY_MAX_MS`, reset once bound), and a bind failure is logged
+  **once** per distinct message rather than once per attempt, so a deliberately-offline
+  machine neither burns subprocesses nor fills its log.
 
 ## 23.22 A manual update gets the daemon's hard-freeze guard (2026-09-14)
 

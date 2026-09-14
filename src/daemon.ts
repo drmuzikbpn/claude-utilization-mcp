@@ -28,6 +28,13 @@ export interface NetworkResolver {
  * while one is missing, so the steady-state cost is zero.
  */
 export const TAILNET_RETRY_MS = 60_000;
+/**
+ * Cap for the tailnet retry backoff. Tailscale that is switched off on purpose is the
+ * common case, not an emergency: `tailscale ip -4` still reports the last-known address, so
+ * the resolve keeps succeeding and the bind keeps failing. Backing off to ten minutes keeps
+ * a deliberately-offline machine from costing a subprocess a minute for ever.
+ */
+export const TAILNET_RETRY_MAX_MS = 600_000;
 
 export function defaultNetworkResolver(): NetworkResolver {
   return {
@@ -42,6 +49,8 @@ export interface DaemonOptions {
   config?: Config;
   /** How often to retry a missing tailnet bind (§23.21); defaults to `TAILNET_RETRY_MS`. */
   tailnetRetryMs?: number;
+  /** Ceiling for the retry backoff; defaults to `TAILNET_RETRY_MAX_MS`. */
+  tailnetRetryMaxMs?: number;
   /**
    * The token store. Pass it explicitly (tests, and the orchestrator once W1 lands);
    * omit to let `createTokensSource` try the real `src/spend` module.
@@ -212,6 +221,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
 
   const port = opts.port ?? config.port;
   const boundHosts: string[] = [];
+  /**
+   * Bind failures already reported, so the §23.21 retry does not repeat the same line every
+   * time it looks. Cleared for a host once it binds, so a later failure is reported again.
+   */
+  const reportedBindFailures = new Set<string>();
+  function logBindFailure(host: string, port: number, err: unknown): void {
+    const line = `http: could not bind ${host}:${String(port)} — ${(err as Error).message}`;
+    if (reportedBindFailures.has(line)) return;
+    reportedBindFailures.add(line);
+    log(line);
+  }
   // The first address decides the port and is fatal if it cannot be bound; every further
   // address is best-effort, because a tailnet that is down must not stop the daemon (§16).
   const [primary, ...secondary] = addresses as [string, ...string[]];
@@ -234,7 +254,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
         await server.close();
         throw new PortInUseError(bound);
       }
-      log(`http: could not bind ${host}:${bound} — ${(err as Error).message}`);
+      logBindFailure(host, bound, err);
     }
   }
   debug(`http: listening on ${boundHosts.map((h) => `${h}:${bound}`).join(', ')}`);
@@ -294,9 +314,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
       try {
         await server.bind(host, bound);
         boundHosts.push(host);
+        reportedBindFailures.clear();
         log(`http: now also listening on ${host}:${bound}`);
       } catch (err) {
-        log(`http: could not bind ${host}:${bound} — ${(err as Error).message}`);
+        logBindFailure(host, bound, err);
       }
     }
 
@@ -329,6 +350,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
    * the timer stops and `SIGHUP` takes over again, so the steady-state cost is zero.
    */
   let tailnetRetry: ReturnType<typeof setTimeout> | null = null;
+  let tailnetRetryMs = opts.tailnetRetryMs ?? TAILNET_RETRY_MS;
+  const tailnetRetryMaxMs = Math.max(tailnetRetryMs, opts.tailnetRetryMaxMs ?? TAILNET_RETRY_MAX_MS);
   function scheduleTailnetRetry(): void {
     if (stopped || !wantsTailnet || tailnetBound() || tailnetRetry !== null) return;
     tailnetRetry = setTimeout(() => {
@@ -336,10 +359,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
       void (async () => {
         if (stopped) return;
         await reload().catch(() => undefined);
-        if (tailnetBound()) log('net: tailnet address is now available');
+        if (tailnetBound()) {
+          log('net: tailnet address is now available');
+          tailnetRetryMs = opts.tailnetRetryMs ?? TAILNET_RETRY_MS;
+          return;
+        }
+        tailnetRetryMs = Math.min(tailnetRetryMs * 2, tailnetRetryMaxMs);
         scheduleTailnetRetry();
       })();
-    }, opts.tailnetRetryMs ?? TAILNET_RETRY_MS);
+    }, tailnetRetryMs);
     tailnetRetry.unref();
   }
 
