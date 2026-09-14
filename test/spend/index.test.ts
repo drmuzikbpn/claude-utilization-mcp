@@ -94,8 +94,23 @@ describe('SpendStore lifecycle', () => {
       messages: 4,
     });
     expect(res.groups.map((g) => g.key).sort()).toEqual(['-home-dev-alpha', '-home-dev-beta']);
-    expect(store.stats).toMatchObject({ filesTotal: 4, filesDone: 4, parseErrors: 1, scanning: false });
+    expect(store.stats).toMatchObject({ filesTotal: 4, filesDone: 4, parseErrors: 1 });
     expect(store.stats.lastScanAt).toBe(NOW.toISOString());
+
+    // `scanning` is NOT settled the instant `start()` resolves, and asserting that it was
+    // made this test flaky — it failed on `macos-latest` in CI while passing eleven
+    // consecutive local runs. `start()` marks the store ready and then calls
+    // `watcher.resume()`, which drains whatever the watcher queued while the foreground scan
+    // was running; a queued event there starts a *background* scan, so `#current` is
+    // non-null again immediately after `start()` returns. That is the documented design
+    // (src/spend/index.ts:6, "mark ready → drain the queued events"), not a defect: the
+    // answers above are already correct and `ready` is already true. Whether the drain
+    // happens to find work is a timing question about the filesystem watcher, which is
+    // exactly the kind of thing a loaded CI runner decides differently.
+    //
+    // So wait for quiescence and assert it there, where it means something.
+    await store.whenIdle();
+    expect(store.stats).toMatchObject({ scanning: false });
   });
 
   it('accepts an explicit projectsDir passed to start()', async () => {
