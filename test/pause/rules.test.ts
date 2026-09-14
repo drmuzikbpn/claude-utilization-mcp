@@ -161,6 +161,23 @@ describe('PauseRuleStore', () => {
   });
 });
 
+describe('resume is idempotent (contract the dashboard relies on)', () => {
+  it('a no-op resume never errors: empty arrays for unknown session, project and all', () => {
+    const h = makeHarness();
+    for (const scope of ['session:does-not-exist', 'project:/nope/.git', 'all']) {
+      expect(h.subsystem.pause.resume(scope)).toEqual({ removed: [], resumed: [] });
+    }
+  });
+
+  it('resuming the same scope twice is a no-op the second time', () => {
+    const h = makeHarness();
+    h.subsystem.registry.register({ sessionId: 'sess-1', pid: process.pid, cwd: '/tmp/x/foo' });
+    h.subsystem.pause.pause({ scope: 'session:sess-1', mode: 'soft', createdBy: 'dashboard' });
+    expect(h.subsystem.pause.resume('session:sess-1').removed).toHaveLength(1);
+    expect(h.subsystem.pause.resume('session:sess-1')).toEqual({ removed: [], resumed: [] });
+  });
+});
+
 describe('rules apply to sessions that register later (§18.1)', () => {
   it('a new worktree session in a paused project comes up paused', () => {
     const h = makeHarness();
