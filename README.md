@@ -15,11 +15,20 @@ at once.
 
 ## What it does
 
-- **Ledger (portrait)** — each person's 5 h and 7 d utilisation with reset times, then every live
-  session grouped by project, with tokens/min and a 30-minute sparkline.
+- **Ledger (portrait)** — one folded line per person (`5h 42%  7d 18%`; tap to unfold the bars,
+  reset times and model-scoped windows), then every live session grouped by project. Project rows
+  start folded with a project sparkline and a project pause; tap to see the sessions. Sessions show
+  their `/rename` title when they have one.
 - **Wide dock (landscape)** — the same data as numbers big enough to read across a room.
-- **Pause** — tap for a soft pause, hold 600 ms to freeze. A soft pause escalates to a freeze
-  after 90 s unless you resume it. Red styling appears only while you are actually holding.
+- **People** — quotas are per account *and* organisation, so one account on a team seat and on a
+  personal plan is two rows. Long-press a row (or use *Settings › Users*) to name it.
+- **Pause** — tap for a soft pause, hold 600 ms to freeze. A soft pause holds the session at its
+  next tool call and escalates to a freeze after 90 s unless you resume it. A freeze stops the
+  tool that is running and holds the next one; the Claude Code process itself keeps running, so
+  the terminal is never suspended. A freeze longer than the session's tool timeout (2 min by
+  default) ends the tool that was running. Red styling appears only while you are actually holding.
+- **Settings (gear)** — wifi, keep-screen-on, auto-dim at night, 12/24 h clock, alert chime, user
+  names, thresholds, escalation, quiet hours, exit PIN and updates.
 - **Alerts** — full-screen in the dock, heads-up notification on battery, silenced (but still
   visible) during quiet hours.
 - **Self-update** — polls its own GitHub releases every 10 minutes, verifies sha256, and installs

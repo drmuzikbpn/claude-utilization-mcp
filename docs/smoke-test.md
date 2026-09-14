@@ -40,7 +40,13 @@ Tick each line, or write down what happened instead.
 
 ## Live data
 
-- [ ] Both users' 5 h and 7 d bars show, with reset captions.
+- [ ] Each person shows as one folded line with 5 h and 7 d percentages; tapping it unfolds the
+      bars with reset captions, and tapping again folds it.
+- [ ] Long-pressing a person's row opens the rename dialog; the new name shows on the Ledger and
+      the wide-dock rail, and survives a relaunch. *Use daemon name* clears it.
+- [ ] Two machines logged into the same account and organisation show as one person; the same
+      account in two organisations shows as two.
+- [ ] The status bar stays one line tall with two machine chips and shows the clock.
 - [ ] A teammate whose Mac is closed fades to 55 % within two minutes and their machine dot goes
       red.
 - [ ] Rotating the phone switches Ledger ↔ Wide dock with no data loss.
@@ -50,10 +56,15 @@ Tick each line, or write down what happened instead.
 
 - [ ] Tap a live session's pause → the session soft-pauses on the Mac and the countdown starts.
 - [ ] Tap it again → it resumes, and `claude-usage` on the Mac agrees.
-- [ ] Let the countdown run out → the session hard-freezes and the row reads **frozen**.
-- [ ] On the Mac, `ps -o stat= -p <pid>` shows `T` while frozen.
-- [ ] Resume → `ps` shows `S`/`R` again, i.e. **SIGCONT actually landed**, and the session
+- [ ] Let the countdown run out → the session hard-freezes and the row reads **frozen**. The
+      daemon's rules list holds one rule (hard), not a soft and a hard one.
+- [ ] On the Mac, the `claude` process itself stays `S` (`ps -o stat= -p <pid>`); only its tool
+      subprocesses (`pause.frozenPids` in `/v1/sessions`) show `T`. The terminal never says
+      "suspended".
+- [ ] Resume from the *project* row → the session rule under it is lifted too, and the session
       carries on rather than dying.
+- [ ] Kill a frozen session and `claude --resume` it while the rule stands → it is frozen again on
+      arrival and the row reads **frozen again ×2**.
 - [ ] Hold *Pause all* → every reachable machine freezes; a dead machine is skipped, not retried
       forever.
 - [ ] A session discovered from its transcript (no trusted pid) refuses a hard pause with a clear
@@ -69,7 +80,8 @@ Tick each line, or write down what happened instead.
 
 ## Update
 
-- [ ] *Settings → Check for update now* reports the installed version against the latest release.
+- [ ] *Settings → Check for update now* reports the installed version against the newest `deck-`
+      pre-release in the shared repo, ignoring the daemon's `v` releases.
 - [ ] Publishing a newer release causes the deck to download, verify and install it with **no
       prompt** (Device Owner), and the version footer changes afterwards.
 - [ ] An update that arrives while a hold is in progress or an escalation is armed is deferred,

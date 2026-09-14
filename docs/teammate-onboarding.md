@@ -64,11 +64,21 @@ Anyone standing at the phone can:
 
 - **tap** a session's pause button — a *soft* pause: Claude Code stops at the next tool boundary
   and can be resumed with another tap;
-- **hold** it for 600 ms — a *hard* freeze: the process is `SIGSTOP`ped. Resuming sends `SIGCONT`
-  and the session carries on; it is not killed and nothing is lost.
+- **hold** it for 600 ms — a *hard* freeze: whatever tool is running is `SIGSTOP`ped and the next
+  tool call is held. Your `claude` process itself keeps running, so your terminal never shows
+  "suspended" and you never need `fg`. Resuming sends `SIGCONT` and the session carries on.
 
 A soft pause escalates to a freeze after 90 seconds by default, so a pause you forget about ends
 up as a freeze rather than silently expiring.
+
+Two things to know:
+
+- A freeze longer than your session's tool timeout (Claude Code's default is 2 minutes) ends the
+  tool call that was running: the timeout keeps counting while the process is stopped, and the
+  kill lands when it wakes. The session continues and sees a timeout error. Short freezes resume
+  cleanly.
+- A session that restarts (`claude --resume`) while a freeze rule still stands is frozen again on
+  arrival; the row on the phone reads **frozen again ×2**. Resume from the phone first.
 
 If you would rather your machine not be pausable from the deck, do not pair it — there is no
 per-machine read-only mode in v1.
