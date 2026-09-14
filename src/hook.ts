@@ -284,13 +284,26 @@ function isGateBody(v: unknown): v is GateBody {
   return typeof v === 'object' && v !== null && typeof (v as { paused?: unknown }).paused === 'boolean';
 }
 
+/** `null` on any failure; a hook never reports daemon trouble (§10). */
 async function postQuietly(client: HookClient, path: string, body: unknown, timeoutMs: number): Promise<unknown> {
-  if (typeof client.post !== 'function') return null;
+  return (await postQuietlyWithStatus(client, path, body, timeoutMs)).body;
+}
+
+/**
+ * As `postQuietly`, plus the HTTP status when the daemon actually answered (§23.23).
+ * `status: undefined` means there was nothing to answer — no daemon, refused, timed out.
+ */
+async function postQuietlyWithStatus(
+  client: HookClient,
+  path: string,
+  body: unknown,
+  timeoutMs: number,
+): Promise<{ body: unknown; status: number | undefined }> {
+  if (typeof client.post !== 'function') return { body: null, status: undefined };
   try {
-    return await client.post(path, body, { timeoutMs });
-  } catch {
-    // A hook never reports daemon trouble (§10).
-    return null;
+    return { body: await client.post(path, body, { timeoutMs }), status: 200 };
+  } catch (err) {
+    return { body: null, status: (err as { status?: number }).status };
   }
 }
 
@@ -465,12 +478,20 @@ export async function runHook(io: HookIO = {}): Promise<number> {
 
     // `UserPromptSubmit` (and anything we do not recognise): heartbeat, gate, then nudge.
     if (sessionId.length > 0) {
-      const beat = await postQuietly(client, `/v1/sessions/${encodeURIComponent(sessionId)}/heartbeat`, {}, deadlineMs);
-      // A heartbeat the daemon did not accept means it does not know this session — most
-      // often a `SessionStart` register that missed its window. Re-register rather than
-      // leave the session pid-less for its whole life (§23.23). A daemon that is simply
-      // unreachable fails this too, harmlessly: `postQuietly` never throws.
-      if (beat === null) await register(client, io, input, sessionId, cwd);
+      const beat = await postQuietlyWithStatus(
+        client,
+        `/v1/sessions/${encodeURIComponent(sessionId)}/heartbeat`,
+        {},
+        deadlineMs,
+      );
+      // A `404` means the daemon answered and does not know this session — most often a
+      // `SessionStart` register that missed its window (§23.23). Re-register.
+      //
+      // Only on a real `404`: a *missing* daemon fails the heartbeat too, and retrying there
+      // would run the git probe on every prompt for as long as the daemon stayed down —
+      // paying seconds of prompt latency to reach something that is not there. That is the
+      // very cost §7.1's 200 ms budget exists to prevent.
+      if (beat.status === 404) await register(client, io, input, sessionId, cwd);
       await runGate(client, sessionId, undefined, io, configDir);
     }
     return await runNudge(io, client, configDir);
