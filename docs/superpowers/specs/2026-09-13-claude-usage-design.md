@@ -715,3 +715,44 @@ tags are namespaced:
   error would be worse than useless: `/releases/latest` returns exactly one release, so a
   mis-flagged APK would both fail the check and hide the next real daemon release behind a
   persistent "malformed release" state.
+
+## 23.18 The update restart cannot rely on the exit code alone (2026-09-14)
+
+§20 and the restart-policy note in `src/update/index.ts` assume the supervisor acts on a
+non-zero exit. On the Mac Studio it did not, and the daemon updated itself to v0.1.72 and
+never came back.
+
+**Cause.** The job was bootstrapped over SSH. `launchctl print gui/501/<label>` showed
+`pended nondemand spawn = speculative`, `runs = 0` with `runatload` set — an SSH session
+cannot drive spawns in that GUI domain. `KeepAlive` never fired either: a `kill -9` on a
+job that had been up well past `minimum runtime = 10` left it down indefinitely.
+`launchctl kickstart -k` always worked, which is why the machine looked healthy after every
+manual intervention.
+
+**Fix.** `defaultRestart()` now *asks* the service manager for a restart
+(`launchctl kickstart -k`, `systemctl --user restart`) and falls back to
+`process.exit(UPDATE_RESTART_EXIT_CODE)` after `RESTART_GRACE_MS` (5 s) — or immediately
+when there is no service manager, the request throws, or the manager is `noop`. Belt and
+braces: the exit alone fails on a job whose `KeepAlive` never fires, and the request alone
+fails when the daemon runs in the foreground. Unit files and the exit code are unchanged, so
+a healthy machine behaves exactly as before.
+
+## 23.19 The last good limits survive a restart (2026-09-14)
+
+Found from the dashboard side during pause-leg QA: right after an auto-update restart,
+`/v1/summary` served `limits: []` with `fetchedAt: null`, and the first poll came back
+`HTTP 429`. The phone had nothing to show, despite correct numbers having been known a
+second earlier — they only ever lived in the memory of the process that just exited.
+Auto-update makes restarts routine, so this is now a regular hole rather than a rare one.
+
+- `LimitsPoller` takes an optional `configDir` and persists each successful snapshot to
+  `<configDir>/limits-cache.json` (`LIMITS_CACHE_VERSION` 1).
+- On construction it restores that snapshot with `stale: true` and `error: null`, so a
+  freshly started daemon answers with real percentages before its first poll lands.
+- `raw` is **not** cached. The cache exists to answer with percentages, not to leave a copy
+  of the account payload on disk.
+- A cache that is absent, unparseable, of another version, or missing `fetchedAt` is ignored
+  — `fetchedAt: null` is indistinguishable from "never fetched".
+- Omitting `configDir` disables the cache entirely, so one-shot CLI reads never touch it.
+- The existing failure path is unchanged: a failed poll still serves the last good snapshot
+  with `stale: true` and the error attached, and the interval still backs off.

@@ -126,6 +126,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   const poller = new LimitsPoller({
     getToken: createTokenReader(),
     intervalMs: config.pollIntervalMs,
+    // Serve the last good numbers straight away rather than an empty list until the first
+    // poll lands — which matters now that auto-update restarts the daemon regularly, and
+    // more still when that first poll comes back 429 (§23.19).
+    configDir,
     log: debug,
   });
 

@@ -15,6 +15,20 @@
  * non-successful exit and relaunches; systemd's `Restart=on-failure` does the same.
  * One policy, both platforms, and a deliberate restart stays distinguishable from a
  * crash in the logs.
+ *
+ * ## …and why the exit is no longer enough on its own (§23.18)
+ *
+ * That contract assumes the supervisor actually acts on the exit. On the Mac Studio it
+ * did not: a job bootstrapped over SSH lands in a `gui/<uid>` domain the SSH session
+ * cannot drive, `launchctl print` reports `pended nondemand spawn = speculative`, and
+ * **`KeepAlive` never fires** — reproduced directly with `kill -9` on a job that had
+ * been up well past `minimum runtime = 10`, which stayed down indefinitely. The daemon
+ * updated itself to a new version and simply never came back.
+ *
+ * So the updater now *asks* the supervisor to restart it (`launchctl kickstart -k`,
+ * `systemctl --user restart`) and only falls back to the bare exit when there is no
+ * service manager or the request fails. The exit code stays exactly as it was, so a
+ * healthy machine behaves identically and the logs still say "deliberate restart".
  */
 import { rmSync } from 'node:fs';
 import { loadConfig, resolveConfigDir, type Config } from '../config.js';
@@ -274,8 +288,39 @@ class Updater implements UpdaterHandle {
   }
 }
 
-/** Ask the supervisor for a relaunch; see the restart-policy note at the top. */
-export function defaultRestart(): void {
+/**
+ * How long to let the supervisor kill us after it accepts the restart request, before
+ * falling back to the bare exit. `kickstart -k` kills this process, so on a healthy
+ * machine this timer never fires.
+ */
+export const RESTART_GRACE_MS = 5_000;
+
+/**
+ * Ask the supervisor for a relaunch; see the restart-policy notes at the top.
+ *
+ * Belt (an explicit restart request) and braces (the non-zero exit). Either alone has
+ * been observed to fail: the exit does nothing on a job whose `KeepAlive` never fires,
+ * and the request does nothing when the daemon is running in the foreground with no
+ * service manager at all.
+ */
+export async function defaultRestart(
+  env: NodeJS.ProcessEnv = process.env,
+  graceMs: number = RESTART_GRACE_MS,
+): Promise<void> {
+  try {
+    const { createServiceManager } = await import('../service/index.js');
+    const service = await createServiceManager({ env });
+    if (service.kind !== 'noop') {
+      await service.restart();
+      // The supervisor SIGKILLs us inside this window on any healthy machine.
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, graceMs).unref();
+      });
+    }
+  } catch {
+    // No service manager, a launchctl/systemctl that is not there, a domain we cannot
+    // reach — all mean "fall back to the exit", never "skip the restart".
+  }
   process.exit(UPDATE_RESTART_EXIT_CODE);
 }
 

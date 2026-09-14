@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { writeJsonFile } from '../config.js';
 import { defaultFetch, fetchLimits, type FetchLike } from './client.js';
 import { normalizeLimits } from './normalize.js';
 import { LimitsError, emptySnapshot, type LimitsErrorInfo, type LimitsSnapshot } from './types.js';
@@ -7,6 +10,46 @@ export const DEFAULT_POLL_INTERVAL_MS = 60_000;
 export const MAX_BACKOFF_MS = 600_000;
 /** `POST /v1/refresh` is rate-limited to one per 10 s (§4). */
 export const REFRESH_MIN_INTERVAL_MS = 10_000;
+/** Where the last good snapshot survives a restart (§23.19). */
+export const LIMITS_CACHE_FILE = 'limits-cache.json';
+
+export const LIMITS_CACHE_VERSION = 1;
+
+export function limitsCachePath(configDir: string): string {
+  return join(configDir, LIMITS_CACHE_FILE);
+}
+
+/**
+ * The last good snapshot from a previous process, or `null`.
+ *
+ * Deliberately **not** including `raw`: the cache exists so a freshly restarted daemon can
+ * answer with real percentages, and the upstream payload is neither needed for that nor
+ * something to leave lying on disk.
+ */
+export function readCachedSnapshot(configDir: string): LimitsSnapshot | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(limitsCachePath(configDir), 'utf8'));
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+  const rec = parsed as Record<string, unknown>;
+  if (rec['version'] !== LIMITS_CACHE_VERSION) return null;
+  if (!Array.isArray(rec['limits'])) return null;
+  const fetchedAt = typeof rec['fetchedAt'] === 'string' ? rec['fetchedAt'] : null;
+  if (fetchedAt === null) return null;
+  const base = emptySnapshot();
+  return {
+    ...base,
+    fetchedAt,
+    stale: true,
+    error: null,
+    limits: rec['limits'] as LimitsSnapshot['limits'],
+    legacyWindows: (rec['legacyWindows'] as LimitsSnapshot['legacyWindows']) ?? base.legacyWindows,
+    extraUsage: (rec['extraUsage'] as LimitsSnapshot['extraUsage']) ?? base.extraUsage,
+  };
+}
 
 export interface Timers {
   setTimeout: (cb: () => void, ms: number) => unknown;
@@ -37,6 +80,11 @@ export interface PollerOptions {
   timers?: Timers;
   now?: () => number;
   log?: (line: string) => void;
+  /**
+   * Config dir to persist the last good snapshot in, so a restart serves numbers instead
+   * of an empty list (§23.19). Omitted (tests, one-shot CLI reads) disables the cache.
+   */
+  configDir?: string | null;
 }
 
 /**
@@ -92,6 +140,7 @@ export class LimitsPoller {
   private running = false;
   private inFlight: Promise<LimitsSnapshot> | null = null;
   private lastRefreshAt: number | null = null;
+  private readonly configDir: string | null;
   private readonly listeners = new Set<() => void>();
   private lastSignature: string = snapshotSignature(emptySnapshot());
 
@@ -105,6 +154,14 @@ export class LimitsPoller {
     this.timers = opts.timers ?? realTimers;
     this.now = opts.now ?? Date.now;
     this.log = opts.log ?? (() => undefined);
+    this.configDir = opts.configDir ?? null;
+    const restored = this.configDir === null ? null : readCachedSnapshot(this.configDir);
+    if (restored !== null) {
+      // Marked stale on purpose: these numbers predate this process, and every consumer
+      // already knows to treat `stale` as "believe it, but it may have moved".
+      this.current = restored;
+      this.lastSignature = snapshotSignature(restored);
+    }
   }
 
   /** The current `/v1/limits` body. */
@@ -236,8 +293,28 @@ export class LimitsPoller {
       ...normalized,
       raw: payload,
     };
+    this.writeCache();
     this.notifyIfChanged();
     return this.current;
+  }
+
+  /**
+   * Persist the last good numbers. Best effort and never on the hot path of a response:
+   * a snapshot we cannot write is a slightly worse restart, not a failed poll.
+   */
+  private writeCache(): void {
+    if (this.configDir === null) return;
+    try {
+      writeJsonFile(limitsCachePath(this.configDir), {
+        version: LIMITS_CACHE_VERSION,
+        fetchedAt: this.current.fetchedAt,
+        limits: this.current.limits,
+        legacyWindows: this.current.legacyWindows,
+        extraUsage: this.current.extraUsage,
+      });
+    } catch {
+      // best effort
+    }
   }
 
   private fail(error: LimitsErrorInfo, bumpBackoff = true): LimitsSnapshot {
