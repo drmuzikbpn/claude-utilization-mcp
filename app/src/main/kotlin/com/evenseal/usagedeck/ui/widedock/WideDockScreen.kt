@@ -166,8 +166,9 @@ private fun Rail(team: TeamState, now: Instant, nameOf: (UserView) -> String, mo
             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            team.usersWithData().forEach { user -> RailUser(user = user, name = nameOf(user), now = now) }
-            if (team.usersWithData().isEmpty()) {
+            val users = team.usersWithData()
+            users.forEach { user -> RailUser(user = user, name = nameOf(user), now = now) }
+            if (users.isEmpty()) {
                 Text(
                     text = if (team.machines.isEmpty()) "nothing paired" else "waiting for data",
                     color = DeckColors.dim,

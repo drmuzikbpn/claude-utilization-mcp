@@ -41,6 +41,7 @@ import com.evenseal.usagedeck.ui.DeckViewModel
 import com.evenseal.usagedeck.ui.Route
 import com.evenseal.usagedeck.ui.components.BottomBar
 import com.evenseal.usagedeck.ui.components.Format
+import com.evenseal.usagedeck.ui.components.HoldTimeout
 import com.evenseal.usagedeck.ui.components.HomeEmpty
 import com.evenseal.usagedeck.ui.components.HomeEmptyBody
 import com.evenseal.usagedeck.ui.components.LimitBar
@@ -50,6 +51,7 @@ import com.evenseal.usagedeck.ui.components.SessionRow
 import com.evenseal.usagedeck.ui.components.Sparkline
 import com.evenseal.usagedeck.ui.components.StatusBar
 import com.evenseal.usagedeck.ui.components.Tag
+import com.evenseal.usagedeck.ui.components.identity
 import com.evenseal.usagedeck.ui.components.usersWithData
 import com.evenseal.usagedeck.ui.theme.DeckColors
 import com.evenseal.usagedeck.ui.theme.DeckType
@@ -82,7 +84,7 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
         renaming?.let { user ->
             RenameDialog(
                 user = user,
-                current = prefs.userNames[user.key].orEmpty(),
+                current = prefs.renameFor(user).orEmpty(),
                 onSave = { name ->
                     vm.renameUser(user.key, name)
                     renaming = null
@@ -121,7 +123,7 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
             } else {
                 LazyColumn(modifier = Modifier.weight(1f)) {
                     team.projects.filter { it.sessions.isNotEmpty() }.forEach { project ->
-                        val open = "${project.machineId}|${project.key}" in expanded
+                        val open = DeckViewModel.projectId(project.machineId, project.key) in expanded
                         item(key = "h:${project.machineId}:${project.key}") {
                             ProjectHeader(
                                 vm = vm,
@@ -194,87 +196,86 @@ internal fun UserBlock(
     onRename: () -> Unit = {}
 ) {
     val faded = user.health != Health.FRESH
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .alpha(if (faded) STALE_ALPHA else 1f)
-            .combinedClickable(onClick = onToggle, onLongClick = onRename)
-            .semantics { contentDescription = "${if (expanded) "collapse" else "expand"} $name" }
-            .padding(
-                start = 6.dp,
-                end = 10.dp,
-                top = if (expanded) 8.dp else 5.dp,
-                bottom = if (expanded) 8.dp else 5.dp
-            ),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically
+    HoldTimeout {
+        Column(
+            modifier = modifier
+                .fillMaxWidth()
+                .alpha(if (faded) STALE_ALPHA else 1f)
+                .combinedClickable(onClick = onToggle, onLongClick = onRename)
+                .semantics { contentDescription = "${if (expanded) "collapse" else "expand"} $name" }
+                .padding(
+                    start = 6.dp,
+                    end = 10.dp,
+                    top = if (expanded) 8.dp else 5.dp,
+                    bottom = if (expanded) 8.dp else 5.dp
+                ),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(
-                text = if (expanded) "▾" else "▸",
-                color = DeckColors.dim,
-                fontFamily = DeckType.text,
-                fontSize = 12.sp,
-                modifier = Modifier.width(12.dp)
-            )
-            Text(
-                text = name,
-                color = DeckColors.fg,
-                fontFamily = DeckType.text,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 15.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false)
-            )
-            if (expanded) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = if (faded) "last seen ${Format.age(user.limitsFetchedAt, now)}" else user.identity,
+                    text = if (expanded) "▾" else "▸",
                     color = DeckColors.dim,
-                    fontFamily = DeckType.mono,
-                    fontSize = 11.sp,
+                    fontFamily = DeckType.text,
+                    fontSize = 12.sp,
+                    modifier = Modifier.width(12.dp)
+                )
+                Text(
+                    text = name,
+                    color = DeckColors.fg,
+                    fontFamily = DeckType.text,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.End,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f, fill = false)
                 )
-            } else {
-                Spacer(modifier = Modifier.weight(1f))
-                if (faded) {
+                if (expanded) {
                     Text(
-                        text = "last seen ${Format.age(user.limitsFetchedAt, now)}",
+                        text = if (faded) "last seen ${Format.age(user.limitsFetchedAt, now)}" else user.identity,
                         color = DeckColors.dim,
                         fontFamily = DeckType.mono,
-                        fontSize = 10.sp,
-                        maxLines = 1
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.weight(1f)
                     )
-                }
-                QuotaGlance(label = "5h", limit = user.fiveHour)
-                QuotaGlance(label = "7d", limit = user.sevenDay)
-            }
-        }
-        if (expanded) {
-            LimitBar(label = "5h", limit = user.fiveHour, now = now)
-            LimitBar(label = "7d", limit = user.sevenDay, now = now)
-            if (user.scoped.isNotEmpty()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    user.scoped.forEach { limit ->
-                        Tag(
-                            text = "${limit.scopeModel ?: limit.id} ${limit.percent}%",
-                            color = DeckColors.of(limit.status)
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
+                    if (faded) {
+                        Text(
+                            text = "last seen ${Format.age(user.limitsFetchedAt, now)}",
+                            color = DeckColors.dim,
+                            fontFamily = DeckType.mono,
+                            fontSize = 10.sp,
+                            maxLines = 1
                         )
+                    }
+                    QuotaGlance(label = "5h", limit = user.fiveHour)
+                    QuotaGlance(label = "7d", limit = user.sevenDay)
+                }
+            }
+            if (expanded) {
+                LimitBar(label = "5h", limit = user.fiveHour, now = now)
+                LimitBar(label = "7d", limit = user.sevenDay, now = now)
+                if (user.scoped.isNotEmpty()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        user.scoped.forEach { limit ->
+                            Tag(
+                                text = "${limit.scopeModel ?: limit.id} ${limit.percent}%",
+                                color = DeckColors.of(limit.status)
+                            )
+                        }
                     }
                 }
             }
         }
     }
 }
-
-/** The organisation tells two quotas of one account apart; otherwise the e-mail does. */
-private val UserView.identity: String get() = organizationName ?: emailAddress.orEmpty()
 
 /** `5h 42%` at a glance for the folded user row; colour carries the window's status. */
 @Composable
@@ -287,6 +288,8 @@ private fun QuotaGlance(label: String, limit: Limit?) {
             fontFamily = DeckType.numeral,
             fontWeight = FontWeight.Medium,
             fontSize = 16.sp,
+            maxLines = 1,
+            softWrap = false,
             modifier = Modifier.width(QUOTA_WIDTH)
         )
     }

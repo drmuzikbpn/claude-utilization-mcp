@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -18,8 +17,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalViewConfiguration
-import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
@@ -83,14 +80,7 @@ fun PauseButton(visual: PauseVisual, size: Dp = 34.dp, onTap: () -> Unit, onHold
         else -> DeckColors.muted
     }
 
-    val viewConfiguration = LocalViewConfiguration.current
-    val holdConfiguration = remember(viewConfiguration) {
-        object : ViewConfiguration by viewConfiguration {
-            override val longPressTimeoutMillis: Long get() = PauseButtonDefaults.HOLD_MILLIS
-        }
-    }
-
-    CompositionLocalProvider(LocalViewConfiguration provides holdConfiguration) {
+    HoldTimeout {
         Box(
             modifier = Modifier
                 .size(size)

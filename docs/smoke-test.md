@@ -86,4 +86,4 @@ Tick each line, or write down what happened instead.
       prompt** (Device Owner), and the version footer changes afterwards.
 - [ ] An update that arrives while a hold is in progress or an escalation is armed is deferred,
       and installs once the deck goes quiet.
-- [ ] A release whose `SHA256SUMS` does not match is refused and the APK is deleted.
+- [ ] A release whose `usage-deck.apk.sha256` does not match is refused and the APK is deleted.

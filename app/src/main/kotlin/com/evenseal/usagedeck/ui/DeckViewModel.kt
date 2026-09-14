@@ -82,7 +82,7 @@ class DeckViewModel(
     private val zone: ZoneId = ZoneId.systemDefault(),
     private val scope: CoroutineScope? = null,
     /** Writes a settings change; the Ledger's long-press rename goes through here. */
-    private val updateSettings: ((Settings) -> Settings) -> Unit = {}
+    private val updateSettings: ((Settings) -> Settings) -> Unit
 ) : ViewModel() {
     constructor(graph: DeckGraph) : this(
         team = graph.team,
@@ -155,18 +155,12 @@ class DeckViewModel(
     /** Projects the user has opened on the Ledger, keyed `machineId|projectKey`. Collapsed by default. */
     val expanded: StateFlow<Set<String>> = _expanded.asStateFlow()
 
-    fun isExpanded(machineId: String, key: String) = "$machineId|$key" in _expanded.value
+    fun toggleExpanded(machineId: String, key: String) = toggle(projectId(machineId, key))
 
-    fun toggleExpanded(machineId: String, key: String) {
-        val id = "$machineId|$key"
-        _expanded.value = if (id in _expanded.value) _expanded.value - id else _expanded.value + id
-    }
+    /** The Ledger's user quota blocks fold to one line by default; they share [expanded] with projects. */
+    fun toggleUserExpanded(userKey: String) = toggle(userId(userKey))
 
-    /** The Ledger's user quota blocks fold to one line by default; this is the set the user has opened. */
-    fun isUserExpanded(userKey: String) = userId(userKey) in _expanded.value
-
-    fun toggleUserExpanded(userKey: String) {
-        val id = userId(userKey)
+    private fun toggle(id: String) {
         _expanded.value = if (id in _expanded.value) _expanded.value - id else _expanded.value + id
     }
 
@@ -231,6 +225,8 @@ class DeckViewModel(
     }
 
     companion object {
+        fun projectId(machineId: String, key: String) = "$machineId|$key"
+
         /** Users share the [expanded] set with projects under their own prefix. */
         fun userId(userKey: String) = "user|$userKey"
 

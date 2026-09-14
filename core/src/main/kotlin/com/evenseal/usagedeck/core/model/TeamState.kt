@@ -75,8 +75,10 @@ data class TeamState(val machines: List<MachineState> = emptyList()) {
     }
 
     private fun userKey(m: MachineState): String {
-        val account = m.user?.accountUuid ?: m.user?.emailAddress ?: m.config.id
-        return m.user?.organizationUuid?.let { "$account/$it" } ?: account
+        val account = m.user?.accountUuid?.takeIf { it.isNotBlank() }
+            ?: m.user?.emailAddress?.takeIf { it.isNotBlank() }
+            ?: m.config.id
+        return m.user?.organizationUuid?.takeIf { it.isNotBlank() }?.let { "$account/$it" } ?: account
     }
 
     /** A bare e-mail is a poor headline; its local part reads like a name and fits the rail. */

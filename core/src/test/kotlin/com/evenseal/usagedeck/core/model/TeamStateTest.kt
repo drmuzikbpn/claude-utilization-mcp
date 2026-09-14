@@ -104,6 +104,27 @@ class TeamStateTest {
     }
 
     @Test
+    fun `blank uuids fall through instead of forging a shared key`() {
+        val team = TeamState(
+            listOf(
+                machine(
+                    "m1",
+                    alan.copy(accountUuid = "", organizationUuid = ""),
+                    limits = listOf(limit("session", 1)),
+                    limitsFetchedAt = t0
+                ),
+                machine(
+                    "m2",
+                    alan.copy(accountUuid = "", emailAddress = "sam@example.com", organizationUuid = ""),
+                    limits = listOf(limit("session", 2)),
+                    limitsFetchedAt = t0
+                )
+            )
+        )
+        assertEquals(listOf("alan@evensealproductions.com", "sam@example.com"), team.users.map { it.key })
+    }
+
+    @Test
     fun `one account in two organisations is two quotas`() {
         val team = TeamState(
             listOf(

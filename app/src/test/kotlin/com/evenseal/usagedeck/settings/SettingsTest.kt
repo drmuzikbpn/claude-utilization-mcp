@@ -155,4 +155,25 @@ class SettingsTest {
         assertEquals("Testing", Settings().renamed("uuid-1", "Testing").nameFor(user))
         assertEquals("alan", Settings(userNames = mapOf("uuid-1" to "   ")).nameFor(user))
     }
+
+    @Test
+    fun `a rename made before the daemon reported the organisation still applies`() {
+        val user =
+            UserView(
+                "uuid-1/org-a",
+                "alan",
+                "alan@example.com",
+                "Even Seal",
+                listOf("m1"),
+                emptyList(),
+                null,
+                Health.FRESH
+            )
+        val old = Settings().renamed("uuid-1", "Studio")
+        assertEquals("Studio", old.nameFor(user))
+        assertEquals("Studio", old.renameFor(user))
+        // A rename under the full key wins over the old one.
+        assertEquals("Team seat", old.renamed("uuid-1/org-a", "Team seat").nameFor(user))
+        assertNull(Settings().renameFor(user))
+    }
 }

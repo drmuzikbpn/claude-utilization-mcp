@@ -94,17 +94,24 @@ class PauseController(
         val scopeString = target.scope()
         val outcomes = targetMachines(target).map { machineId ->
             val scopes = listOf(scopeString) + nestedPausedScopes(machineId, target)
-            scopes.forEach { cancelEscalation(machineId, it) }
             withInFlight(machineId, scopeString) {
                 val api = apis(machineId)
                 if (api == null) {
                     networkOutcome(machineId)
                 } else {
-                    try {
-                        scopes.forEach { api.resume(it) }
-                        PauseOutcome(machineId, true, null)
-                    } catch (e: DaemonException) {
-                        PauseOutcome(machineId, false, e.userMessage())
+                    // Every scope gets its call: one refusal must not leave the rest standing, and
+                    // an escalation is only dropped once its scope has really been lifted.
+                    val failures = scopes.associateWith { scope -> resumeFailure(api, scope) }
+                    failures.filterValues { it == null }.keys.forEach { cancelEscalation(machineId, it) }
+                    val own = failures.getValue(scopeString)
+                    if (own == null) {
+                        PauseOutcome(
+                            machineId,
+                            true,
+                            null
+                        )
+                    } else {
+                        PauseOutcome(machineId, false, own.userMessage())
                     }
                 }
             }
@@ -113,14 +120,22 @@ class PauseController(
         return outcomes
     }
 
+    private suspend fun resumeFailure(api: DaemonApi, scope: String): DaemonException? = try {
+        api.resume(scope)
+        null
+    } catch (e: DaemonException) {
+        e
+    }
+
     /** The session scopes under a project target that are paused or carry a rule on [machineId]. */
     private fun nestedPausedScopes(machineId: String, target: PauseTarget): List<String> {
         if (target !is PauseTarget.Project) return emptyList()
         val machine = team.value.machine(machineId) ?: return emptyList()
         return machine.sessions
             .filter { it.projectKey == target.projectKey }
-            .map { PauseTarget.Session(machineId, it.sessionId).scope() }
-            .filter { scope -> machine.sessions.any { it.pause?.scope == scope } || hasRule(machine, scope) }
+            .map { it to PauseTarget.Session(machineId, it.sessionId).scope() }
+            .filter { (session, scope) -> session.pause?.scope == scope || hasRule(machine, scope) }
+            .map { it.second }
             .distinct()
     }
 
