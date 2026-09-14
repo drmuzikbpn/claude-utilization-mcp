@@ -638,3 +638,19 @@ our once-written `.bak`; `limits` normalizer against the fixture incl. `unknown_
 - The error envelope **always** carries a non-empty `message` (and `hint` where one exists),
   including `401`/`403`/`421`: e.g. `{ error: { code: "unauthorized", message: "Bearer token
   missing or invalid", hint: "run `claude-usage configure pairing` on the host" } }`.
+
+## 23.15 Pause-rule semantics refined by QA (2026-09-13 evening)
+- **One rule per scope.** Posting a rule for a scope that already has one in the *other*
+  mode **supersedes** it (soft → hard escalation replaces, never stacks), so
+  `GET /v1/pause/rules` never shows two rules for one target and no client has to delete
+  the loser. Same `(scope, mode)` is still idempotent (§18.1).
+- **Resume cascades downward.** `POST /v1/resume { scope }` lifts every rule *under* the
+  target, not only the rule whose scope string matches: `all` lifts everything;
+  `project:<key>` lifts that project's rule plus any `session:<id>` rule for a session in
+  that project. Resume means "let this run again", so a narrower rule must never survive it.
+- **Gate timing (§18.2).** The gate has its own deadline (`GATE_DEADLINE_MS`, 5 s), not the
+  §7.1 nudge's 200 ms: gate polls measured 107–300 ms over a LAN address, so the nudge
+  budget released paused sessions on latency alone. The gate's sleep timer is **ref'd** —
+  an `unref()`ed timer let Node exit mid-sleep, returning from the hook after one poll and
+  running the tool anyway. A single transient poll failure no longer releases a pause;
+  `GATE_FAILURE_TOLERANCE` (3) consecutive failures do (fail open, never wedge a session).

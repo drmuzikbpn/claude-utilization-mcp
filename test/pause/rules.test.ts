@@ -122,9 +122,12 @@ describe('PauseRuleStore', () => {
     expect(second.rule.reason).toBe('deploy window');
     expect(store.list()).toHaveLength(1);
 
-    // A different mode is a different rule.
-    expect(store.add({ scope: 'all', mode: 'hard', createdBy: 'cli' }).created).toBe(true);
-    expect(store.list()).toHaveLength(2);
+    // A different mode for the same scope SUPERSEDES rather than stacking, so a client that
+    // escalates soft -> hard never leaves the loser behind for someone else to delete.
+    const escalated = store.add({ scope: 'all', mode: 'hard', createdBy: 'cli' });
+    expect(escalated.created).toBe(true);
+    expect(store.list()).toHaveLength(1);
+    expect(store.list()[0]?.mode).toBe('hard');
 
     const file = pauseFilePath(configDir);
     expect(statSync(file).mode & 0o777).toBe(0o600);
@@ -134,15 +137,27 @@ describe('PauseRuleStore', () => {
     expect(JSON.parse(readFileSync(file, 'utf8')).version).toBe(1);
   });
 
-  it('removes by id and by scope', () => {
+  it('removes by id, and resuming `all` lifts every rule under it', () => {
     const store = new PauseRuleStore({ configDir: tempDir('cu-rules-') });
-    const a = store.add({ scope: 'all', mode: 'soft', createdBy: 'cli' }).rule;
-    store.add({ scope: 'all', mode: 'hard', createdBy: 'cli' });
-    store.add({ scope: 'session:x', mode: 'soft', createdBy: 'cli' });
+    const a = store.add({ scope: 'session:y', mode: 'soft', createdBy: 'cli' }).rule;
     expect(store.remove(a.id)?.id).toBe(a.id);
     expect(store.remove('r_nope')).toBeNull();
-    expect(store.removeByScope('all')).toHaveLength(1);
-    expect(store.list().map((r) => r.scope)).toEqual(['session:x']);
+
+    store.add({ scope: 'all', mode: 'hard', createdBy: 'cli' });
+    store.add({ scope: 'session:x', mode: 'soft', createdBy: 'cli' });
+    // "Resume everything" must not leave a narrower rule holding a session down.
+    expect(store.removeByScope('all')).toHaveLength(2);
+    expect(store.list()).toEqual([]);
+  });
+
+  it("resuming a project lifts the session rules inside it, via the caller's membership test", () => {
+    const store = new PauseRuleStore({ configDir: tempDir('cu-rules-') });
+    store.add({ scope: 'project:/repo/.git', mode: 'soft', createdBy: 'dashboard' });
+    store.add({ scope: 'session:inside', mode: 'hard', createdBy: 'dashboard' });
+    store.add({ scope: 'session:elsewhere', mode: 'soft', createdBy: 'dashboard' });
+    const removed = store.removeByScope('project:/repo/.git', (r) => r.scope === 'session:inside');
+    expect(removed.map((r) => r.scope).sort()).toEqual(['project:/repo/.git', 'session:inside']);
+    expect(store.list().map((r) => r.scope)).toEqual(['session:elsewhere']);
   });
 });
 
