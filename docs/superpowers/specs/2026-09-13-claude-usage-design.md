@@ -695,3 +695,23 @@ standing rule. That is what lets a dashboard tell "frozen again after re-registe
 
 A hard → soft downgrade clears `frozenPid` (so a later re-escalation freezes again) but
 keeps `freezes`; only ending the pause resets the counter.
+
+## 23.17 Release-tag namespace shared with the Android dashboard (2026-09-14)
+
+The Android dashboard (`usage-deck`) lives in this repo on an orphan branch and publishes its
+APK from the same GitHub Releases both updaters read. Two artifacts, one release feed, so the
+tags are namespaced:
+
+| Artifact | Tag | Assets | Flag |
+| --- | --- | --- | --- |
+| daemon | `v<semver>` | `claude-usage-<version>.tgz`, `SHA256SUMS` | normal release |
+| dashboard APK | `deck-<version>` | `usage-deck.apk`, `usage-deck.apk.sha256` | pre-release — never "latest" |
+
+- The daemon's updater reads `/releases/latest`, which already excludes pre-releases, so a
+  correctly published APK release is invisible to it. The dashboard's checker considers only
+  `deck-` tags.
+- **Belt and braces:** `check()` also skips any tag matching `FOREIGN_TAG_PREFIXES`
+  (`deck-`, case-insensitive) and reports it as *no update available*, not as an error. An
+  error would be worse than useless: `/releases/latest` returns exactly one release, so a
+  mis-flagged APK would both fail the check and hide the next real daemon release behind a
+  persistent "malformed release" state.

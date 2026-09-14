@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { check, releasesLatestUrl, userAgent } from '../../src/update/check.js';
+import { check, isForeignTag, releasesLatestUrl, userAgent } from '../../src/update/check.js';
 import { fakeFetch, releaseJson } from './helpers.js';
 
 const REPO = 'drmuzikbpn/claude-utilization-mcp';
@@ -65,6 +65,32 @@ describe('check() — GET /repos/<repo>/releases/latest (§20)', () => {
     const result = await check({ repo: REPO, currentVersion: '0.1.417', fetch: f.fetch });
     expect(result.release).toBeNull();
     expect(result.error).toMatch(pattern);
+  });
+
+  it('ignores a `deck-` release without reporting an error (§23.17)', async () => {
+    // The Android dashboard ships its APK from this same repo. If one of its releases ever
+    // lands as "latest", it is not ours — and it must not look like a broken update either,
+    // because an error here would also mask the next real daemon release.
+    const f = fakeFetch({
+      [URL_LATEST]: {
+        body: JSON.stringify({
+          tag_name: 'deck-1.4.0',
+          assets: [{ name: 'usage-deck.apk', browser_download_url: 'https://x/y' }],
+        }),
+      },
+    });
+    const result = await check({ repo: REPO, currentVersion: '0.1.417', fetch: f.fetch });
+    expect(result.release).toBeNull();
+    expect(result.error).toBeNull();
+  });
+
+  it('classifies foreign tags case-insensitively and leaves ours alone', () => {
+    expect(isForeignTag('deck-1.4.0')).toBe(true);
+    expect(isForeignTag('Deck-1.4.0')).toBe(true);
+    expect(isForeignTag('v0.1.65+0f7f1c3')).toBe(false);
+    expect(isForeignTag('0.1.65')).toBe(false);
+    // Not a prefix match on a version that merely contains the word.
+    expect(isForeignTag('v1.0.0-deck')).toBe(false);
   });
 
   it('honours a forked repo from config', async () => {
