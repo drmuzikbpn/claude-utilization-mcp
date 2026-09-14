@@ -37,7 +37,7 @@ android {
         buildConfigField(
             "String",
             "RELEASE_REPO",
-            "\"${System.getenv("RELEASE_REPO") ?: "drmuzikbpn/android-project"}\""
+            "\"${System.getenv("RELEASE_REPO") ?: "drmuzikbpn/claude-utilization-mcp"}\""
         )
     }
     signingConfigs {

@@ -21,7 +21,12 @@ data class ReleaseInfo(
 private data class AssetDto(val name: String = "", val browser_download_url: String = "")
 
 @Serializable
-private data class ReleaseDto(val tag_name: String = "", val assets: List<AssetDto> = emptyList())
+private data class ReleaseDto(
+    val tag_name: String = "",
+    val assets: List<AssetDto> = emptyList(),
+    val draft: Boolean = false,
+    val prerelease: Boolean = false
+)
 
 private val ReleaseJson = Json {
     ignoreUnknownKeys = true
@@ -29,34 +34,52 @@ private val ReleaseJson = Json {
 }
 
 /**
- * Reads the latest GitHub release for the phone's own APK. Anything unexpected — a network
- * error, an unparseable tag, a release with no APK — reads as "nothing to install" (`null`),
- * never as an exception.
+ * Finds the newest GitHub release of the phone's own APK. The repo is shared with the daemon
+ * (spec §23.17): daemon releases are tagged `v<semver>`, APK releases `deck-<version>` and flagged
+ * pre-release so the daemon's `/releases/latest` never sees them. This side lists releases and
+ * considers `deck-` tags only, so a daemon tarball never looks installable here either. Anything
+ * unexpected — a network error, no `deck-` release, a release with no APK — reads as "nothing to
+ * install" (`null`), never as an exception.
  */
 class ReleaseChecker(
     private val repo: String,
     private val client: OkHttpClient,
-    private val apkPrefix: String = "usage-deck-",
+    private val apkPrefix: String = "usage-deck",
     private val baseUrl: String = "https://api.github.com"
 ) {
     suspend fun latest(): ReleaseInfo? {
-        val body = get("$baseUrl/repos/$repo/releases/latest") ?: return null
-        val release = runCatching { ReleaseJson.decodeFromString<ReleaseDto>(body) }.getOrNull() ?: return null
-        val version = Version.parse(release.tag_name) ?: return null
+        val body = get("$baseUrl/repos/$repo/releases?per_page=$PAGE") ?: return null
+        val releases = runCatching { ReleaseJson.decodeFromString<List<ReleaseDto>>(body) }.getOrNull() ?: return null
+        return releases
+            .asSequence()
+            .filter { !it.draft && it.tag_name.startsWith(TAG_PREFIX, ignoreCase = true) }
+            .mapNotNull { release -> Version.parse(release.tag_name.drop(TAG_PREFIX.length))?.let { it to release } }
+            .sortedByDescending { it.first }
+            .firstNotNullOfOrNull { (version, release) -> info(version, release) }
+    }
+
+    private fun info(version: Version, release: ReleaseDto): ReleaseInfo? {
         val apk = release.assets.firstOrNull {
             it.name.startsWith(apkPrefix) && it.name.endsWith(".apk")
         } ?: return null
-        val sums = release.assets.firstOrNull { it.name == SUMS_NAME } ?: return null
+        val sums = release.assets.firstOrNull { it.name == "${apk.name}.sha256" || it.name == SUMS_NAME } ?: return null
         return ReleaseInfo(version, apk.browser_download_url, sums.browser_download_url, apk.name)
     }
 
-    /** The sha256 hex for [ReleaseInfo.apkName] out of the release's `SHA256SUMS`. */
+    /**
+     * The sha256 hex for [ReleaseInfo.apkName]: from `usage-deck.apk.sha256` (`<hex>  <name>` or a
+     * bare hex) or a multi-file `SHA256SUMS`. A line naming a different file never matches.
+     */
     suspend fun expectedSha256(info: ReleaseInfo): String? {
         val body = get(info.sumsUrl) ?: return null
         return body.lineSequence()
             .mapNotNull { line ->
                 val parts = line.trim().split(Regex("\\s+"), limit = 2)
-                if (parts.size == 2 && parts[1].trim() == info.apkName) parts[0] else null
+                when {
+                    parts.size == 2 && parts[1].trim().removePrefix("*") == info.apkName -> parts[0]
+                    parts.size == 1 && HEX.matches(parts[0]) -> parts[0]
+                    else -> null
+                }
             }
             .firstOrNull()
     }
@@ -71,8 +94,12 @@ class ReleaseChecker(
         }.getOrNull()
     }
 
-    private companion object {
-        const val SUMS_NAME = "SHA256SUMS"
+    companion object {
+        /** Spec §23.17: the APK's tag namespace inside the daemon's repo. */
+        const val TAG_PREFIX = "deck-"
+        private const val SUMS_NAME = "SHA256SUMS"
+        private const val PAGE = 30
+        private val HEX = Regex("^[0-9a-fA-F]{64}$")
     }
 }
 

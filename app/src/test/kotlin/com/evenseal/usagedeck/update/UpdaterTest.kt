@@ -78,7 +78,7 @@ class UpdaterTest {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val path = request.path.orEmpty()
                 return when {
-                    path.endsWith("/releases/latest") -> MockResponse().setBody(releaseJson(tag))
+                    path.contains("/releases?") -> MockResponse().setBody(releaseJson(tag))
                     path.endsWith("/SHA256SUMS") ->
                         MockResponse().setBody("$sha  usage-deck-$tag.apk\n")
                     path.endsWith(".apk") ->
@@ -96,19 +96,20 @@ class UpdaterTest {
     private fun releaseJson(tag: String): String {
         val base = server.url("/").toString().trimEnd('/')
         return """
-            {
-              "tag_name": "$tag",
+            [{
+              "tag_name": "deck-$tag",
+              "prerelease": true,
               "assets": [
                 { "name": "usage-deck-$tag.apk", "browser_download_url": "$base/dl/usage-deck-$tag.apk" },
                 { "name": "SHA256SUMS", "browser_download_url": "$base/dl/SHA256SUMS" }
               ]
-            }
+            }]
         """.trimIndent()
     }
 
     private fun updater(scope: TestScope, deferWhile: () -> String? = { null }) = Updater(
         checker = ReleaseChecker(
-            repo = "drmuzikbpn/android-project",
+            repo = "drmuzikbpn/claude-utilization-mcp",
             client = client,
             baseUrl = server.url("/").toString().trimEnd('/')
         ),
