@@ -1,9 +1,19 @@
 /** The hook's §17.1 dispatch and §18.2 gate, against a real server + sessions subsystem. */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DaemonClient } from '../../src/clients/http.js';
-import { detectGitCommonDir, pausedMarkerPath, runHook, type HookIO } from '../../src/hook.js';
+import {
+  detectGitCommonDir,
+  gateSleep,
+  GATE_DEADLINE_MS,
+  GATE_FAILURE_TOLERANCE,
+  HOOK_DEADLINE_MS,
+  pausedMarkerPath,
+  runGate,
+  runHook,
+  type HookIO,
+} from '../../src/hook.js';
 import type { UsageServer } from '../../src/server/index.js';
 import { makeHarness, startHarnessServer, type Harness } from './helpers.js';
 
@@ -204,5 +214,63 @@ describe('fail open (§18.2, §10)', () => {
   it('exits 0 on malformed stdin and unknown events', async () => {
     expect(await runHook(io({ stdin: 'not json' }))).toBe(0);
     expect(await runHook(io({ stdin: JSON.stringify({ hook_event_name: 'Notification' }) }))).toBe(0);
+  });
+});
+
+describe('gate robustness (QA findings on v0.1.65)', () => {
+  it('does not unref its sleep timer — an unref\'d timer lets node exit mid-sleep and the tool runs anyway', async () => {
+    const timers: NodeJS.Timeout[] = [];
+    const real = globalThis.setTimeout;
+    const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => {
+      const t = real(fn, ms);
+      timers.push(t);
+      return t;
+    }) as typeof globalThis.setTimeout);
+    try {
+      await gateSleep(1);
+    } finally {
+      spy.mockRestore();
+    }
+    // gateSleep's timer is the first one created after the spy is installed (the executor
+    // runs synchronously); other timers may come from the runtime.
+    expect(timers.length).toBeGreaterThanOrEqual(1);
+    // hasRef() === false is exactly the bug: node exits while the hook is "sleeping".
+    expect(timers[0]?.hasRef()).toBe(true);
+  });
+
+  it('polls the gate with its own deadline, not the 200 ms nudge budget', async () => {
+    const seen: Array<number | undefined> = [];
+    const spyClient = {
+      get: async (path: string, opts?: { timeoutMs?: number }) => {
+        seen.push(opts?.timeoutMs);
+        if (path.includes('/gate')) return { paused: false, mode: null, ruleId: null, reason: null };
+        throw new Error('unreachable');
+      },
+    };
+    await runGate(spyClient, 'sess-1', 'Bash', { now: () => h.clock.now }, h.configDir);
+    expect(seen).toEqual([GATE_DEADLINE_MS]);
+    expect(GATE_DEADLINE_MS).toBeGreaterThan(HOOK_DEADLINE_MS);
+  });
+
+  it('rides out transient poll failures while paused, and fails open once they persist', async () => {
+    let call = 0;
+    const flaky = {
+      get: async () => {
+        call += 1;
+        if (call === 1) return { paused: true, mode: 'soft', ruleId: 'r_1', reason: 'usage-deck' };
+        throw new Error('ETIMEDOUT');
+      },
+    };
+    const paused = await runGate(
+      flaky,
+      'sess-1',
+      undefined,
+      { now: () => h.clock.now, sleep: async () => {}, gateMaxMs: 5_000 },
+      h.configDir,
+    );
+    expect(paused).toBe(true);
+    // One paused poll, then GATE_FAILURE_TOLERANCE failures before releasing.
+    expect(call).toBe(1 + GATE_FAILURE_TOLERANCE);
+    expect(existsSync(pausedMarkerPath(h.configDir, 'sess-1'))).toBe(false);
   });
 });
