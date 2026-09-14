@@ -11,7 +11,7 @@ import { startBusPublishers } from './server/events.js';
 import { createSessionsSubsystem, type SessionsSubsystem } from './sessions/index.js';
 import { createServer, type UsageServer } from './server/index.js';
 import type { TokensSource } from './server/types.js';
-import { createUpdater, UPDATE_RESTART_EXIT_CODE, type UpdaterHandle } from './update/index.js';
+import { createUpdater, defaultRestart, type UpdaterHandle } from './update/index.js';
 import { getVersion } from './version.js';
 
 /**
@@ -171,9 +171,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
           hardFrozen: () => sessions?.registry.list().some((s) => s.pause?.mode === 'hard') ?? false,
           restart: async () => {
             await stopEverything();
-            // Non-zero on purpose: launchd's `SuccessfulExit: false` and systemd's
-            // `Restart=on-failure` both relaunch this, and neither relaunches exit 0.
-            process.exit(UPDATE_RESTART_EXIT_CODE);
+            // Ask the supervisor, then exit non-zero — `defaultRestart` is the shared
+            // implementation of both halves (§23.18). The exit alone is not enough: a
+            // LaunchAgent bootstrapped from a non-GUI session never acts on it, and the
+            // daemon that updated itself simply never came back (§23.20).
+            await defaultRestart(process.env);
           },
         })
       : opts.updater;

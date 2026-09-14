@@ -6,8 +6,22 @@
  * there — a `kill -9` on a job up well past `minimum runtime` left it down indefinitely —
  * so a daemon that updated itself never came back.
  */
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { RESTART_GRACE_MS } from '../../src/update/index.js';
+
+describe('the daemon wires its own restart through defaultRestart (§23.18)', () => {
+  it('does not hand the updater a bare process.exit', () => {
+    // The regression this pins: `startDaemon` overrides the updater's `restart`, so fixing
+    // `defaultRestart` alone left the daemon — the only caller that matters on a real
+    // machine — still bare-exiting, and the Studio still never came back. Asserted against
+    // the source because the alternative is booting a daemon and waiting for a release.
+    const source = readFileSync(new URL('../../src/daemon.ts', import.meta.url), 'utf8');
+    expect(source).toMatch(/await defaultRestart\(/);
+    // Any bare exit here is the bug coming back, whatever the surrounding code looks like.
+    expect(source).not.toMatch(/process\.exit\(/);
+  });
+});
 
 describe('restart policy (§23.18)', () => {
   it('exposes a grace window long enough for the supervisor to act', () => {
