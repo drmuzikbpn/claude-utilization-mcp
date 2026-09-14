@@ -47,12 +47,16 @@ describe('installVersion (§20 layout)', () => {
     expect(existsSync(join(result.versionDir, '.git'))).toBe(false);
   });
 
-  it('skips the copy when that version is already installed', () => {
+  it('refreshes a same-version directory instead of skipping it', () => {
     const h = tempHome();
     const pkg = fakePackage('1.2.3');
     installVersion({ version: '1.2.3', sourceDir: pkg, env: h.env });
+    // Reinstalling from a checkout at the same version must pick up the new build; skipping
+    // here is how a machine silently keeps running stale code across "successful" installs.
+    writeFileSync(join(pkg, 'marker.txt'), 'rebuilt');
     const second = installVersion({ version: '1.2.3', sourceDir: pkg, env: h.env });
-    expect(second.copied).toBe(false);
+    expect(second.copied).toBe(true);
+    expect(readFileSync(join(second.versionDir, 'marker.txt'), 'utf8')).toBe('rebuilt');
     expect(readlinkSync(second.currentLink)).toBe(second.versionDir);
   });
 

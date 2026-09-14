@@ -132,7 +132,12 @@ export class LaunchdService implements ServiceManager {
     });
     // bootout first so a re-run picks up the rewritten plist; not being loaded is fine.
     await this.run(['bootout', this.target], true);
-    await this.run(['bootstrap', this.domain, this.unitPath]);
+    // Tolerate a bootstrap that reports the job already loaded: booting it out and failing
+    // to bootstrap would leave the daemon DOWN, which is worse than a redundant load.
+    await this.run(['bootstrap', this.domain, this.unitPath], true);
+    // RunAtLoad does not reliably start the job when bootstrapping from a non-GUI session
+    // (e.g. over SSH), so ask for it explicitly; this is also what makes install idempotent.
+    await this.run(['kickstart', '-k', this.target]);
   }
 
   async uninstall(): Promise<void> {

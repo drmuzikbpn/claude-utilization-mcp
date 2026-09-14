@@ -38,15 +38,6 @@ export function resolvePackageRoot(startDir?: string): string {
   throw new Error('could not locate the claude-usage package root (no package.json with a `claude-usage` bin)');
 }
 
-function packageVersionAt(dir: string): string | null {
-  try {
-    const parsed = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { version?: unknown };
-    return typeof parsed.version === 'string' ? parsed.version : null;
-  } catch {
-    return null;
-  }
-}
-
 /** Atomically repoint a symlink: create a temp link beside it, then `rename(2)`. */
 export function repointSymlink(link: string, target: string): void {
   mkdirSync(dirname(link), { recursive: true });
@@ -83,7 +74,11 @@ export function installVersion(opts: InstallVersionOptions): InstallVersionResul
   const dest = versionDir(opts.version, env);
   const link = currentLink(env);
 
-  const alreadyThere = resolve(dest) === source || packageVersionAt(dest) === opts.version;
+  // Only skip when the destination IS the source. A same-version directory must still be
+  // refreshed: reinstalling from a checkout (the documented pre-release install, and how
+  // both machines were set up) otherwise silently keeps the old build — the Studio ran
+  // stale code through three "successful" reinstalls because of this.
+  const alreadyThere = resolve(dest) === source;
   if (!alreadyThere) {
     mkdirSync(versionsDir(env), { recursive: true });
     rmSync(dest, { recursive: true, force: true });
