@@ -375,10 +375,17 @@ describe('hard-freeze refusals (§18.3)', () => {
 
       // `claude --resume`: same session id, new pid. The old tree is gone; the new one is
       // frozen, and the counter is what tells the two states apart.
+      live.signals.length = 0;
       live.subsystem.registry.register({ sessionId: 'sess-1', pid: 4390, cwd: '/tmp/x/foo' });
       live.subsystem.pause.apply();
       expect(live.subsystem.registry.get('sess-1')?.frozenPids).toEqual([4391]);
       expect(live.subsystem.registry.get('sess-1')?.freezes).toBe(2);
+      // 4251 belonged to the pid that just went away. Dropping it from the record without a
+      // SIGCONT would leave it stopped under init for good.
+      expect(live.signals).toEqual([
+        { pid: 4251, signal: 'SIGCONT' },
+        { pid: 4391, signal: 'SIGSTOP' },
+      ]);
     } finally {
       live.subsystem.stop();
     }
