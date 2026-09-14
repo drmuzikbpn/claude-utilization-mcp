@@ -264,3 +264,32 @@ describe('tailnet bind retry (§23.21)', () => {
     expect(h.addresses).toEqual(['127.0.0.1']);
   });
 });
+
+describe('a tailnet that is off on purpose (§23.21)', () => {
+  it('reports the bind failure once, not once per retry', async () => {
+    // `tailscale ip -4` keeps reporting the last-known address after Tailscale is switched
+    // off, so the resolve succeeds and the bind fails, every single time. Alan runs both
+    // Macs this way, on LAN, deliberately — it must not fill the log.
+    const lines: string[] = [];
+    const net = new FakeNetwork();
+    net.ip = UNROUTABLE;
+    await start(['127.0.0.1', 'tailscale'], net, {
+      tailnetRetryMs: 10,
+      tailnetRetryMaxMs: 10,
+      log: (l) => lines.push(l),
+    });
+
+    for (let i = 0; i < 60 && net.calls.ip < 4; i += 1) await new Promise((r) => setTimeout(r, 10));
+    expect(net.calls.ip).toBeGreaterThanOrEqual(4); // it really did keep retrying
+    expect(lines.filter((l) => l.includes('could not bind'))).toHaveLength(1);
+  });
+
+  it('backs off so a permanently-offline tailnet costs almost nothing', async () => {
+    const net = new FakeNetwork();
+    net.ip = UNROUTABLE;
+    await start(['127.0.0.1', 'tailscale'], net, { tailnetRetryMs: 10, tailnetRetryMaxMs: 40, log: () => undefined });
+    await new Promise((r) => setTimeout(r, 300));
+    // Without backoff, 300ms at a 10ms interval would be ~30 attempts.
+    expect(net.calls.ip).toBeLessThan(15);
+  });
+});
