@@ -85,10 +85,10 @@ class PauseController(
     suspend fun hard(target: PauseTarget): List<PauseOutcome> = act(target, PauseMode.HARD)
 
     /**
-     * Lifts the target's own rule and, for a project, every session rule underneath it: the daemon
-     * resumes exactly the scope it is given, but a project's pause control shows paused whenever
-     * any of its sessions is, so a tap there has to reach the session rules too (escalation
-     * writes session-scoped rules).
+     * Lifts the target's own rule and, for a project, every session rule underneath it. Daemons
+     * from 0.1.66 cascade a project resume themselves; older ones (the Studio is on 0.1.0) resume
+     * exactly the scope they are given, and a project's control shows paused whenever any of its
+     * sessions is. Resuming an already-lifted scope is a no-op, so the fan-out is harmless on both.
      */
     suspend fun resume(target: PauseTarget): List<PauseOutcome> {
         val scopeString = target.scope()
