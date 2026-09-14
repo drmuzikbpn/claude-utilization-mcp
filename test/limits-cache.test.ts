@@ -15,6 +15,10 @@ import { LimitsError } from '../src/limits/types.js';
 
 const temp = (): string => mkdtempSync(join(tmpdir(), 'cu-limits-cache-'));
 
+function writeCache(dir: string, limits: unknown): void {
+  writeFileSync(limitsCachePath(dir), JSON.stringify({ version: 1, fetchedAt: '2026-09-14T12:00:00.000Z', limits }));
+}
+
 const PAYLOAD = {
   five_hour: { utilization: 69, resets_at: '2026-09-14T23:00:00.000Z' },
   seven_day: { utilization: 34, resets_at: '2026-09-16T13:00:00.000Z' },
@@ -82,6 +86,48 @@ describe('limits cache (§23.19)', () => {
     // A cache with no fetchedAt is indistinguishable from "never fetched" — drop it.
     writeFileSync(limitsCachePath(dir), JSON.stringify({ version: 1, limits: [] }));
     expect(readCachedSnapshot(dir)).toBeNull();
+  });
+
+  it.each([
+    ['a limit that is not an object', [42]],
+    ['a limit with no id', [{ kind: 'session', percent: 10 }]],
+    ['a limit with an empty id', [{ id: '', kind: 'session' }]],
+    ['a limit with no kind', [{ id: 'session', percent: 10 }]],
+    ['a string percent', [{ id: 'session', kind: 'session', percent: '10' }]],
+    ['no limits at all', []],
+  ])('drops the whole cache rather than serve %s', (_name, limits) => {
+    const dir = temp();
+    writeCache(dir, limits);
+    expect(readCachedSnapshot(dir)).toBeNull();
+  });
+
+  it('drops a cache whose percent is a non-finite number', () => {
+    const dir = temp();
+    // `JSON.stringify` cannot produce this — it writes NaN as null — but `JSON.parse` reads
+    // `1e999` back as Infinity, which is how a non-finite number actually reaches us.
+    writeFileSync(
+      limitsCachePath(dir),
+      '{"version":1,"fetchedAt":"2026-09-14T12:00:00.000Z","limits":[{"id":"session","kind":"session","percent":1e999}]}',
+    );
+    expect(readCachedSnapshot(dir)).toBeNull();
+  });
+
+  it('keeps a good limit whose optional fields are missing, and drops a bad legacy window', () => {
+    const dir = temp();
+    writeFileSync(
+      limitsCachePath(dir),
+      JSON.stringify({
+        version: 1,
+        fetchedAt: '2026-09-14T12:00:00.000Z',
+        limits: [{ id: 'session', kind: 'session' }],
+        legacyWindows: { five_hour: { utilization: 69, resetsAt: null }, junk: { utilization: 'lots' } },
+      }),
+    );
+    const restored = readCachedSnapshot(dir);
+    expect(restored?.limits).toEqual([
+      { id: 'session', kind: 'session', group: null, percent: null, severity: null, resetsAt: null, scope: null, isActive: false },
+    ]);
+    expect(restored?.legacyWindows).toEqual({ five_hour: { utilization: 69, resetsAt: null } });
   });
 
   it('is disabled without a configDir, so a CLI read never touches the daemon cache', async () => {
