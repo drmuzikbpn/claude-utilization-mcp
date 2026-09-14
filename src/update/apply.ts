@@ -15,6 +15,7 @@ import { currentBin, currentLink, versionDir, versionsDir } from '../paths.js';
 import { repointSymlink } from '../install/versions.js';
 import { defaultExec, type ExecRunner } from '../service/index.js';
 import { ensureRuntimeDeps } from '../install/deps.js';
+import { compareVersions } from './version.js';
 import { UpdateError } from './download.js';
 import { sortVersionsDesc } from './version.js';
 
@@ -88,8 +89,11 @@ export async function smokeTest(dir: string, version: string, opts: SmokeOptions
   if (result.code !== 0) {
     throw new UpdateError('smoke_failed', `${bin} --version exited ${String(result.code)}: ${result.stderr.trim()}`);
   }
-  if (printed !== version) {
-    throw new UpdateError('smoke_failed', `${bin} --version printed "${printed}", expected "${version}"`);
+  // Build metadata is ignored (semver §10): CI stamps package.json with the core
+  // `MAJOR.MINOR.PATCH` while the release tag carries `+<sha>`, so `--version` prints the
+  // core. Require the version cores to match; the `+build` suffix legitimately differs.
+  if (compareVersions(printed, version) !== 0) {
+    throw new UpdateError('smoke_failed', `${bin} --version printed "${printed}", expected "${version}" (core mismatch)`);
   }
 }
 
