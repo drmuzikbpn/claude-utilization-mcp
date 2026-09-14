@@ -89,7 +89,8 @@ object Scenarios {
                     ruleId = rule.id,
                     scope = rule.scope,
                     since = rule.createdAt,
-                    frozenPids = listOfNotNull(session.pid)
+                    frozenPids = emptyList(),
+                    freezes = 1
                 )
             )
             s.replaceSession(frozen)

@@ -265,7 +265,8 @@ class FakeDaemonTest {
             d.tick()
             val pause = d.state.sessions.first().pause!!
             assertEquals("hard", pause.mode)
-            assertTrue(pause.frozenPids.isNotEmpty())
+            assertTrue(pause.frozenPids.isEmpty())
+            assertEquals(1, pause.freezes)
             assertEquals(1, d.state.rules.size)
         } finally {
             d.stop()

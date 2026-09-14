@@ -74,8 +74,8 @@ fun SessionRow(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
                 )
-                if (session.pause?.mode == PauseMode.HARD) {
-                    Tag(text = FROZEN_TAG, color = DeckColors.frozen)
+                session.pause?.takeIf { it.mode == PauseMode.HARD }?.let { pause ->
+                    Tag(text = Format.frozenTag(pause.freezes), color = DeckColors.frozen)
                 }
                 session.worktree?.let { Tag(text = it) }
                 Format.modelShort(session.model)?.let { Tag(text = it, color = DeckColors.accent) }
@@ -127,6 +127,9 @@ private fun subtitle(session: Session, now: Instant, lead: String?): String {
 
 /** A frozen session says so in words, not only in colour — the dock is read from a distance. */
 const val FROZEN_TAG = "frozen"
+
+/** A session frozen again under a standing rule (it re-registered, or the daemon restarted). */
+const val FROZEN_AGAIN_TAG = "frozen again"
 
 /** Rates line up in a column so the sparklines and controls do too. */
 private val RATE_WIDTH = 74.dp

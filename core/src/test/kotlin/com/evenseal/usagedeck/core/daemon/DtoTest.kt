@@ -29,7 +29,8 @@ class DtoTest {
         assertEquals(LastTool("Bash", Instant.parse("2026-09-13T14:02:50Z")), s[0].lastTool)
         assertEquals(PauseMode.HARD, s[0].pause!!.mode)
         assertEquals("r_k3m7qz4ub2ah6ptc", s[0].pause!!.ruleId)
-        assertEquals(listOf(4242, 4251, 4252), s[0].pause!!.frozenPids)
+        assertEquals(listOf(4251, 4252), s[0].pause!!.frozenPids)
+        assertEquals(1, s[0].pause!!.freezes)
         assertEquals(Instant.parse("2026-09-13T14:03:10Z"), s[0].pause!!.since)
         assertTrue(s[0].canHardPause)
 

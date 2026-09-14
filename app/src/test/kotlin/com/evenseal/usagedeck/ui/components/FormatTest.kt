@@ -6,6 +6,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class FormatTest {
+    @Test
+    fun `frozen tag reads frozen once and frozen again with a count`() {
+        assertEquals("frozen", Format.frozenTag(0))
+        assertEquals("frozen", Format.frozenTag(1))
+        assertEquals("frozen again ×2", Format.frozenTag(2))
+        assertEquals("frozen again ×5", Format.frozenTag(5))
+    }
+
     private val zone: ZoneId = ZoneId.of("Europe/London")
 
     /** 2026-09-13 is a Sunday; 14:02 local (BST = UTC+1). */
