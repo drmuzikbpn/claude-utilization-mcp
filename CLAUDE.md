@@ -72,8 +72,9 @@ pushing by accident ships an APK to every deck.
 - `BurnHistory` is written on the SSE thread and read by Compose on main; every method locks and
   readers work on a snapshot. Dropping the lock crashes the kiosk with ConcurrentModificationException
   every few minutes on the real phone (it did, four times in half an hour).
-- The daemon's `/v1/resume` lifts exactly the scope it is given. The phone fans a project resume out
-  to the session rules under it because escalation writes session-scoped rules.
+- Daemons before 0.1.66 resume exactly the scope they are given (the Studio is on 0.1.0); newer ones
+  cascade a project resume and keep one rule per scope. The phone fans a project resume out to the
+  session rules under it so both behave; resuming an already-lifted scope is a no-op.
 - A hard freeze SIGSTOPs an interactive `claude`; zsh then shows "suspended (signal)" and the user
   must `fg` after resume. Not a phone bug — raised with Ethan.
 
