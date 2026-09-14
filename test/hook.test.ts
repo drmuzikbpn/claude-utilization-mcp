@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { DaemonClient, DaemonUnreachable } from '../src/clients/http.js';
 import {
   formatNudge,
@@ -305,11 +306,16 @@ describe('runHook failure paths', () => {
   it('exits 0 even when the config dir is unwritable', async () => {
     const d = await daemon();
     d.setPercents({ session: 96 });
+    // A regular file as the parent makes mkdir fail with ENOTDIR on every platform.
+    // (Never use a path under Linux /proc here: procfs answers mkdir with ENOENT, which
+    // sends Node's recursive mkdir into an infinite loop and wedges the whole worker.)
+    const blocker = join(tempConfigDir(), 'not-a-dir');
+    writeFileSync(blocker, '');
     let out = '';
     const code = await runHook({
       stdin: '{}',
       stdout: (t) => (out += t),
-      configDir: '/proc/nonexistent-unwritable',
+      configDir: join(blocker, 'config'),
       client: { get: async () => (await new DaemonClient({ baseUrl: `http://127.0.0.1:${d.port}` }).get('/v1/summary')) },
       now: () => NOW,
     });
