@@ -177,6 +177,10 @@ export class PauseRuleStore {
   } {
     const existing = this.#rules.find((r) => r.scope === input.scope && r.mode === input.mode);
     if (existing !== undefined) return { rule: existing, created: false };
+    // One rule per scope: escalating soft -> hard (or relaxing hard -> soft) supersedes the
+    // old rule rather than stacking a second one, so `GET /v1/pause/rules` never shows two
+    // rules for the same target and a client never has to delete the loser itself.
+    this.#rules = this.#rules.filter((r) => r.scope !== input.scope);
     const rule: PauseRule = {
       id: this.#makeId(),
       scope: input.scope,
@@ -198,11 +202,24 @@ export class PauseRuleStore {
     return removed ?? null;
   }
 
-  /** Every rule whose scope string matches exactly — what `POST /v1/resume { scope }` clears. */
-  removeByScope(scope: string): PauseRule[] {
-    const removed = this.#rules.filter((r) => r.scope === scope);
+  /**
+   * `POST /v1/resume { scope }` clears everything *under* the target, not just the rule
+   * whose scope string matches: resuming `all` lifts every rule, and resuming a project
+   * lifts that project's rule plus any session rule for a session in it (`isUnder`).
+   * Resume means "let this run again", so a narrower rule must not survive it.
+   */
+  removeByScope(scope: string, isUnder?: (rule: PauseRule) => boolean): PauseRule[] {
+    const parsed = parseScope(scope);
+    const matches = (r: PauseRule): boolean => {
+      if (r.scope === scope) return true;
+      if (parsed === null) return false;
+      if (parsed.kind === 'all') return true;
+      if (parsed.kind === 'project') return isUnder !== undefined && isUnder(r);
+      return false;
+    };
+    const removed = this.#rules.filter(matches);
     if (removed.length === 0) return [];
-    this.#rules = this.#rules.filter((r) => r.scope !== scope);
+    this.#rules = this.#rules.filter((r) => !matches(r));
     this.save();
     return removed;
   }

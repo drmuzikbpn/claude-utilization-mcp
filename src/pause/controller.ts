@@ -10,7 +10,7 @@ import type { EventBus } from '../events/bus.js';
 import { SessionRegistry } from '../sessions/registry.js';
 import type { PauseMode, PauseTarget, SessionPause, StoredSession } from '../sessions/types.js';
 import { defaultFreezeDeps, FreezeRefused, freezeTree, thaw, type FreezeDeps } from './freeze.js';
-import { parseScope, PauseRuleStore, type CreatedBy, type PauseRule } from './rules.js';
+import { parseScope, PauseRuleStore, type CreatedBy, type PauseRule, ruleMatches } from './rules.js';
 
 export interface GateResult {
   paused: boolean;
@@ -230,6 +230,23 @@ export class PauseController {
     return { ok: true, rule, created, affected };
   }
 
+  /**
+   * Does `rule` cover a session that the resume target also covers? Used so a project
+   * resume lifts the session rules inside that project (a dashboard escalating one session
+   * to hard should not have to fan out its own cleanup).
+   */
+  #isRuleUnderScope(rule: PauseRule, scope: string): boolean {
+    const parsed = parseScope(rule.scope);
+    if (parsed === null || parsed.kind !== 'session') return false;
+    const session = this.registry.get(parsed.value);
+    if (session === null) return false;
+    return ruleMatches({ ...rule, scope }, {
+      sessionId: session.sessionId,
+      gitCommonDir: session.gitCommonDir,
+      cwd: session.cwd,
+    });
+  }
+
   /** §18.4: idempotent — empty arrays when nothing matched. */
   resume(scope: string): { removed: string[]; resumed: string[] } {
     const before = new Map(this.registry.all().map((s) => [s.sessionId, this.rules.effectiveFor({
@@ -237,7 +254,7 @@ export class PauseController {
       gitCommonDir: s.gitCommonDir,
       cwd: s.cwd,
     }) !== null] as const));
-    const removed = this.rules.removeByScope(scope);
+    const removed = this.rules.removeByScope(scope, (rule) => this.#isRuleUnderScope(rule, scope));
     this.apply();
     const resumed: string[] = [];
     for (const session of this.registry.all()) {
