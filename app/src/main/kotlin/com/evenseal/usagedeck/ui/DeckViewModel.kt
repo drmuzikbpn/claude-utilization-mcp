@@ -80,7 +80,9 @@ class DeckViewModel(
     private val isQuiet: (LocalTime) -> Boolean = { false },
     private val clock: Clock = SystemClock,
     private val zone: ZoneId = ZoneId.systemDefault(),
-    private val scope: CoroutineScope? = null
+    private val scope: CoroutineScope? = null,
+    /** Writes a settings change; the Ledger's long-press rename goes through here. */
+    private val updateSettings: ((Settings) -> Settings) -> Unit = {}
 ) : ViewModel() {
     constructor(graph: DeckGraph) : this(
         team = graph.team,
@@ -91,7 +93,8 @@ class DeckViewModel(
         actions = ControllerPauseActions(graph),
         alerts = graph.notifier.latest,
         isQuiet = graph.settings::isQuiet,
-        clock = graph.clock
+        clock = graph.clock,
+        updateSettings = graph.settings::update
     )
 
     private val work: CoroutineScope get() = scope ?: viewModelScope
@@ -166,6 +169,9 @@ class DeckViewModel(
         val id = userId(userKey)
         _expanded.value = if (id in _expanded.value) _expanded.value - id else _expanded.value + id
     }
+
+    /** Sets, or with a blank [name] clears, the deck's own name for a person. */
+    fun renameUser(userKey: String, name: String) = updateSettings { it.renamed(userKey, name) }
 
     fun machineToday(machineId: String) = team.value.machine(machineId)?.today
 

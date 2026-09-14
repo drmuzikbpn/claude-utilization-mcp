@@ -79,4 +79,32 @@ class BurnHistoryTest {
         h.forget("s")
         assertEquals(0.0, h.ratePerMinute("s", t0.plusSeconds(60)), 0.0)
     }
+
+    @Test
+    fun `reads on one thread survive records on another`() {
+        val history = BurnHistory()
+        val t0 = Instant.parse("2026-09-13T12:00:00Z")
+        val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
+        val writer = Thread {
+            repeat(20_000) { i ->
+                history.record("k", t0.plusMillis(i.toLong()), i.toLong())
+                if (i % 500 == 0) history.record("k", t0.plusMillis(i.toLong()), 0L)
+            }
+        }
+        val reader = Thread {
+            try {
+                repeat(20_000) { i ->
+                    history.ratePerMinute("k", t0.plusMillis(i.toLong()))
+                    history.series("k", t0.plusMillis(i.toLong()), Duration.ofMinutes(30), 16)
+                }
+            } catch (t: Throwable) {
+                failure.set(t)
+            }
+        }
+        writer.start()
+        reader.start()
+        writer.join()
+        reader.join()
+        assertEquals(null, failure.get())
+    }
 }

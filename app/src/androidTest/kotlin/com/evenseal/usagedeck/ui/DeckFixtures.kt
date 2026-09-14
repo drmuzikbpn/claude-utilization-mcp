@@ -158,15 +158,18 @@ fun fakeViewModel(
     burn: BurnHistory = BurnHistory(),
     wifi: WifiStatus = WifiStatus(connected = true, ssid = "deck", rssi = -50, ip = "10.0.0.2", bars = 3),
     alert: Alert? = null,
-    settings: Settings = Settings()
+    settings: Settings = Settings(),
+    /** Where the view model's settings writes land; the Ledger's rename test reads it back. */
+    settingsFlow: MutableStateFlow<Settings> = MutableStateFlow(settings)
 ): DeckViewModel = DeckViewModel(
     team = MutableStateFlow(team),
     wifi = MutableStateFlow(wifi),
     mode = MutableStateFlow(DeckMode.DOCK),
-    settings = MutableStateFlow(settings),
+    settings = settingsFlow,
     burn = burn,
     actions = actions,
     alerts = MutableStateFlow(alert),
     clock = Clock { Fx.NOW },
-    scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+    updateSettings = { f -> settingsFlow.value = f(settingsFlow.value) }
 )

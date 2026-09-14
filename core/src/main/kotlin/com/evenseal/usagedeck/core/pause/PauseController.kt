@@ -84,17 +84,24 @@ class PauseController(
 
     suspend fun hard(target: PauseTarget): List<PauseOutcome> = act(target, PauseMode.HARD)
 
+    /**
+     * Lifts the target's own rule and, for a project, every session rule underneath it: the daemon
+     * resumes exactly the scope it is given, but a project's pause control shows paused whenever
+     * any of its sessions is, so a tap there has to reach the session rules too (escalation
+     * writes session-scoped rules).
+     */
     suspend fun resume(target: PauseTarget): List<PauseOutcome> {
         val scopeString = target.scope()
         val outcomes = targetMachines(target).map { machineId ->
-            cancelEscalation(machineId, scopeString)
+            val scopes = listOf(scopeString) + nestedPausedScopes(machineId, target)
+            scopes.forEach { cancelEscalation(machineId, it) }
             withInFlight(machineId, scopeString) {
                 val api = apis(machineId)
                 if (api == null) {
                     networkOutcome(machineId)
                 } else {
                     try {
-                        api.resume(scopeString)
+                        scopes.forEach { api.resume(it) }
                         PauseOutcome(machineId, true, null)
                     } catch (e: DaemonException) {
                         PauseOutcome(machineId, false, e.userMessage())
@@ -104,6 +111,17 @@ class PauseController(
         }
         if (target is PauseTarget.All) _lastOutcomes.value = outcomes
         return outcomes
+    }
+
+    /** The session scopes under a project target that are paused or carry a rule on [machineId]. */
+    private fun nestedPausedScopes(machineId: String, target: PauseTarget): List<String> {
+        if (target !is PauseTarget.Project) return emptyList()
+        val machine = team.value.machine(machineId) ?: return emptyList()
+        return machine.sessions
+            .filter { it.projectKey == target.projectKey }
+            .map { PauseTarget.Session(machineId, it.sessionId).scope() }
+            .filter { scope -> machine.sessions.any { it.pause?.scope == scope } || hasRule(machine, scope) }
+            .distinct()
     }
 
     fun isPaused(target: PauseTarget): Boolean {
