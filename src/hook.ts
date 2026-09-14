@@ -31,6 +31,15 @@ export interface HookStdin {
 
 /** §18.2: how long the gate sleeps between re-polls while a session is paused. */
 export const GATE_POLL_MS = 1_000;
+/**
+ * The gate's own HTTP deadline. NOT `HOOK_DEADLINE_MS`: that 200 ms budget exists so the
+ * §7.1 nudge never delays a prompt, but a gate poll that times out reads as "not paused"
+ * and releases the session. Real gate polls measured 107–300 ms over a LAN address, so a
+ * 200 ms deadline released soft-paused sessions on latency alone.
+ */
+export const GATE_DEADLINE_MS = 5_000;
+/** Consecutive gate-poll failures tolerated while paused before failing open (§18.2). */
+export const GATE_FAILURE_TOLERANCE = 3;
 /** The registered hook timeout is 86 400 s (§23.11); the gate never outlives it. */
 export const GATE_MAX_MS = 86_400_000;
 /** Deadline for the one-shot git probe run at SessionStart (§17.1). */
@@ -76,6 +85,8 @@ export interface HookIO {
   gitCommonDir?: (cwd: string) => string | null;
   sleep?: (ms: number) => Promise<void>;
   gatePollMs?: number;
+  /** The gate's own HTTP deadline; defaults to `GATE_DEADLINE_MS` (§18.2). */
+  gateDeadlineMs?: number;
   /** Hard stop for the gate loop, so a test can never hang. */
   gateMaxMs?: number;
 }
@@ -269,6 +280,18 @@ async function postQuietly(client: HookClient, path: string, body: unknown, time
 }
 
 /**
+ * The gate's sleep. Deliberately **not** `unref()`ed: an unref'd timer lets Node exit while
+ * the hook is sleeping between polls, so `claude-usage hook` returned after a single poll
+ * and Claude Code ran the tool anyway — a soft pause that never held (found in QA on
+ * v0.1.65). The hook is bounded by `gateMaxMs` and by the daemon clearing the rule.
+ */
+export function gateSleep(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/**
  * §18.2's gate: while `paused`, sleep 1 s and re-poll. A daemon we cannot reach means
  * **not paused** — a hook must never wedge a session.
  */
@@ -281,29 +304,33 @@ export async function runGate(
 ): Promise<boolean> {
   if (sessionId.length === 0) return false;
   const now = io.now ?? Date.now;
-  const deadlineMs = io.deadlineMs ?? HOOK_DEADLINE_MS;
+  const gateDeadlineMs = io.gateDeadlineMs ?? GATE_DEADLINE_MS;
   const pollMs = io.gatePollMs ?? GATE_POLL_MS;
   const maxMs = io.gateMaxMs ?? GATE_MAX_MS;
-  const sleep =
-    io.sleep ??
-    ((ms: number): Promise<void> =>
-      new Promise<void>((resolve) => {
-        const t = setTimeout(resolve, ms);
-        t.unref?.();
-      }));
+  const sleep = io.sleep ?? gateSleep;
 
   const startedAt = now();
   let everPaused = false;
+  let consecutiveFailures = 0;
   let query = tool === undefined || tool.length === 0 ? '' : `?tool=${encodeURIComponent(tool)}`;
   for (;;) {
     let body: unknown;
     try {
-      // The gate poll uses the client's own deadline, not the 200 ms nudge deadline.
-      body = await client.get(`/v1/sessions/${encodeURIComponent(sessionId)}/gate${query}`, { timeoutMs: deadlineMs });
+      // The gate has its own deadline (§18.2) — the 200 ms nudge budget is far too tight
+      // for a LAN-bound daemon and a timeout here would release the pause.
+      body = await client.get(`/v1/sessions/${encodeURIComponent(sessionId)}/gate${query}`, { timeoutMs: gateDeadlineMs });
     } catch {
-      setPausedMarker(configDir, sessionId, null);
-      return everPaused;
+      // A transient failure while paused must not release the session; only a daemon that
+      // stays unreachable does (fail open, §18.2).
+      consecutiveFailures += 1;
+      if (!everPaused || consecutiveFailures >= GATE_FAILURE_TOLERANCE || now() - startedAt >= maxMs) {
+        setPausedMarker(configDir, sessionId, null);
+        return everPaused;
+      }
+      await sleep(pollMs);
+      continue;
     }
+    consecutiveFailures = 0;
     query = '';
     if (!isGateBody(body) || !body.paused) {
       setPausedMarker(configDir, sessionId, null);
