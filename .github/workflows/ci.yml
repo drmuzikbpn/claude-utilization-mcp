@@ -12,6 +12,10 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
       - uses: android-actions/setup-android@v3
+        with:
+          # The action's default list includes the retired `tools` package, which Google's
+          # repository stopped serving in September 2026 and sdkmanager then fails outright.
+          packages: platform-tools
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew ktlintCheck :core:test :fakedaemon:test :app:testDebugUnitTest
       - name: Instrumented tests (API 29)
