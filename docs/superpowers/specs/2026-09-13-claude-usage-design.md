@@ -790,3 +790,38 @@ desktop.
 
 `diagnose()` returns warnings rather than throwing, and returns nothing when the job is not
 loaded at all — that is a different problem with its own reporting.
+
+## 23.21 Keep looking for the tailnet address (2026-09-14)
+
+`config.bind: ["127.0.0.1", "tailscale"]` resolves the tailnet address **once**, at startup.
+On a machine where Tailscale starts after the daemon — or is down at boot, or drops — that
+resolve fails and nothing ever tries again: both Macs logged
+`could not bind 100.x.y.z — EADDRNOTAVAIL` and then served loopback and LAN only, with no
+tailnet listener, indefinitely. `SIGHUP` fixes it, but only if a human is there to send one,
+and the entire point of the tailnet address is reachability when nobody is at the machine.
+
+- While a wanted tailnet address is missing, the daemon re-runs `reload()` every
+  `TAILNET_RETRY_MS` (60 s, `tailnetRetryMs` in tests).
+- Once it is bound the timer stops; `SIGHUP` handles later changes, so the steady-state cost
+  is zero. A config that never asked for `tailscale` never polls at all.
+- "Bound" means *the address the resolver actually returned* is in `boundHosts` — both halves
+  matter, because the two failure modes are "no address found" and "address found, bind
+  refused", and only the resolve callback sees the first.
+- The retry timer is `unref`ed and cleared on stop, so it can never hold the process open.
+
+## 23.22 A manual update gets the daemon's hard-freeze guard (2026-09-14)
+
+The daemon's updater defers while any session is hard-frozen (§20), because the restart
+thaws the tree on shutdown and hands that session one tool boundary before the new daemon's
+sweep re-freezes it — measured from the dashboard side: a tick landed at the exact instant
+the old daemon exited.
+
+`claude-usage update` took the same restart but skipped the same check, so a manual update
+leaked a tick under a standing hard rule. It now asks the running daemon which sessions are
+hard-frozen and refuses, naming them, unless `--force` is given:
+
+- A question, not a prohibition: `--force` proceeds, because an operator updating a machine
+  on purpose may well accept the slip.
+- `--check` never asks — it restarts nothing.
+- A daemon we cannot reach reports none: there is then nothing running to disturb, and a
+  dead daemon must never block a manual update.

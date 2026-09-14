@@ -31,6 +31,7 @@
  * healthy machine behaves identically and the logs still say "deliberate restart".
  */
 import { rmSync } from 'node:fs';
+import { DaemonClient } from '../clients/http.js';
 import { loadConfig, resolveConfigDir, type Config } from '../config.js';
 import type { EventBus } from '../events/bus.js';
 import { realTimers, type Timers } from '../limits/poller.js';
@@ -346,6 +347,28 @@ export interface UpdateCliIo {
   /** Injected in tests so nothing touches launchctl/systemctl. */
   restartService?: () => Promise<string>;
   updater?: UpdaterHandle;
+  /** Session ids the running daemon reports as hard-frozen; injected in tests (§23.22). */
+  hardFrozenSessions?: () => Promise<string[]>;
+}
+
+/**
+ * Ask the running daemon which sessions are hard-frozen (§23.22).
+ *
+ * A daemon we cannot reach reports none: there is then nothing running for the update to
+ * disturb, and a manual update must never be blocked by a dead daemon.
+ */
+async function hardFrozenViaDaemon(configDir: string): Promise<string[]> {
+  try {
+    const body = await new DaemonClient({ configDir, timeoutMs: 2_000 }).get('/v1/sessions');
+    const sessions = (body as { sessions?: unknown }).sessions;
+    if (!Array.isArray(sessions)) return [];
+    return sessions
+      .filter((s) => (s as { pause?: { mode?: unknown } }).pause?.mode === 'hard')
+      .map((s) => String((s as { sessionId?: unknown }).sessionId ?? ''))
+      .filter((id) => id.length > 0);
+  } catch {
+    return [];
+  }
 }
 
 /** Restart the installed service, if there is one. Reports, never throws. */
@@ -409,6 +432,23 @@ export async function runUpdateCli(cmd: string, argv: readonly string[], io: Upd
       return 1;
     }
     return 0;
+  }
+
+  // The daemon defers an update while a session is hard-frozen, because the restart thaws
+  // the tree and hands that session a tool boundary it was not supposed to get (§23.22).
+  // A manual run deserves the same protection — it is the same restart — but as a question
+  // rather than a refusal, since the operator may well mean it.
+  if (!argv.includes('--force')) {
+    const frozen = await (io.hardFrozenSessions ?? (() => hardFrozenViaDaemon(configDir)))();
+    if (frozen.length > 0) {
+      io.stderr(
+        `claude-usage: ${String(frozen.length)} session(s) are hard-frozen — updating now would ` +
+          'restart the daemon, which thaws them for one tool call before the new daemon re-freezes.\n',
+      );
+      io.stderr(`  ${frozen.join('\n  ')}\n`);
+      io.stderr('resume them first, or re-run with --force.\n');
+      return 1;
+    }
   }
 
   const status = await updater.runOnce({ force: true });

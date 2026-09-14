@@ -23,6 +23,12 @@ export interface NetworkResolver {
   magicDnsName(): Promise<string | null>;
 }
 
+/**
+ * How often to re-look for a tailnet address we want but do not have (§23.21). Only runs
+ * while one is missing, so the steady-state cost is zero.
+ */
+export const TAILNET_RETRY_MS = 60_000;
+
 export function defaultNetworkResolver(): NetworkResolver {
   return {
     tailscaleIPv4: () => resolveTailscaleIPv4(),
@@ -34,6 +40,8 @@ export interface DaemonOptions {
   configDir?: string;
   /** Pre-loaded config; otherwise read from `configDir`. */
   config?: Config;
+  /** How often to retry a missing tailnet bind (§23.21); defaults to `TAILNET_RETRY_MS`. */
+  tailnetRetryMs?: number;
   /**
    * The token store. Pass it explicitly (tests, and the orchestrator once W1 lands);
    * omit to let `createTokensSource` try the real `src/spend` module.
@@ -146,10 +154,19 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   // The MagicDNS name only matters when we are actually reachable over the tailnet, so a
   // loopback-only daemon never shells out to `tailscale` at all.
   const wantsTailnet = config.bind.some((entry) => entry.trim().toLowerCase() === TAILSCALE_KEYWORD);
-  const addresses = await resolveBindAddresses(config.bind, {
-    resolveTailscale: () => network.tailscaleIPv4(),
-    log,
-  });
+  /**
+   * The tailnet address the resolver last handed back, recorded as it goes past. Asking
+   * "is a tailnet address listening?" needs both halves — whether one was found at all, and
+   * whether the bind for it took — and only this callback sees the first.
+   */
+  let tailnetAddress: string | null = null;
+  /** A tailnet address was found *and* we are listening on it. */
+  const tailnetBound = (): boolean => tailnetAddress !== null && boundHosts.includes(tailnetAddress);
+  const resolveTailscale = async (): Promise<string | null> => {
+    tailnetAddress = await network.tailscaleIPv4();
+    return tailnetAddress;
+  };
+  const addresses = await resolveBindAddresses(config.bind, { resolveTailscale, log });
   let magicDnsName = wantsTailnet ? await network.magicDnsName() : null;
   if (magicDnsName !== null) debug(`net: MagicDNS name ${magicDnsName}`);
 
@@ -266,7 +283,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     if (stopped) return;
     let next: string[];
     try {
-      next = await resolveBindAddresses(config.bind, { resolveTailscale: () => network.tailscaleIPv4(), log });
+      next = await resolveBindAddresses(config.bind, { resolveTailscale, log });
     } catch (err) {
       log(`reload: keeping the current addresses — ${(err as Error).message}`);
       return;
@@ -298,9 +315,41 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     }
   }
 
+  /**
+   * Retry the tailnet bind until it takes (§23.21).
+   *
+   * The tailnet address is resolved once at startup, and on a machine where Tailscale
+   * starts *after* the daemon — or is down at boot — that resolve fails and nothing ever
+   * tries again: the Mac Studio logged `could not bind 100.110.47.16 — EADDRNOTAVAIL` and
+   * then served loopback and LAN only, with no tailnet listener, indefinitely. `SIGHUP`
+   * fixes it, but only if a human knows to send one, and the whole point of the tailnet
+   * address is to be reachable when nobody is at the machine.
+   *
+   * So: while a wanted address is missing, re-resolve on a timer. Once everything is bound
+   * the timer stops and `SIGHUP` takes over again, so the steady-state cost is zero.
+   */
+  let tailnetRetry: ReturnType<typeof setTimeout> | null = null;
+  function scheduleTailnetRetry(): void {
+    if (stopped || !wantsTailnet || tailnetBound() || tailnetRetry !== null) return;
+    tailnetRetry = setTimeout(() => {
+      tailnetRetry = null;
+      void (async () => {
+        if (stopped) return;
+        await reload().catch(() => undefined);
+        if (tailnetBound()) log('net: tailnet address is now available');
+        scheduleTailnetRetry();
+      })();
+    }, opts.tailnetRetryMs ?? TAILNET_RETRY_MS);
+    tailnetRetry.unref();
+  }
+
   async function stop(): Promise<void> {
     if (stopped) return;
     stopped = true;
+    if (tailnetRetry !== null) {
+      clearTimeout(tailnetRetry);
+      tailnetRetry = null;
+    }
     // §18.3: SIGCONT every hard-frozen pid before anything else shuts down.
     sessions?.stop();
     updater?.stop();
@@ -315,6 +364,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     debug('daemon: stopped');
   }
   stopEverything = stop;
+
+  // Tailscale may not be up yet — keep trying rather than serving loopback for ever (§23.21).
+  if (wantsTailnet && !tailnetBound()) {
+    log('net: no tailnet address yet — will keep looking');
+    scheduleTailnetRetry();
+  }
 
   return {
     port: bound,
