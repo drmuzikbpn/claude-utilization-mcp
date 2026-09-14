@@ -523,6 +523,7 @@ QA from the Android dashboard, and two Macs in daily use.
 | §23.22 | A manual update gets the daemon's hard-freeze guard (2026-09-14) |
 | §23.23 | Registration gets its own deadline, and a retry (2026-09-14) |
 | §23.24 | A session we watched stop must not come back to life (2026-09-14) |
+| §23.25 | The §23.20 check could never fire from an install (2026-09-14) |
 
 15 findings survived a 3-vote adversarial review (56 unique candidates). Where Part I
 conflicts with this section, this section wins.
@@ -947,3 +948,53 @@ back-fill.
   every save.
 - `register` lifts a tombstone immediately: a session that registers again is demonstrably
   back, whatever we believed a moment ago.
+
+### §23.25 The §23.20 check could never fire from an install (2026-09-14)
+
+§23.20 shipped a `LaunchdService.diagnose()` that warns when `launchctl print` contains
+`pended nondemand spawn`. It was verified against a synthetic fixture and never against the
+path that calls it, and on that path it cannot fire.
+
+`install()` ends with `kickstart -k`, so the job is always **running** by the time
+`apply.ts` asks for warnings — and `pended nondemand spawn` is only printed while the job is
+**not running**. The warning was unreachable from the only code that calls it, on every
+machine, in every case it was meant to catch.
+
+Measured on the two Macs, from one ssh session on the Studio:
+
+| | Mac Studio (installed over ssh) | MacBook (installed from its desktop) |
+| --- | --- | --- |
+| `kill -9`, then wait | still down after 60 s, `runs` frozen at 7 | back unattended in 5 s, `runs` 15 → 16 |
+| `pended nondemand spawn`, running | absent | absent |
+| `pended nondemand spawn`, 20 s after the kill | `= semaphore` | n/a |
+
+While both daemons are up their `launchctl print` output is byte-identical apart from the
+node path. `runs`, `properties = runatload` and `last terminating signal` were all checked
+and none separate a supervised job from an unsupervised one. `immediate reason` looked
+promising — `semaphore` on the healthy Mac against `non-ipc demand` on the Studio — but it
+only reports how the *current* instance was started: a `kickstart` on the healthy MacBook
+flipped it to `non-ipc demand`, and that machine still self-healed from a `kill -9`. There
+is no static field that distinguishes them.
+
+So `diagnose()` now reads the **cause** rather than a symptom: `launchctl managername`,
+which is `Aqua` in the GUI login session and `Background` or `StandardIO` over ssh. That is
+knowable at install time regardless of job state, and it is what actually determines whether
+launchd will supervise what we just bootstrapped.
+
+- The `pended nondemand spawn` branch is kept — when the job happens to be down it is the
+  fault caught in the act — and returns first.
+- Otherwise a non-`Aqua` manager name warns, naming the session in the message.
+- A manager name that cannot be read is not a finding. The diagnostic still never throws.
+
+Verified end to end on both machines against the built `dist`: `Aqua` → no warnings on the
+healthy MacBook; `Background` → the warning, on a Studio daemon that was running, answering
+health checks, and printing clean.
+
+**Grep the whole phrase.** `pended` is a substring of `started suspended = 0`, which every
+healthy job prints twice, so a loose `grep -c pended` returns 2 on a perfectly good machine —
+a false "still broken" in the direction that gets someone to re-install something that was
+fine. Caught by the Studio-side session during this work, before it reached the code.
+
+**Still open, and not fixable from here.** The Studio's service remains unsupervised: the
+repair needs an `install` from that machine's own desktop, which is a GUI session no ssh
+login can reach without root. What changed is that the installer now says so.
