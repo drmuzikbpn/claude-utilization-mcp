@@ -13,11 +13,13 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.evenseal.usagedeck.kiosk.LockTaskReceiver
+import com.evenseal.usagedeck.kiosk.ScreenHold
 import com.evenseal.usagedeck.pairing.PairingImport
 import com.evenseal.usagedeck.service.DeckService
 import com.evenseal.usagedeck.ui.DeckNav
 import com.evenseal.usagedeck.ui.alerts.AlertOverlay
 import com.evenseal.usagedeck.ui.kiosk.ExitGate
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 /**
@@ -40,8 +42,10 @@ class MainActivity : ComponentActivity() {
         consumePairingImport()
         DeckService.start(this)
         lifecycleScope.launch {
-            graph.settings.settings.collect { prefs ->
-                if (prefs.keepScreenOn) {
+            combine(graph.settings.settings, graph.mode.mode) { prefs, mode ->
+                ScreenHold.shouldHold(mode, prefs.keepScreenOn)
+            }.collect { hold ->
+                if (hold) {
                     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 } else {
                     window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
