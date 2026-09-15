@@ -526,6 +526,7 @@ QA from the Android dashboard, and two Macs in daily use.
 | §23.25 | The §23.20 check could never fire from an install (2026-09-14) |
 | §23.26 | `install` lost a race with its own `bootout` (2026-09-14) |
 | §23.27 | `install` exited 0 in the middle of its own verification (2026-09-15) |
+| §23.28 | The bootout race, measured instead of guessed (2026-09-15) |
 
 15 findings survived a 3-vote adversarial review (56 unique candidates). Where Part I
 conflicts with this section, this section wins.
@@ -1092,3 +1093,52 @@ while every test stayed green. `fakeExec` returns exit 0 for every command, and 
 injected in every test that reaches it, so the suite has never seen a launchctl that says
 "not yet" nor a real timer. Three different bugs, one blind spot: the tests model the happy
 path of a subsystem whose entire purpose is the unhappy one.
+
+### §23.28 The bootout race, measured instead of guessed (2026-09-15)
+
+§23.26 fixed the bootout race by retrying a bootstrap that returned `EALREADY` (37). That
+errno came from the `kickstart` line in the user's traceback, and I assumed the bootstrap in
+the same window would report the same thing. It does not. With §23.27 fixed so the installer
+could finally be *heard*, the next ssh install reported the truth:
+
+```
+service     launchd — stopped
+daemon      not answering
+```
+
+Booting out a **running** job and bootstrapping immediately, measured directly:
+
+```
+bootout    rc=0
+bootstrap  → "Bootstrap failed: 5: Input/output error"      (EIO)
+kickstart  rc=37                                            (EALREADY)
+3 s later  → not loaded
+```
+
+The errno differs by verb. §23.26's retry never fired, and §23.26's own `kickstart` tolerance
+then carried the failure through to a clean-looking exit. Two tolerances in a row turned a
+booted-out service into a reported success.
+
+Also worth recording because it defeats the obvious check: **`launchctl print` keeps
+succeeding through the whole window.** The dying job is still listed, so "is it loaded?"
+answers yes right up until it answers no. It is only useful once the retries are finished.
+
+- The bootstrap retry no longer keys on an errno. Any failure is retried,
+  `BOOTSTRAP_ATTEMPTS` (8) times, `BOOTSTRAP_RETRY_WAIT_MS` (500 ms) apart. Guessing which
+  error means "not yet" is what failed twice; the cost of retrying a genuine error is a
+  four-second install, and the cost of not retrying is a machine with no LaunchAgent.
+- `install` then **verifies the end state**: `launchctl print` must succeed after the
+  retries, or it throws. Every step before it tolerates something, so the exit codes cannot
+  be trusted to describe the result — only the result can.
+
+Verified on the Studio over ssh: three consecutive installs against an already-running job,
+each ending `service launchd — running` / `daemon healthy on port 47291` with a fresh pid,
+and each printing the §23.25 non-GUI warning.
+
+**The pattern across §23.25–§23.28.** Four bugs, one habit: I inferred a mechanism from a
+single observation and shipped the inference. `pended nondemand spawn` was assumed to be
+readable at install time; the `print` ordering was assumed to be what swallowed the warning;
+`EALREADY` was assumed to be the bootstrap's errno. Each was a plausible reading of real
+evidence, and each was wrong in a way a two-minute measurement on the actual machine would
+have caught. The measurements in this section are all things that could have been run before
+the corresponding fix, not after.
