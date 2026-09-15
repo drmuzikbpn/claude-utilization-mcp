@@ -93,6 +93,7 @@ fun DeckButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier
 /**
  * The primary (`.btn.warn`) button on its own, for screens that lay the actions out themselves:
  * amber-bordered, red while a hold is in progress, tap = [onPrimary], hold = [onPrimaryHold].
+ * The bottom bar keeps the mockups' left-aligned label; a stacked layout centres it.
  */
 @Composable
 fun PrimaryButton(
@@ -101,7 +102,8 @@ fun PrimaryButton(
     onPrimary: () -> Unit,
     onPrimaryHold: (() -> Unit)?,
     modifier: Modifier = Modifier,
-    pad: Dp = 10.dp
+    pad: Dp = 10.dp,
+    centered: Boolean = false
 ) {
     val haptics = LocalHapticFeedback.current
     var holding by remember { mutableStateOf(false) }
@@ -135,7 +137,7 @@ fun PrimaryButton(
                     )
                 }
                 .padding(horizontal = 14.dp, vertical = pad),
-            contentAlignment = Alignment.CenterStart
+            contentAlignment = if (centered) Alignment.Center else Alignment.CenterStart
         ) {
             Text(
                 text = label,
