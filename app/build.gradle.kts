@@ -40,22 +40,14 @@ android {
             "\"${System.getenv("RELEASE_REPO") ?: "drmuzikbpn/claude-utilization-mcp"}\""
         )
     }
-    signingConfigs {
-        create("release") {
-            val ks = System.getenv("SIGNING_KEYSTORE_PATH")
-            if (ks != null) {
-                storeFile = file(ks)
-                storePassword = System.getenv("SIGNING_STORE_PASSWORD")
-                keyAlias = System.getenv("SIGNING_KEY_ALIAS")
-                keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
-            }
-        }
-    }
+    // Release APKs leave Gradle unsigned: CI signs them with apksigner and app/signing/usage-deck.lineage
+    // (a rotation from this Mac's debug key), so the phone provisioned with a debug build updates in place.
     buildTypes {
-        release {
-            isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
-        }
+        release { isMinifyEnabled = false }
+    }
+    lint {
+        // Not a Play Store app: the kiosk targets API 29 on purpose (Nexus 5X, LineageOS 17.1).
+        disable += "ExpiredTargetSdkVersion"
     }
     buildFeatures {
         compose = true

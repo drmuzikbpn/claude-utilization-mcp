@@ -3,12 +3,15 @@ package com.evenseal.usagedeck.pairing
 import java.io.File
 
 /**
- * Sideloaded pairing: a `pairing-import.json` dropped into the app's private files dir (by adb
- * `run-as` on a debug build, or by the end-to-end test) is consumed once at startup, exactly as
- * if its contents had been scanned as a QR. The file is deleted whether or not it parsed, so a
- * bad payload cannot be retried by accident and the token never lingers on disk.
+ * Sideloaded pairing: a `pairing-import.json` dropped into one of [dirs] — the private files dir
+ * (adb `run-as` on a debug build, or the end-to-end test) or the app's external files dir
+ * (`adb push` on a release build, which `run-as` cannot reach) — is consumed once at startup,
+ * exactly as if its contents had been scanned as a QR. The file is deleted whether or not it
+ * parsed, so a bad payload cannot be retried by accident and the token never lingers on disk.
  */
-class PairingImport(private val filesDir: File, private val store: MachineStore) {
+class PairingImport(private val dirs: List<File>, private val store: MachineStore) {
+    constructor(filesDir: File, store: MachineStore) : this(listOf(filesDir), store)
+
     sealed interface Result {
         object Nothing : Result
 
@@ -18,8 +21,7 @@ class PairingImport(private val filesDir: File, private val store: MachineStore)
     }
 
     fun consume(): Result {
-        val file = File(filesDir, FILE_NAME)
-        if (!file.isFile) return Result.Nothing
+        val file = dirs.map { File(it, FILE_NAME) }.firstOrNull { it.isFile } ?: return Result.Nothing
         val raw = runCatching { file.readText() }.getOrElse { return Result.Rejected("unreadable") }
         file.delete()
         return PairingPayload.parse(raw).fold(
