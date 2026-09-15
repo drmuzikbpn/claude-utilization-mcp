@@ -30,7 +30,7 @@ class ProjectScreenTest {
             Fx.machine(
                 id = "m1",
                 name = "Alan",
-                email = "alan@evensealproductions.com",
+                email = "alan@example.com",
                 fiveHour = 42,
                 sevenDay = 18,
                 sessions = listOf(Fx.session("a1b2c3d4", lastToolName = lastToolName)),

@@ -112,7 +112,7 @@ object Fx {
             machine(
                 id = "m1",
                 name = "Alan",
-                email = "alan@evensealproductions.com",
+                email = "alan@example.com",
                 fiveHour = 42,
                 sevenDay = 18,
                 sessions = listOf(session("a1b2c3d4"))
@@ -120,7 +120,7 @@ object Fx {
             machine(
                 id = "m2",
                 name = "Sam",
-                email = "sam@evensealproductions.com",
+                email = "sam@example.com",
                 fiveHour = 77,
                 sevenDay = 31,
                 sessions = listOf(session("e5f6a7b8", projectKey = "/repo/audioleveler", projectName = "audioleveler"))

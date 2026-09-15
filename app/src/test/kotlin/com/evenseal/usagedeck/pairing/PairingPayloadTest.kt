@@ -20,9 +20,9 @@ class PairingPayloadTest {
 
     @Test
     fun `accepts a tailnet hostname as the address`() {
-        val text = """{"v":1,"name":"mbp","addr":"macbook-pro-10.tail42c6d2.ts.net","port":8787,"token":"t"}"""
+        val text = """{"v":1,"name":"mbp","addr":"macbook-pro-10.tail0fake.ts.net","port":8787,"token":"t"}"""
         assertEquals(
-            "macbook-pro-10.tail42c6d2.ts.net",
+            "macbook-pro-10.tail0fake.ts.net",
             PairingPayload.parse(text).getOrThrow().addr
         )
     }

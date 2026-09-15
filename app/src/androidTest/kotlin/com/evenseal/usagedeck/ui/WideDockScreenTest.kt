@@ -106,7 +106,7 @@ class WideDockScreenTest {
                 Fx.machine(
                     id = "m1",
                     name = "Alan",
-                    email = "alan@evensealproductions.com",
+                    email = "alan@example.com",
                     fiveHour = 42,
                     sevenDay = 18,
                     sessions = listOf(Fx.session("a1b2c3d4"))
@@ -114,7 +114,7 @@ class WideDockScreenTest {
                 Fx.machine(
                     id = "m2",
                     name = "Sam",
-                    email = "sam@evensealproductions.com",
+                    email = "sam@example.com",
                     fiveHour = 77,
                     sevenDay = 31,
                     sessions = listOf(
@@ -140,12 +140,12 @@ class WideDockScreenTest {
 
     @Test
     fun aMachineWithoutDataShowsAShortNameAndNoAddressInTheRail() {
-        val waiting = MachineState(config = MachineConfig("m9", "studio.tail42c6d2.ts.net", "100.1.1.9", 8787, "token"))
+        val waiting = MachineState(config = MachineConfig("m9", "studio.tail0fake.ts.net", "100.1.1.9", 8787, "token"))
         showLandscape(fakeViewModel(team = TeamState(listOf(waiting))))
         // Short name twice: the status-bar chip and the rail card. The right pane's full-width
         // card keeps the full hostname and the address, so each of those appears exactly once.
         compose.onAllNodesWithText("studio").assertCountEquals(2)
-        compose.onAllNodesWithText("studio.tail42c6d2.ts.net").assertCountEquals(1)
+        compose.onAllNodesWithText("studio.tail0fake.ts.net").assertCountEquals(1)
         compose.onAllNodesWithText("100.1.1.9", substring = true).assertCountEquals(1)
         compose.onAllNodesWithText("connecting…").assertCountEquals(2)
     }

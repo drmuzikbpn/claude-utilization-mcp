@@ -80,7 +80,7 @@ object Format {
         return family.ifBlank { model }
     }
 
-    /** `macbook-pro-10.tail42c6d2.ts.net` → `macbook-pro-10`; a plain hostname is unchanged. */
+    /** `macbook-pro-10.tail0fake.ts.net` → `macbook-pro-10`; a plain hostname is unchanged. */
     fun hostShort(name: String): String = name.substringBefore('.')
 
     /**

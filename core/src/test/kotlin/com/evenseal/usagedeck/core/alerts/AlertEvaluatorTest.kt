@@ -21,7 +21,7 @@ import org.junit.Test
 
 class AlertEvaluatorTest {
     private val t0: Instant = Instant.parse("2026-09-13T14:00:00Z")
-    private val alan = User("alan@evensealproductions.com", "uuid-alan", "Alan")
+    private val alan = User("alan@example.com", "uuid-alan", "Alan")
     private val evaluator = AlertEvaluator(MutableStateFlow(AlertThresholds()), ZoneOffset.UTC)
 
     private fun limit(id: String, percent: Int, resetsAt: Instant? = null, kind: String = id, model: String? = null) =

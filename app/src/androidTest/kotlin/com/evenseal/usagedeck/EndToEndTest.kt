@@ -215,7 +215,7 @@ class EndToEndTest {
     private fun snapshotJson() = flat(
         """
         {"name":"fake-mbp","version":"$VERSION",
-         "user":{"emailAddress":"alan@evensealproductions.com","accountUuid":"u1",
+         "user":{"emailAddress":"alan@example.com","accountUuid":"u1",
                  "displayName":"Alan"},
          "summary":${summaryJson()},
          "limits":{"limits":[$LIMITS],"fetchedAt":"$WHEN","stale":false},

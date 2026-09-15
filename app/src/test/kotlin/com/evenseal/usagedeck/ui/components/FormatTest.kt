@@ -168,7 +168,7 @@ class FormatTest {
 
     @Test
     fun `host names drop their domain`() {
-        assertEquals("macbook-pro-10", Format.hostShort("macbook-pro-10.tail42c6d2.ts.net"))
+        assertEquals("macbook-pro-10", Format.hostShort("macbook-pro-10.tail0fake.ts.net"))
         assertEquals("studio", Format.hostShort("studio"))
     }
 

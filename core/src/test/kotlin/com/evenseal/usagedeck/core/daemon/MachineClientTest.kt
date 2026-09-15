@@ -105,7 +105,7 @@ class MachineClientTest {
     ) = DaemonEvent.Snapshot(
         name = "alans-mbp",
         version = "0.1.417+3f9c2ab",
-        user = UserDto(emailAddress = "alan@evensealproductions.com", displayName = "Alan"),
+        user = UserDto(emailAddress = "alan@example.com", displayName = "Alan"),
         limits = listOf(LimitDto(id = "session", kind = "session", group = "session", percent = percent)),
         status = StatusDto(byId = mapOf("session" to "ok"), overall = "ok"),
         thresholds = ThresholdsDto(),

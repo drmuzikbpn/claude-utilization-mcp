@@ -27,10 +27,10 @@ class PairingImportTest {
 
     @Test
     fun `a valid payload is added and the file removed`() {
-        drop("""{"v":1,"name":"mbp.tail.ts.net","addr":"192.168.1.194","port":47291,"token":"secret"}""")
+        drop("""{"v":1,"name":"mbp.tail.ts.net","addr":"192.0.2.10","port":47291,"token":"secret"}""")
         assertEquals(PairingImport.Result.Imported("mbp.tail.ts.net"), import.consume())
         val m = store.machines.value.single()
-        assertEquals("192.168.1.194", m.addr)
+        assertEquals("192.0.2.10", m.addr)
         assertEquals(47291, m.port)
         assertEquals("secret", m.token)
         assertFalse(File(dir, PairingImport.FILE_NAME).exists())
@@ -38,9 +38,9 @@ class PairingImportTest {
 
     @Test
     fun `re-importing the same addr and port replaces the token instead of duplicating`() {
-        drop("""{"v":1,"name":"mbp","addr":"192.168.1.194","port":47291,"token":"old"}""")
+        drop("""{"v":1,"name":"mbp","addr":"192.0.2.10","port":47291,"token":"old"}""")
         import.consume()
-        drop("""{"v":1,"name":"mbp","addr":"192.168.1.194","port":47291,"token":"new"}""")
+        drop("""{"v":1,"name":"mbp","addr":"192.0.2.10","port":47291,"token":"new"}""")
         import.consume()
         assertEquals(1, store.machines.value.size)
         assertEquals("new", store.machines.value.single().token)
@@ -50,7 +50,7 @@ class PairingImportTest {
     fun `a file in the external files dir is consumed when the private dir has none`() {
         val external = File(context.filesDir, "import-test-external").apply { mkdirs() }
         File(external, PairingImport.FILE_NAME)
-            .writeText("""{"v":1,"name":"studio","addr":"192.168.1.249","port":47291,"token":"s"}""")
+            .writeText("""{"v":1,"name":"studio","addr":"192.0.2.20","port":47291,"token":"s"}""")
 
         val result = PairingImport(listOf(dir, external), store).consume()
 
