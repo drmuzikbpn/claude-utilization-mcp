@@ -228,7 +228,8 @@ private fun RailActions(onPauseAll: () -> Unit, onPauseAllHold: () -> Unit, navi
             onPrimary = onPauseAll,
             onPrimaryHold = onPauseAllHold,
             modifier = Modifier.fillMaxWidth(),
-            pad = 6.dp
+            pad = 6.dp,
+            centered = true
         )
         DeckButton(
             label = navigation.first,
