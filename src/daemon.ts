@@ -341,7 +341,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
    *
    * The tailnet address is resolved once at startup, and on a machine where Tailscale
    * starts *after* the daemon — or is down at boot — that resolve fails and nothing ever
-   * tries again: the Mac Studio logged `could not bind 100.110.47.16 — EADDRNOTAVAIL` and
+   * tries again: a test machine logged `could not bind 100.101.102.103 — EADDRNOTAVAIL` and
    * then served loopback and LAN only, with no tailnet listener, indefinitely. `SIGHUP`
    * fixes it, but only if a human knows to send one, and the whole point of the tailnet
    * address is to be reachable when nobody is at the machine.
