@@ -32,8 +32,8 @@ import java.time.Instant
 import java.time.ZoneId
 
 /**
- * The one-line header every screen carries, drawn as the mockups' pill chips: wifi (dot + SSID +
- * bars), the alert chip when something needs attention, one chip per machine (dot + short name),
+ * The one-line header every screen carries, drawn as the mockups' pill chips: wifi (dot + bars),
+ * the gear when the screen has no bottom bar, the alert chip when something needs attention, one chip per machine (dot + short name),
  * and the clock. Alerts appear here rather than as a banner so the wide dock never reflows.
  */
 @Composable
@@ -46,7 +46,8 @@ fun StatusBar(
     onMachine: (String) -> Unit,
     modifier: Modifier = Modifier,
     zone: ZoneId = ZoneId.systemDefault(),
-    use24h: Boolean = true
+    use24h: Boolean = true,
+    onSettings: (() -> Unit)? = null
 ) {
     Row(
         modifier = modifier
@@ -63,6 +64,15 @@ fun StatusBar(
             onClick = onWifi,
             modifier = Modifier.semantics { contentDescription = "$WIFI_CHIP ${wifi.ssid ?: "off"}" }
         )
+        // The wide dock has no bottom bar, so its gear lives up here beside the wifi chip.
+        if (onSettings != null) {
+            Chip(
+                text = GEAR,
+                dot = null,
+                onClick = onSettings,
+                modifier = Modifier.semantics { contentDescription = SETTINGS_CHIP }
+            )
+        }
 
         // Everything between wifi and the clock shares one flexible region, so the clock keeps its
         // width and never wraps a character per line when two machine chips crowd it. While an
@@ -147,6 +157,12 @@ const val MACHINE_CHIP = "machine"
 
 /** Content description prefix of the wifi chip; the SSID follows it, since the text is bars only. */
 const val WIFI_CHIP = "wifi"
+
+/** Content description of the status-bar gear (wide dock only). */
+const val SETTINGS_CHIP = "settings"
+
+/** The gear glyph on the home screens; Settings is where wifi, display and sound live now. */
+const val GEAR = "⚙"
 
 private fun dotColor(health: Health): Color = when (health) {
     Health.FRESH -> DeckColors.ok

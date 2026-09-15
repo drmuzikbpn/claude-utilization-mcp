@@ -41,6 +41,7 @@ import com.evenseal.usagedeck.ui.DeckViewModel
 import com.evenseal.usagedeck.ui.Route
 import com.evenseal.usagedeck.ui.components.BottomBar
 import com.evenseal.usagedeck.ui.components.Format
+import com.evenseal.usagedeck.ui.components.GEAR
 import com.evenseal.usagedeck.ui.components.HoldTimeout
 import com.evenseal.usagedeck.ui.components.HomeEmpty
 import com.evenseal.usagedeck.ui.components.HomeEmptyBody
@@ -165,18 +166,17 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
     }
 }
 
-/** With nothing paired, "Projects" is a dead end; offer "Pair" in its place. The gear opens Settings (wifi lives there). */
-internal fun homeSecondary(empty: HomeEmpty?, onOpen: (Route) -> Unit): List<Pair<String, () -> Unit>> = listOf(
+/** With nothing paired, "Projects" is a dead end; offer "Pair" in its place. */
+internal fun homeNavigation(empty: HomeEmpty?, onOpen: (Route) -> Unit): Pair<String, () -> Unit> =
     if (empty is HomeEmpty.NoMachines) {
         "Pair" to { onOpen(Route.Pairing) }
     } else {
         "Projects" to { onOpen(Route.Projects) }
-    },
-    GEAR to { onOpen(Route.Settings) }
-)
+    }
 
-/** The gear glyph on the home bottom bars; Settings is where wifi, display and sound live now. */
-const val GEAR = "⚙"
+/** The portrait bottom bar's secondaries: the navigation button, then the gear (wifi lives in Settings). */
+internal fun homeSecondary(empty: HomeEmpty?, onOpen: (Route) -> Unit): List<Pair<String, () -> Unit>> =
+    listOf(homeNavigation(empty, onOpen), GEAR to { onOpen(Route.Settings) })
 
 /**
  * A person's quota. Long-press renames the person. Folded (the default) it is one line — name, then the 5 h and 7 d percentages —

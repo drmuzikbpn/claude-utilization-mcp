@@ -42,15 +42,16 @@ import com.evenseal.usagedeck.core.model.UserView
 import com.evenseal.usagedeck.core.pause.PauseTarget
 import com.evenseal.usagedeck.ui.DeckViewModel
 import com.evenseal.usagedeck.ui.Route
-import com.evenseal.usagedeck.ui.components.BottomBar
+import com.evenseal.usagedeck.ui.components.DeckButton
 import com.evenseal.usagedeck.ui.components.Format
 import com.evenseal.usagedeck.ui.components.HomeEmpty
 import com.evenseal.usagedeck.ui.components.HomeEmptyBody
 import com.evenseal.usagedeck.ui.components.MachineWaitRow
+import com.evenseal.usagedeck.ui.components.PrimaryButton
 import com.evenseal.usagedeck.ui.components.SessionRow
 import com.evenseal.usagedeck.ui.components.StatusBar
 import com.evenseal.usagedeck.ui.components.usersWithData
-import com.evenseal.usagedeck.ui.ledger.homeSecondary
+import com.evenseal.usagedeck.ui.ledger.homeNavigation
 import com.evenseal.usagedeck.ui.theme.DeckColors
 import com.evenseal.usagedeck.ui.theme.DeckType
 import java.time.Instant
@@ -58,7 +59,8 @@ import java.time.ZoneId
 
 /**
  * Landscape home (spec §11.2). The rail carries numbers big enough to read from the other side
- * of the room; alerts land in the status bar rather than as a banner so nothing ever reflows.
+ * of the room plus the home actions; the gear sits in the status bar and the sessions list takes
+ * the whole right pane. Alerts land in the status bar rather than as a banner so nothing reflows.
  */
 @Composable
 fun WideDockScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
@@ -78,7 +80,8 @@ fun WideDockScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
             alertChip = chip,
             onWifi = { onOpen(Route.Wifi) },
             onMachine = { id -> onOpen(Route.Machine(id)) },
-            use24h = prefs.clock24h
+            use24h = prefs.clock24h,
+            onSettings = { onOpen(Route.Settings) }
         )
 
         Row(modifier = Modifier.weight(1f)) {
@@ -88,7 +91,13 @@ fun WideDockScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
                 nameOf = prefs::nameFor,
                 use24h = prefs.clock24h,
                 modifier = Modifier.width(RAIL_WIDTH).fillMaxHeight()
-            )
+            ) {
+                RailActions(
+                    onPauseAll = { vm.tap(PauseTarget.All) },
+                    onPauseAllHold = { vm.hold(PauseTarget.All) },
+                    navigation = homeNavigation(empty, onOpen)
+                )
+            }
 
             Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 if (empty != null) {
@@ -121,15 +130,6 @@ fun WideDockScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
                         }
                     }
                 }
-
-                BottomBar(
-                    primary = "Pause all",
-                    primaryDanger = false,
-                    onPrimary = { vm.tap(PauseTarget.All) },
-                    onPrimaryHold = { vm.hold(PauseTarget.All) },
-                    secondary = homeSecondary(empty, onOpen),
-                    compact = true
-                )
             }
         }
     }
@@ -163,7 +163,14 @@ private fun ColumnHeader(liveCount: Int) {
 }
 
 @Composable
-private fun Rail(team: TeamState, now: Instant, nameOf: (UserView) -> String, use24h: Boolean, modifier: Modifier) {
+private fun Rail(
+    team: TeamState,
+    now: Instant,
+    nameOf: (UserView) -> String,
+    use24h: Boolean,
+    modifier: Modifier,
+    actions: @Composable () -> Unit
+) {
     Column(
         modifier = modifier
             .drawBehind {
@@ -194,6 +201,8 @@ private fun Rail(team: TeamState, now: Instant, nameOf: (UserView) -> String, us
             }
         }
 
+        actions()
+
         Text(
             text = "team today ${Format.tokens(team.teamToday.total)} · ${team.liveSessionCount} live",
             color = DeckColors.dim,
@@ -201,6 +210,31 @@ private fun Rail(team: TeamState, now: Instant, nameOf: (UserView) -> String, us
             fontSize = 10.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+/**
+ * The home actions live at the foot of the rail rather than under the sessions list, so the
+ * list runs the full height of the screen. Stacked, because the rail is too narrow for both
+ * labels side by side at a readable size.
+ */
+@Composable
+private fun RailActions(onPauseAll: () -> Unit, onPauseAllHold: () -> Unit, navigation: Pair<String, () -> Unit>) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        PrimaryButton(
+            label = "Pause all",
+            danger = false,
+            onPrimary = onPauseAll,
+            onPrimaryHold = onPauseAllHold,
+            modifier = Modifier.fillMaxWidth(),
+            pad = 6.dp
+        )
+        DeckButton(
+            label = navigation.first,
+            onClick = navigation.second,
+            modifier = Modifier.fillMaxWidth(),
+            pad = 6.dp
         )
     }
 }

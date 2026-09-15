@@ -26,7 +26,9 @@ class StatusBarTest {
 
     private val opened = mutableListOf<String>()
 
-    private fun show(machines: List<MachineState>, alertChip: String? = null) {
+    private var settingsOpened = 0
+
+    private fun show(machines: List<MachineState>, alertChip: String? = null, gear: Boolean = false) {
         compose.setContent {
             DeckTheme {
                 StatusBar(
@@ -36,7 +38,8 @@ class StatusBarTest {
                     alertChip = alertChip,
                     onWifi = {},
                     onMachine = { opened += it },
-                    zone = ZoneId.of("UTC")
+                    zone = ZoneId.of("UTC"),
+                    onSettings = if (gear) ({ settingsOpened++ }) else null
                 )
             }
         }
@@ -44,6 +47,20 @@ class StatusBarTest {
 
     private fun machines(n: Int) = (1..n).map { i ->
         Fx.machine("m$i", "Machine-Number-$i", "u$i@example.com", 10, 20, if (i == 2) Health.STALE else Health.FRESH)
+    }
+
+    @Test
+    fun theGearAppearsOnlyWhenAScreenAsksForIt() {
+        show(emptyList())
+        compose.onNodeWithContentDescription(SETTINGS_CHIP).assertDoesNotExist()
+    }
+
+    @Test
+    fun theGearOpensSettings() {
+        show(emptyList(), gear = true)
+        compose.onNodeWithContentDescription(SETTINGS_CHIP).assertIsDisplayed()
+        compose.onNodeWithText(GEAR).performClick()
+        assertEquals(1, settingsOpened)
     }
 
     @Test
