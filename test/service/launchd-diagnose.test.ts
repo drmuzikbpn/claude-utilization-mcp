@@ -94,6 +94,26 @@ describe('LaunchdService.diagnose (§23.20)', () => {
     expect(await service(ok(PENDED), 'Background').diagnose()).toHaveLength(1);
   });
 
+  /**
+   * The §23.26 regression. `diagnose()` used to read `launchctl print` first and bail on a
+   * non-zero exit, so the session check never ran. The installer calls this immediately after
+   * `bootstrap` + `kickstart`, and `print` can still be failing in that settling window — so
+   * on the Mac Studio's first successful install the warning it was written for was computed
+   * correctly and then thrown away. The session is knowable without `print`; ask it first.
+   */
+  it('warns from the session alone when launchctl print is still settling', async () => {
+    const svc = new LaunchdService({
+      env: { HOME: '/tmp/cu-home' },
+      exec: async (_file, args) =>
+        args[0] === 'managername'
+          ? { code: 0, stdout: 'Background\n', stderr: '' }
+          : { code: 113, stdout: '', stderr: 'Could not find service' },
+    });
+    const warnings = await svc.diagnose();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/Background/);
+  });
+
   it('says nothing when the session type cannot be read', async () => {
     const svc = new LaunchdService({
       env: { HOME: '/tmp/cu-home' },
