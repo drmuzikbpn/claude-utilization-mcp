@@ -134,13 +134,25 @@ export async function runInstall(argv: readonly string[], io: InstallIO): Promis
   }
 
   if (chosen.mcp) {
-    const mcp = await addMcpServer({
-      file: ctx.claudeJsonFile,
-      binPath: ctx.binPath,
-      ...(ctx.exec === undefined ? {} : { exec: ctx.exec }),
-    });
-    io.stdout(`mcp:     registered via ${mcp.method === 'claude-cli' ? '`claude mcp add`' : 'direct merge'}\n`);
-    if (mcp.warning !== null) notes.push(mcp.warning);
+    // The MCP registration is the least important thing install does and the only one with a
+    // hard dependency on another tool's CLI. It must not abort an install that has already
+    // put the service in place — that loses the status table and every note, including the
+    // one saying launchd will not supervise what we just installed (§23.29).
+    try {
+      const mcp = await addMcpServer({
+        file: ctx.claudeJsonFile,
+        binPath: ctx.binPath,
+        ...(ctx.exec === undefined ? {} : { exec: ctx.exec }),
+      });
+      io.stdout(`mcp:     registered via ${mcp.method === 'claude-cli' ? '`claude mcp add`' : 'direct merge'}\n`);
+      if (mcp.warning !== null) notes.push(mcp.warning);
+    } catch (err) {
+      io.stdout('mcp:     not registered\n');
+      notes.push(
+        `the MCP server could not be registered: ${err instanceof Error ? err.message : String(err)} — ` +
+          'everything else installed; re-run `claude-usage install --no-service --no-hook` once that is resolved',
+      );
+    }
   }
 
   // 6. Verify + status table.

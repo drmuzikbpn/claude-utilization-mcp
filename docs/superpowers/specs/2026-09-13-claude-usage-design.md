@@ -527,6 +527,7 @@ QA from the Android dashboard, and two Macs in daily use.
 | §23.26 | `install` lost a race with its own `bootout` (2026-09-14) |
 | §23.27 | `install` exited 0 in the middle of its own verification (2026-09-15) |
 | §23.28 | The bootout race, measured instead of guessed (2026-09-15) |
+| §23.29 | A second `install` aborted on its own idempotency (2026-09-15) |
 
 15 findings survived a 3-vote adversarial review (56 unique candidates). Where Part I
 conflicts with this section, this section wins.
@@ -1142,3 +1143,35 @@ readable at install time; the `print` ordering was assumed to be what swallowed 
 evidence, and each was wrong in a way a two-minute measurement on the actual machine would
 have caught. The measurements in this section are all things that could have been run before
 the corresponding fix, not after.
+
+### §23.29 A second `install` aborted on its own idempotency (2026-09-15)
+
+The Mac Studio's next desktop install died at the MCP step:
+
+```
+Error: `claude mcp add --scope user claude-usage -- .../claude-usage mcp` failed (exit 1):
+MCP server claude-usage already exists in user config
+```
+
+`install` is idempotent by design and re-running it is the documented repair for §23.25, so
+"already exists" is the end state it is asking for, not a failure. `removeMcpServer` says
+exactly that in a comment — "uninstall must stay idempotent, so that is not an error" — and
+`addMcpServer` did not. The registered command is `current/bin/claude-usage`, a symlink
+stable across versions, so an existing entry is also the correct entry.
+
+Two fixes, and the second matters more than the first:
+
+1. `tryClaudeCli` treats an "already exists" failure as success.
+2. **The MCP step can no longer abort the install.** It is the least important thing `install`
+   does and the only one depending on another tool's CLI, and it runs *after* the service is
+   in place but *before* the status table and the notes. So the machine was left fully
+   configured while saying nothing — and the note it swallowed was the §23.25 "launchd will
+   not supervise this service" warning, which was the entire reason for walking over to the
+   machine. A failure there is now a note, like every other partial outcome.
+
+**The recurring shape, now five for five.** §23.9 established it: *aborting after the bootout
+leaves the daemon down*. §23.26, §23.27, §23.28 and this are all the same rule broken in a
+different place — a late step failing loudly, or exiting silently, and destroying the report
+of the steps that already succeeded. An installer's output is not a courtesy; on a machine
+the user cannot easily inspect it is the only channel there is. Anything after the service
+step must degrade to a note.
