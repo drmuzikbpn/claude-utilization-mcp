@@ -32,6 +32,7 @@ fun LimitBar(
     label: String,
     limit: Limit?,
     now: Instant,
+    use24h: Boolean = true,
     modifier: Modifier = Modifier,
     zone: ZoneId = ZoneId.systemDefault()
 ) {
@@ -76,7 +77,7 @@ fun LimitBar(
             modifier = Modifier.width(PERCENT_WIDTH)
         )
         Text(
-            text = if (limit == null) EMPTY else Format.resetsShort(limit.resetsAt, now, zone),
+            text = if (limit == null) EMPTY else Format.resetsShort(limit.resetsAt, now, zone, use24h),
             color = DeckColors.muted,
             fontFamily = DeckType.mono,
             fontSize = 10.sp,

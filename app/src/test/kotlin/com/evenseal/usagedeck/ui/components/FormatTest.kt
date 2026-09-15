@@ -128,6 +128,26 @@ class FormatTest {
     }
 
     @Test
+    fun `reset times follow the 12-hour clock when asked`() {
+        val thursday = Instant.parse("2026-09-17T08:00:00Z") // 09:00 BST
+        val soon = Instant.parse("2026-09-13T15:35:00Z") // 16:35 BST
+        assertEquals("Thu 9:00 AM", Format.resetsShort(thursday, now, zone, use24h = false))
+        assertEquals("resets Thu 9:00 AM", Format.resets(thursday, now, zone, use24h = false))
+        assertEquals("resets 4:35 PM · 2h33", Format.resets(soon, now, zone, use24h = false))
+    }
+
+    @Test
+    fun `resetAt is the clock time in the deck's zone and style`() {
+        val thursday = Instant.parse("2026-09-17T08:00:00Z") // 09:00 BST
+        val soon = Instant.parse("2026-09-13T15:35:00Z") // 16:35 BST
+        assertEquals("16:35", Format.resetAt(soon, now, zone, use24h = true))
+        assertEquals("4:35 PM", Format.resetAt(soon, now, zone, use24h = false))
+        assertEquals("Thu 09:00", Format.resetAt(thursday, now, zone, use24h = true))
+        assertEquals("Thu 9:00 AM", Format.resetAt(thursday, now, zone, use24h = false))
+        assertEquals("—", Format.resetAt(null, now, zone, use24h = true))
+    }
+
+    @Test
     fun `resetsShort is a bare span inside a day and a weekday time beyond it`() {
         val now = Instant.parse("2026-09-13T14:02:00Z")
         val zone = ZoneId.of("UTC")

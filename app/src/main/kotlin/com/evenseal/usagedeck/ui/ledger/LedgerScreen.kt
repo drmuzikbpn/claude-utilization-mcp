@@ -97,6 +97,7 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
                 user = user,
                 name = prefs.nameFor(user),
                 now = now,
+                use24h = prefs.clock24h,
                 expanded = DeckViewModel.userId(user.key) in expanded,
                 onToggle = { vm.toggleUserExpanded(user.key) },
                 onRename = { renaming = user }
@@ -191,6 +192,8 @@ internal fun UserBlock(
     now: Instant,
     expanded: Boolean,
     onToggle: () -> Unit,
+    /** Reset times follow the deck's clock style. */
+    use24h: Boolean = true,
     modifier: Modifier = Modifier,
     /** Long-press on the row; the Ledger opens the rename dialog. */
     onRename: () -> Unit = {}
@@ -260,8 +263,8 @@ internal fun UserBlock(
                 }
             }
             if (expanded) {
-                LimitBar(label = "5h", limit = user.fiveHour, now = now)
-                LimitBar(label = "7d", limit = user.sevenDay, now = now)
+                LimitBar(label = "5h", limit = user.fiveHour, now = now, use24h = use24h)
+                LimitBar(label = "7d", limit = user.sevenDay, now = now, use24h = use24h)
                 if (user.scoped.isNotEmpty()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         user.scoped.forEach { limit ->

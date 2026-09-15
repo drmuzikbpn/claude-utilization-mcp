@@ -3,6 +3,7 @@ package com.evenseal.usagedeck.ui.components
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToLong
@@ -15,6 +16,30 @@ object Format {
     private val HOUR_MINUTE: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.UK)
     private val DAY_HOUR_MINUTE: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE HH:mm", Locale.UK)
     private val TWELVE_HOUR: DateTimeFormatter = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
+    private val DAY_TWELVE_HOUR: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE h:mm a", Locale.US)
+
+    private fun timeOfDay(local: ZonedDateTime, use24h: Boolean) =
+        if (use24h) HOUR_MINUTE.format(local) else TWELVE_HOUR.format(local)
+
+    private fun dayAndTime(local: ZonedDateTime, use24h: Boolean) =
+        if (use24h) DAY_HOUR_MINUTE.format(local) else DAY_TWELVE_HOUR.format(local)
+
+    /**
+     * When a window resets, as a clock time in the deck's zone and clock style: `16:35` or
+     * `4:35 PM` inside a day, `Thu 09:00` or `Thu 9:00 AM` beyond it, `—` without one.
+     */
+    fun resetAt(at: Instant?, now: Instant, zone: ZoneId, use24h: Boolean): String {
+        if (at == null) return "—"
+        val local = at.atZone(zone)
+        return if (Duration.between(now, at) >= Duration.ofHours(24)) {
+            dayAndTime(
+                local,
+                use24h
+            )
+        } else {
+            timeOfDay(local, use24h)
+        }
+    }
 
     /** The status-bar clock: `18:21`, or `6:21 PM` when the deck is set to a 12-hour clock. */
     fun clock(at: Instant, zone: ZoneId, use24h: Boolean): String =
@@ -30,21 +55,21 @@ object Format {
      * `resets: unknown` when the daemon did not give one, `resets 16:35 · 2h33` inside a day and
      * `resets Thu 09:00` beyond it.
      */
-    fun resets(at: Instant?, now: Instant, zone: ZoneId): String {
+    fun resets(at: Instant?, now: Instant, zone: ZoneId, use24h: Boolean = true): String {
         if (at == null) return "resets: unknown"
         val local = at.atZone(zone)
         val remaining = Duration.between(now, at)
         if (remaining >= Duration.ofHours(24)) {
-            return "resets ${DAY_HOUR_MINUTE.format(local)}"
+            return "resets ${dayAndTime(local, use24h)}"
         }
-        return "resets ${HOUR_MINUTE.format(local)} · ${span(remaining)}"
+        return "resets ${timeOfDay(local, use24h)} · ${span(remaining)}"
     }
 
     /** The caption form for a bar row: `2h33 left` inside a day, `Thu 09:00` beyond it, `unknown` without one. */
-    fun resetsShort(at: Instant?, now: Instant, zone: ZoneId): String {
+    fun resetsShort(at: Instant?, now: Instant, zone: ZoneId, use24h: Boolean = true): String {
         if (at == null) return "unknown"
         val remaining = Duration.between(now, at)
-        if (remaining >= Duration.ofHours(24)) return DAY_HOUR_MINUTE.format(at.atZone(zone))
+        if (remaining >= Duration.ofHours(24)) return dayAndTime(at.atZone(zone), use24h)
         return "${span(remaining)} left"
     }
 
