@@ -73,7 +73,7 @@ class TeamStateTest {
         projectTokens = projectTokens
     )
 
-    private val adam = User("owner@example.test", "uuid-adam", "Adam")
+    private val adam = User("adam@example.com", "uuid-adam", "Adam")
     private val jules = User("jules@example.com", "uuid-jules", "Jules")
 
     @Test
@@ -121,7 +121,7 @@ class TeamStateTest {
                 )
             )
         )
-        assertEquals(listOf("owner@example.test", "sam@example.com"), team.users.map { it.key })
+        assertEquals(listOf("adam@example.com", "sam@example.com"), team.users.map { it.key })
     }
 
     @Test

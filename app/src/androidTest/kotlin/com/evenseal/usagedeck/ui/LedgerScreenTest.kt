@@ -95,7 +95,7 @@ class LedgerScreenTest {
                 Fx.machine(
                     id = "m1",
                     name = "Adam",
-                    email = "owner@example.test",
+                    email = "adam@example.com",
                     fiveHour = 42,
                     sevenDay = 18,
                     health = Health.DEAD,
@@ -150,7 +150,7 @@ class LedgerScreenTest {
     @Test
     fun aPairedButUnreachableMachineShowsItsNameAndError() {
         val waiting = MachineState(
-            config = MachineConfig("m1", "studio.local", "192.168.1.50", 47291, "t"),
+            config = MachineConfig("m1", "studio.local", "192.0.2.30", 47291, "t"),
             health = Health.DEAD,
             lastError = "Token rejected. Re-run pairing on the Mac."
         )
@@ -159,7 +159,7 @@ class LedgerScreenTest {
         compose.onNodeWithText("Waiting for machine").assertExists()
         compose.onNodeWithText("studio.local").assertExists()
         compose.onNodeWithText("Token rejected. Re-run pairing on the Mac.").assertExists()
-        compose.onNodeWithText("192.168.1.50:47291").assertExists()
+        compose.onNodeWithText("192.0.2.30:47291").assertExists()
     }
 
     @Test
@@ -208,11 +208,11 @@ class LedgerScreenTest {
         show(fakeViewModel())
 
         compose.onNodeWithText("42%").assertExists()
-        compose.onNodeWithText("owner@example.test").assertDoesNotExist()
+        compose.onNodeWithText("adam@example.com").assertDoesNotExist()
         compose.onNodeWithContentDescription("expand Adam").performClick()
-        compose.onNodeWithText("owner@example.test").assertExists()
+        compose.onNodeWithText("adam@example.com").assertExists()
         compose.onNodeWithContentDescription("collapse Adam").assertExists()
-        compose.onNodeWithText("teammate@example.test").assertDoesNotExist()
+        compose.onNodeWithText("sam@example.com").assertDoesNotExist()
     }
 
     @Test

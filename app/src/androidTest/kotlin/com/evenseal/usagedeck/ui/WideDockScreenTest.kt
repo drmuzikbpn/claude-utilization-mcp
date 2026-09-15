@@ -106,7 +106,7 @@ class WideDockScreenTest {
                 Fx.machine(
                     id = "m1",
                     name = "Adam",
-                    email = "owner@example.test",
+                    email = "adam@example.com",
                     fiveHour = 42,
                     sevenDay = 18,
                     sessions = listOf(Fx.session("a1b2c3d4"))
@@ -114,7 +114,7 @@ class WideDockScreenTest {
                 Fx.machine(
                     id = "m2",
                     name = "Sam",
-                    email = "teammate@example.test",
+                    email = "sam@example.com",
                     fiveHour = 77,
                     sevenDay = 31,
                     sessions = listOf(
