@@ -72,11 +72,26 @@ function writeClaudeJson(file: string, json: Record<string, unknown>, mode: numb
   }
 }
 
+/**
+ * "already exists in user config" is `claude mcp add`'s answer to a re-install (§23.29).
+ *
+ * It is the end state `install` is asking for, so it is success, not failure. `install` is
+ * idempotent by design and `removeMcpServer` already says so in as many words; `add` did not,
+ * and aborted the whole install on the second run — after the service was in place but before
+ * the status table and every note, so the machine was left configured and silent about it.
+ * The registered command is `current/bin/claude-usage`, a symlink stable across versions, so
+ * an existing entry is also the *right* entry.
+ */
+function isAlreadyRegistered(result: { stdout: string; stderr: string }): boolean {
+  return /already exists/i.test(`${result.stdout} ${result.stderr}`);
+}
+
 /** `code: 127` from the runner means `claude` is not on PATH. */
 async function tryClaudeCli(exec: ExecRunner, args: readonly string[]): Promise<boolean> {
   const result = await exec('claude', args);
   if (result.code === 127) return false;
   if (result.code !== 0) {
+    if (isAlreadyRegistered(result)) return true;
     throw new Error(`\`claude ${args.join(' ')}\` failed (exit ${String(result.code)}): ${result.stderr.trim()}`);
   }
   return true;

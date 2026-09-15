@@ -147,3 +147,50 @@ describe('fallback path — no claude on PATH', () => {
     expect(existsSync(file)).toBe(false);
   });
 });
+
+/**
+ * §23.29, reported from the Mac Studio's second desktop install:
+ *
+ *     Error: `claude mcp add --scope user claude-usage -- .../claude-usage mcp` failed
+ *     (exit 1): MCP server claude-usage already exists in user config
+ *
+ * It aborted `runInstall` *after* the service was installed and before the status table and
+ * every note — so the machine was configured and said nothing about the one thing the user
+ * had gone to the desktop to check.
+ */
+describe('addMcpServer idempotency (§23.29)', () => {
+  it('treats "already exists" as the end state it asked for, not a failure', async () => {
+    const h = tempHome();
+    const exec = fakeExec((f, a) =>
+      f === 'claude' && a[0] === 'mcp' && a[1] === 'add'
+        ? { code: 1, stderr: 'MCP server claude-usage already exists in user config' }
+        : undefined,
+    );
+    const result = await addMcpServer({
+      file: join(h.home, '.claude.json'),
+      binPath: '/data/claude-usage/current/bin/claude-usage',
+      exec: exec.runner,
+    });
+    expect(result.method).toBe('claude-cli');
+    expect(result.warning).toBeNull();
+    // No fallback write: the entry is already there and points at the stable `current` path.
+    expect(existsSync(join(h.home, '.claude.json'))).toBe(false);
+  });
+
+  it('still throws on a real failure rather than swallowing everything', async () => {
+    const h = tempHome();
+    const exec = fakeExec((f, a) =>
+      f === 'claude' && a[0] === 'mcp' && a[1] === 'add'
+        ? { code: 1, stderr: 'error: could not write config' }
+        : undefined,
+    );
+    await expect(
+      addMcpServer({
+        file: join(h.home, '.claude.json'),
+        binPath: '/data/claude-usage/current/bin/claude-usage',
+        exec: exec.runner,
+      }),
+    ).rejects.toThrow(/could not write config/);
+  });
+});
+

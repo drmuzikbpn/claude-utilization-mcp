@@ -327,4 +327,45 @@ describe('MCP fallback', () => {
     expect(statSync(claudeJsonPath(h.env)).mode & 0o777).toBe(0o600);
     expect(out).toContain('quit running Claude Code sessions');
   });
+
+  /**
+   * §23.29. A failing MCP registration used to abort `runInstall` by exception — after the
+   * service was installed, before the status table and every note. On the Mac Studio that
+   * swallowed the "launchd will not supervise this service" warning, which was the entire
+   * reason the user had walked over to the machine.
+   */
+  it('finishes the install and reports the failure when MCP registration throws', async () => {
+    const h = tempHome();
+    const service = new FakeService();
+    let out = '';
+    const code = await runInstall(['--yes'], {
+      stdout: (t) => {
+        out += t;
+      },
+      stderr: () => undefined,
+      env: h.env,
+      platform: 'darwin',
+      service,
+      // Not 127 (that is the documented fallback) and not "already exists": a real failure.
+      exec: fakeExec((f, a) =>
+        f === 'claude' && a[0] === 'mcp' ? { code: 1, stderr: 'error: config is read-only' } : undefined,
+      ).runner,
+      nodePath: '/usr/bin/node',
+      sourceDir: fakePackage('1.2.3'),
+      version: '1.2.3',
+      readCredentials: () => Promise.resolve('x'),
+      health: () => Promise.resolve(true),
+      sleep: () => Promise.resolve(),
+      randomToken: () => TOKEN,
+      isTTY: false,
+    });
+    expect(code).toBe(0);
+    // The service still went in...
+    expect(service.calls).toContain('install');
+    // ...the status table still printed...
+    expect(out).toContain('installed');
+    // ...and the failure is reported rather than thrown away.
+    expect(out).toContain('config is read-only');
+  });
 });
+
