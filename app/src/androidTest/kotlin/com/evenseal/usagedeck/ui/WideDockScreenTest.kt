@@ -6,11 +6,15 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.evenseal.usagedeck.core.model.TeamState
+import com.evenseal.usagedeck.ui.components.SETTINGS_CHIP
 import com.evenseal.usagedeck.ui.theme.DeckTheme
 import com.evenseal.usagedeck.ui.widedock.WideDockScreen
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,13 +24,15 @@ class WideDockScreenTest {
     @get:Rule
     val compose = createComposeRule()
 
+    private val opened = mutableListOf<Route>()
+
     private fun showLandscape(vm: DeckViewModel) {
         compose.setContent {
             val landscape = Configuration(LocalConfiguration.current).apply {
                 orientation = Configuration.ORIENTATION_LANDSCAPE
             }
             CompositionLocalProvider(LocalConfiguration provides landscape) {
-                DeckTheme { WideDockScreen(vm = vm, onOpen = {}) }
+                DeckTheme { WideDockScreen(vm = vm, onOpen = { opened += it }) }
             }
         }
     }
@@ -60,9 +66,25 @@ class WideDockScreenTest {
     }
 
     @Test
-    fun theBottomBarStillOffersPauseAll() {
+    fun theRailCarriesPauseAllAndProjects() {
         showLandscape(fakeViewModel())
         compose.onNodeWithText("Pause all").assertExists()
+        compose.onNodeWithText("Projects").performClick()
+        assertEquals(listOf<Route>(Route.Projects), opened)
+    }
+
+    @Test
+    fun theGearSitsInTheStatusBar() {
+        showLandscape(fakeViewModel())
+        compose.onNodeWithContentDescription(SETTINGS_CHIP).performClick()
+        assertEquals(listOf<Route>(Route.Settings), opened)
+    }
+
+    @Test
+    fun withNothingPairedTheRailOffersPairInsteadOfProjects() {
+        showLandscape(fakeViewModel(team = TeamState(emptyList())))
+        compose.onNodeWithText("Projects").assertDoesNotExist()
+        compose.onNodeWithText("Pair").assertExists()
     }
 
     @Test

@@ -55,13 +55,13 @@ fun BottomBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        PrimaryAction(
+        PrimaryButton(
             label = primary,
             danger = primaryDanger,
             onPrimary = onPrimary,
             onPrimaryHold = onPrimaryHold,
-            pad = pad,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
+            pad = pad
         )
         secondary.forEach { (label, action) ->
             DeckButton(label = label, onClick = action, pad = pad)
@@ -90,14 +90,18 @@ fun DeckButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier
     }
 }
 
+/**
+ * The primary (`.btn.warn`) button on its own, for screens that lay the actions out themselves:
+ * amber-bordered, red while a hold is in progress, tap = [onPrimary], hold = [onPrimaryHold].
+ */
 @Composable
-private fun PrimaryAction(
+fun PrimaryButton(
     label: String,
     danger: Boolean,
     onPrimary: () -> Unit,
     onPrimaryHold: (() -> Unit)?,
-    pad: Dp,
-    modifier: Modifier
+    modifier: Modifier = Modifier,
+    pad: Dp = 10.dp
 ) {
     val haptics = LocalHapticFeedback.current
     var holding by remember { mutableStateOf(false) }
