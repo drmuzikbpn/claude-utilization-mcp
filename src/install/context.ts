@@ -112,10 +112,18 @@ export function persistConfig(config: Config, configDir: string): void {
 export const HEALTH_TIMEOUT_MS = 5_000;
 export const HEALTH_INTERVAL_MS = 250;
 
+/**
+ * The retry pause inside `verifyHealth`. The timer is deliberately **not** unref'd (§23.27).
+ *
+ * When the daemon has not finished starting, the health probe fails fast — a refused
+ * connection leaves no lingering handle — so this timer is the only thing on the event loop.
+ * Unref'd, it let Node exit 0 in the middle of the install: no status table, and none of the
+ * collected notes, including the warning that says launchd will not supervise the service.
+ * Holding a reference for a few hundred milliseconds is the entire cost of not doing that.
+ */
 export function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
-    const t = setTimeout(resolve, ms);
-    if (typeof t.unref === 'function') t.unref();
+    setTimeout(resolve, ms);
   });
 }
 
