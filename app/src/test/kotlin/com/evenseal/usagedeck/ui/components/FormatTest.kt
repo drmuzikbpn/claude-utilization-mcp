@@ -87,6 +87,15 @@ class FormatTest {
     }
 
     @Test
+    fun `resetCountdown shows the two largest units, compact`() {
+        assertEquals("2d03h", Format.resetCountdown(now.plusSeconds(2 * 86_400 + 3 * 3_600 + 59 * 60), now))
+        assertEquals("1h36m", Format.resetCountdown(now.plusSeconds(3_600 + 36 * 60 + 12), now))
+        assertEquals("36m12s", Format.resetCountdown(now.plusSeconds(36 * 60 + 12), now))
+        assertEquals("0m00s", Format.resetCountdown(now.minusSeconds(5), now))
+        assertEquals("—", Format.resetCountdown(null, now))
+    }
+
+    @Test
     fun `countdown is minutes and padded seconds`() {
         assertEquals("0:42", Format.countdown(now.plusSeconds(42), now))
         assertEquals("12:05", Format.countdown(now.plusSeconds(725), now))
