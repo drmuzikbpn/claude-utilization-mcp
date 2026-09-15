@@ -1034,6 +1034,17 @@ Ordering note for anyone reading `install()`: the explicit `kickstart` exists be
 thing that makes an ssh install produce a running daemon at all. It just must not treat "the
 job is already coming up" as a failure.
 
+**The same mistake, a third time, in the same function.** With the race fixed, the Studio's
+next install succeeded — and printed no warning, though `diagnose()` returned one correctly
+when called by hand a moment later. `diagnose()` read `launchctl print` first and returned
+`[]` on a non-zero exit; the installer calls it immediately after `bootstrap` + `kickstart`,
+and `print` can still be failing in that settling window. So the check computed the right
+answer and threw it away, on the one machine it was written for.
+
+The session type does not depend on the job being loaded, so it is now asked **first** and
+`print` is consulted only afterwards, for the pended line. Guarded by a test that fails
+against the old ordering.
+
 **What this cost, and the general shape of it.** Both §23.25 and this were introduced by
 work whose stated purpose was to make remote installs safer, and both made the remote-install
 path worse in a way that only showed on a real machine. The unit tests passed throughout:

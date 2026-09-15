@@ -248,23 +248,15 @@ export class LaunchdService implements ServiceManager {
    * diagnostic that fails must not fail an install.
    */
   async diagnose(): Promise<string[]> {
-    let out: string;
-    try {
-      const result = await this.exec('launchctl', ['print', this.target]);
-      if (result.code !== 0) return [];
-      out = result.stdout;
-    } catch {
-      return [];
-    }
     const remedy =
       'The daemon runs, and updates restart it, but launchd will NOT bring it back after a ' +
       'crash or a reboot. Re-run `claude-usage install` from a terminal on that machine\'s own ' +
       'desktop to get a self-healing service.';
-    // The job is down and launchd is declining to spawn it: the fault caught in the act.
-    if (/pended nondemand spawn/.test(out)) {
-      return [`launchd registered the service but will not start it on its own. ${remedy}`];
-    }
-    // The job is up, so it will print clean whether or not it is supervised. Ask the session.
+    // Session type first, and deliberately before any `launchctl print` (§23.26): the
+    // session is knowable whether or not the job is loaded, and `print` can fail transiently
+    // in the settling window right after a bootstrap — which is exactly when the installer
+    // asks. Gating the warning behind a successful print silently suppressed it on the Mac
+    // Studio's first successful install, on the one machine it was written for.
     const manager = await this.managerName();
     if (manager !== null && manager !== 'Aqua') {
       return [
@@ -273,6 +265,19 @@ export class LaunchdService implements ServiceManager {
           '`launchctl print` will look completely healthy while the daemon is up, so this ' +
           'warning is the only sign you will get.',
       ];
+    }
+    // GUI session: the job can still be pended from an earlier ssh install, and while it is
+    // down launchd says so outright. A print that fails here is genuinely no finding.
+    let out: string;
+    try {
+      const result = await this.exec('launchctl', ['print', this.target]);
+      if (result.code !== 0) return [];
+      out = result.stdout;
+    } catch {
+      return [];
+    }
+    if (/pended nondemand spawn/.test(out)) {
+      return [`launchd registered the service but will not start it on its own. ${remedy}`];
     }
     return [];
   }
