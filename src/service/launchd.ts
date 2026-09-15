@@ -226,71 +226,47 @@ export class LaunchdService implements ServiceManager {
   }
 
   /**
-   * `Aqua` when this process belongs to the GUI login session, `Background` or `StandardIO`
-   * over ssh. `null` when launchctl cannot say, which is treated as "no finding".
-   */
-  private async managerName(): Promise<string | null> {
-    try {
-      const result = await this.exec('launchctl', ['managername']);
-      return result.code === 0 ? result.stdout.trim() : null;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Problems that leave a *loaded, running* job unable to look after itself (§23.20, §23.25).
+   * Problems that leave a *loaded, running* job unable to look after itself (§23.20, §23.30).
    *
-   * The fault: bootstrapping from a non-GUI session — an `install` run over SSH — registers
-   * the job in `gui/<uid>` but leaves its spawns pended. `RunAtLoad` never fires, and neither
-   * does `KeepAlive`. Measured on the Mac Studio: `kill -9` on a job up well past
-   * `minimum runtime = 10` left it down for the full 60s watch with `runs` frozen at 7, while
-   * the same job on a locally-installed MacBook came back unattended in 5s (`runs` 15 → 16).
+   * The fault is real and measured. On one Mac, `kill -9` on a job up well past
+   * `minimum runtime = 10` left it down for a full 60 s watch with `runs` frozen, while the
+   * same job on a second Mac came back unattended in 5 s (`runs` 15 → 16). `kickstart` works
+   * on both, which is why it hides behind every manual fix and every install.
    *
-   * ## Why the `pended nondemand spawn` line is not enough (§23.25)
+   * ## What it is not (§23.30)
    *
-   * That line is only printed while the job is **not running**. `install()` ends with
-   * `kickstart -k`, so by the time the installer calls this the job is always up and the line
-   * is always gone — the check could never fire from the one code path that calls it. On the
-   * Studio, in one ssh session: zero matches for the phrase while running, then
-   * `pended nondemand spawn = semaphore` twenty seconds after a `kill -9`. A healthy machine
-   * and a broken one are byte-identical in `launchctl print` while both are up; `runs`,
-   * `properties = runatload` and `immediate reason` were all checked and none separate them
-   * (`immediate reason` only reports how the *current* instance was started — it flips to
-   * `non-ipc demand` on a healthy Mac after any `kickstart`).
+   * This function used to warn that the cause was an install from a non-GUI session, and to
+   * prescribe re-running `install` from the machine's own desktop. **Both were wrong.** The
+   * affected machine was then installed from its own desktop, as the console user, in an
+   * `Aqua` session — and the service stayed pended. launchd's own log gives the real reason:
    *
-   * So the readable signal at install time is the session this process is running in. That is
-   * also the honest one: it reports the cause, not a symptom that has already been papered
-   * over by the kickstart two lines earlier.
+   * ```
+   * pending spawn, domain in on-demand-only mode: com.github.drmuzikbpn.claude-usage
+   * ```
    *
-   * Note for anyone grepping by hand: match the whole phrase. `pended` is a substring of
-   * `started suspended = 0`, which every healthy job prints twice — a loose `grep -c pended`
-   * returns 2 on a perfectly good machine.
+   * That is a property of the `gui/<uid>` **domain**, not of the installing session. Ruled
+   * out with evidence: the launchd disabled database (`print-disabled` lists it on neither
+   * machine), session type (`Aqua` on both), console ownership (`/dev/console` owned by the
+   * logged-in user on both), screen lock, plist contents (identical), and install-before-login
+   * ordering (true on both).
+   *
+   * Three candidate install-time detectors were tested and all three are unusable:
+   * `launchctl managername` (the old one — false positive for an ssh install on a healthy
+   * domain, false negative for the case that actually bit), `immediate reason` (reports only
+   * how the current instance was started; a `kickstart` flips a healthy Mac to `non-ipc
+   * demand` and it still self-heals) and the domain's `on-demand count` (unchanged across
+   * bootout, bootstrap and kickstart of this job).
+   *
+   * So the only honest signal left is the symptom itself, and it is only printed while the
+   * job is **not running** — which an install never is, having just kickstarted it. This
+   * therefore stays quiet during a healthy-looking install rather than guessing. A check that
+   * cannot fire is worse than one that can; a check that fires with the wrong remedy is worse
+   * than both, and that is what shipped.
    *
    * Returns human-readable warnings, empty when nothing is wrong. Never throws: a
    * diagnostic that fails must not fail an install.
    */
   async diagnose(): Promise<string[]> {
-    const remedy =
-      'The daemon runs, and updates restart it, but launchd will NOT bring it back after a ' +
-      'crash or a reboot. Re-run `claude-usage install` from a terminal on that machine\'s own ' +
-      'desktop to get a self-healing service.';
-    // Session type first, and deliberately before any `launchctl print` (§23.26): the
-    // session is knowable whether or not the job is loaded, and `print` can fail transiently
-    // in the settling window right after a bootstrap — which is exactly when the installer
-    // asks. Gating the warning behind a successful print silently suppressed it on the Mac
-    // Studio's first successful install, on the one machine it was written for.
-    const manager = await this.managerName();
-    if (manager !== null && manager !== 'Aqua') {
-      return [
-        `this install ran from a non-GUI session (launchctl managername = ${manager}, typically ` +
-          `an ssh login), so launchd has pended the service's spawns. ${remedy} Note that ` +
-          '`launchctl print` will look completely healthy while the daemon is up, so this ' +
-          'warning is the only sign you will get.',
-      ];
-    }
-    // GUI session: the job can still be pended from an earlier ssh install, and while it is
-    // down launchd says so outright. A print that fails here is genuinely no finding.
     let out: string;
     try {
       const result = await this.exec('launchctl', ['print', this.target]);
@@ -299,8 +275,16 @@ export class LaunchdService implements ServiceManager {
     } catch {
       return [];
     }
+    // Match the whole phrase: `pended` is a substring of `started suspended = 0`, which every
+    // healthy job prints twice, so a loose grep reports a fault on a perfectly good machine.
     if (/pended nondemand spawn/.test(out)) {
-      return [`launchd registered the service but will not start it on its own. ${remedy}`];
+      return [
+        'launchd has pended this service\'s spawns: it is registered, but launchd will NOT ' +
+          'start it on its own after a crash or a reboot. The daemon runs when started, and ' +
+          'auto-update restarts it, so everything works until the process dies unattended. ' +
+          'The cause is a state of the `gui/<uid>` domain and is still under investigation — ' +
+          're-running `install` does not clear it. See docs/smoke-test.md section 8.',
+      ];
     }
     return [];
   }

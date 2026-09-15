@@ -348,14 +348,22 @@ is genuinely off — no `current` symlink, or `configure autoupdate off`.
   `deck-` tag outright, reporting *no update* rather than an error — an error would mask the
   next real daemon release, since `releases/latest` returns only one.
 
-### Installing on a remote machine
+### A macOS service launchd will not restart
 
-`claude-usage install` over ssh works, but macOS gives you a service launchd will **not**
-supervise: a LaunchAgent bootstrapped from a non-GUI session has its spawns pended, so
-`RunAtLoad` and `KeepAlive` never fire. The daemon runs, and auto-update restarts it, but
-launchd will not bring it back after a crash or a reboot. `install` detects this and says
-so. To get a self-healing service, run `install` from a terminal on that machine's own
-desktop — over Screen Sharing if need be.
+On some Macs the LaunchAgent is registered correctly and launchd still refuses to start it
+on its own: `launchctl print` shows `pended nondemand spawn`, and `RunAtLoad` and `KeepAlive`
+never fire. The daemon runs when started and auto-update restarts it, so everything works
+until the process dies unattended — then it stays down.
+
+launchd's log gives the reason as `pending spawn, domain in on-demand-only mode`, which is a
+state of the `gui/<uid>` domain rather than of the service. **The cause is not yet
+established and re-running `install` does not clear it** — including from the machine's own
+desktop, as the console user, in an `Aqua` session, which was measured. An earlier version of
+this section blamed installing over ssh; that was wrong.
+
+To tell whether a machine is affected, test the supervisor rather than the daemon — see
+[docs/smoke-test.md](docs/smoke-test.md) section 8. `kickstart` works on affected and healthy
+machines alike, which is why nothing else reveals it.
 
 ## Platform support
 

@@ -528,6 +528,7 @@ QA from the Android dashboard, and two Macs in daily use.
 | §23.27 | `install` exited 0 in the middle of its own verification (2026-09-15) |
 | §23.28 | The bootout race, measured instead of guessed (2026-09-15) |
 | §23.29 | A second `install` aborted on its own idempotency (2026-09-15) |
+| §23.30 | The ssh-install diagnosis was wrong (2026-09-15) |
 
 15 findings survived a 3-vote adversarial review (56 unique candidates). Where Part I
 conflicts with this section, this section wins.
@@ -1175,3 +1176,59 @@ different place — a late step failing loudly, or exiting silently, and destroy
 of the steps that already succeeded. An installer's output is not a courtesy; on a machine
 the user cannot easily inspect it is the only channel there is. Anything after the service
 step must degrade to a note.
+
+### §23.30 The ssh-install diagnosis was wrong (2026-09-15)
+
+§23.20 and §23.25 assert that a service launchd will not supervise is caused by installing
+from a non-GUI session, and that re-running `install` from the machine's own desktop repairs
+it. **Both claims are false.** They shipped in the installer's warning text, in `README.md`
+and in `docs/smoke-test.md`, and they sent a user to the machine three times to run a command
+that could not have worked.
+
+The disproof: `install` was run on the affected Mac from its own desktop, as the console
+user, in an `Aqua` session, completing cleanly and emitting no warning. `kill -9` then left
+the daemon down for a full 60 s watch with `runs` frozen. launchd's own log says why:
+
+```
+pending spawn, domain in on-demand-only mode: com.github.drmuzikbpn.claude-usage
+```
+
+That is a property of the `gui/<uid>` **domain**. The installing session was never the
+variable. The original evidence — an ssh-installed machine that was pended — was real, but
+"installed over ssh" and "pended" were two attributes of one machine, and I read a cause into
+the coincidence.
+
+Ruled out since, each with a measurement rather than an argument:
+
+| Candidate | Killed by |
+| --- | --- |
+| launchd disabled database | `launchctl print-disabled gui/<uid>`: absent on both machines |
+| Non-GUI install session | Both `Aqua`; affected machine installed from its own desktop |
+| Not the console user | `/dev/console` owned by the logged-in user on both |
+| Screen locked | No lock key present on either |
+| Plist or domain differences | Both prints 77 lines, identical but for the node path |
+| Installed before login | True on both; the healthy Mac's console login predates its install |
+| `immediate reason` | Reports how the *current* instance started; a `kickstart` flips a healthy Mac to `non-ipc demand` and it still self-heals |
+| Domain `on-demand count` | Unchanged across bootout, bootstrap and kickstart of this job |
+
+**Consequence for the code.** `diagnose()` no longer reads `launchctl managername`. That
+detector was wrong in both directions: a false positive for an ssh install on a healthy
+domain, and a false negative for the case that actually bit. What remains is the
+`pended nondemand spawn` phrase, which is definitive but only printed while the job is not
+running — so the check stays quiet during an install rather than guessing, and the warning
+describes the symptom without prescribing a remedy that was measured not to work.
+
+A check that cannot fire is worse than one that can. A check that fires with the wrong remedy
+is worse than both.
+
+**Open.** The cause of the domain state, and therefore the repair. The untried candidate is a
+reboot, which rebuilds the domain; that is a measurement, not a theory, and this section will
+say which it turned out to be.
+
+**The method failure, stated plainly.** §23.25 through §23.29 were five real defects found and
+fixed in one evening, every one of them uncovered by running the thing on a real machine. This
+section is the sixth finding and it invalidates the premise the first two were written under.
+The common cause is not haste — it is that I repeatedly inferred a mechanism from a single
+correlation and shipped the inference with a confident remedy attached. `/usr/bin/log show`
+was available from the first minute and answered the question outright. Ask the system what it
+is doing before telling a user what to do about it.
