@@ -99,6 +99,10 @@ pre-release once the signing secrets exist; until then it only tests.
 - List rows animate with `animateItem` + `liftOnReorder(rowRank(project, row))`. Rank by project slot,
   never by a running row index: a running index makes every row below a fold or a new session "move"
   and blink.
+- Run the instrumented suite with the emulator's *sensor* in portrait: `adb -s emulator-5554 emu sensor get acceleration`
+  must read `0:9.81:0` (`emu rotate` cycles it). The launcher can look portrait while the test activity,
+  which follows the sensor, opens landscape, and `WifiScreenTest` then fails because its fourth
+  network row is below the fold.
 - Compose: `Modifier.clickable` merges descendant semantics, so pause buttons inside a clickable
   row are only addressable with `useUnmergedTree = true`.
 - Android 10 returns an **empty** wifi scan list without location permission rather than throwing.
