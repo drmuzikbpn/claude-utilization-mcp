@@ -525,6 +525,7 @@ QA from the Android dashboard, and two Macs in daily use.
 | §23.24 | A session we watched stop must not come back to life (2026-09-14) |
 | §23.25 | The §23.20 check could never fire from an install (2026-09-14) |
 | §23.26 | `install` lost a race with its own `bootout` (2026-09-14) |
+| §23.27 | `install` exited 0 in the middle of its own verification (2026-09-15) |
 
 15 findings survived a 3-vote adversarial review (56 unique candidates). Where Part I
 conflicts with this section, this section wins.
@@ -1050,3 +1051,44 @@ work whose stated purpose was to make remote installs safer, and both made the r
 path worse in a way that only showed on a real machine. The unit tests passed throughout:
 `fakeExec` returns exit 0 for everything, so no test had ever exercised a launchctl that
 answers `EALREADY`. A fake that always succeeds cannot catch a race.
+
+### §23.27 `install` exited 0 in the middle of its own verification (2026-09-15)
+
+With §23.26 fixed, three consecutive installs on the Mac Studio succeeded — and each one's
+output stopped dead after `mcp: registered via direct merge`. No status table. No notes. No
+§23.25 warning, though `diagnose()` returned it correctly when called by hand seconds later.
+Exit code 0 every time.
+
+`defaultSleep` unref'd its timer:
+
+```ts
+const t = setTimeout(resolve, ms);
+if (typeof t.unref === 'function') t.unref();
+```
+
+`verifyHealth` polls `/health` every 250 ms for 5 s. When the daemon has not finished
+starting, the probe fails fast — a refused connection leaves no lingering handle — so that
+retry timer is the **only** thing on the event loop, and an unref'd timer does not hold the
+process open. Node ran out of work and exited 0, mid-`await`, before
+
+- the verification result (so a daemon that never came up was reported as a clean install),
+- the status table,
+- and every collected note, the "launchd will not supervise this service" warning among them.
+
+It reproduces only when the daemon is slow enough to need a second probe, which is why no
+local install ever showed it and three remote ones in a row did.
+
+The timer is no longer unref'd. Holding a reference for a few hundred milliseconds is the
+whole cost. `defaultSleep` is used by nothing else.
+
+**Coverage.** `verifyHealth` and `defaultSleep` had no tests at all — the step whose entire
+job is to notice that an install did not work was the least-tested code in the installer.
+`test/install/verify-health.test.ts` now covers the probe/sleep sequence, the give-up budget,
+and the ref-held invariant; that last one fails against the old implementation.
+
+**Why three bugs in one evening all hid the same way.** §23.25, §23.26 and this one were each
+introduced by work meant to make remote installs safer, and each made the remote path worse
+while every test stayed green. `fakeExec` returns exit 0 for every command, and `io.sleep` is
+injected in every test that reaches it, so the suite has never seen a launchctl that says
+"not yet" nor a real timer. Three different bugs, one blind spot: the tests model the happy
+path of a subsystem whose entire purpose is the unhappy one.
