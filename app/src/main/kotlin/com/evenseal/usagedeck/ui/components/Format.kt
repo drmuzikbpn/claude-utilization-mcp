@@ -58,6 +58,24 @@ object Format {
     /** `macbook-pro-10.tail42c6d2.ts.net` → `macbook-pro-10`; a plain hostname is unchanged. */
     fun hostShort(name: String): String = name.substringBefore('.')
 
+    /**
+     * Time to a reset as its two largest units, compact: `2d03h`, `1h36m`, `36m12s`; `0m00s` once
+     * the reset has passed and `—` when the daemon gave no reset time.
+     */
+    fun resetCountdown(until: Instant?, now: Instant): String {
+        if (until == null) return "—"
+        val seconds = Duration.between(now, until).seconds.coerceAtLeast(0)
+        val days = seconds / 86_400
+        val hours = seconds / 3_600 % 24
+        val minutes = seconds / 60 % 60
+        val secs = seconds % 60
+        return when {
+            days > 0 -> "${days}d${hours.toString().padStart(2, '0')}h"
+            hours > 0 -> "${hours}h${minutes.toString().padStart(2, '0')}m"
+            else -> "${minutes}m${secs.toString().padStart(2, '0')}s"
+        }
+    }
+
     /** `0:42`, `12:05`; a deadline already gone reads `0:00`. */
     fun countdown(until: Instant, now: Instant): String {
         val seconds = Duration.between(now, until).seconds.coerceAtLeast(0)

@@ -3,7 +3,9 @@ package com.evenseal.usagedeck.ui
 import android.content.res.Configuration
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.evenseal.usagedeck.core.model.TeamState
@@ -34,6 +36,13 @@ class WideDockScreenTest {
         showLandscape(fakeViewModel())
         compose.onNodeWithText("42").assertExists()
         compose.onNodeWithText("77").assertExists()
+    }
+
+    @Test
+    fun eachRingCountsDownToItsReset() {
+        showLandscape(fakeViewModel())
+        // Every fixture limit resets 2 h 33 m after Fx.NOW: two people, two rings each.
+        compose.onAllNodesWithText("2h33m").assertCountEquals(4)
     }
 
     @Test

@@ -27,6 +27,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -52,7 +54,6 @@ import com.evenseal.usagedeck.ui.ledger.homeSecondary
 import com.evenseal.usagedeck.ui.theme.DeckColors
 import com.evenseal.usagedeck.ui.theme.DeckType
 import java.time.Instant
-import java.time.ZoneId
 
 /**
  * Landscape home (spec §11.2). The rail carries numbers big enough to read from the other side
@@ -210,27 +211,11 @@ private fun RailUser(user: UserView, name: String, now: Instant) {
             letterSpacing = 1.2.sp
         )
         // Each figure sits centred in a ring that closes as the window fills (a full circle is
-        // 100 %); the two rings share a bottom edge.
+        // 100 %); the two rings share a bottom edge and each counts down to its own reset.
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            RingNumber(
-                limit = user.fiveHour,
-                size = FIVE_HOUR_SP,
-                ring = FIVE_HOUR_RING
-            )
-            RingNumber(
-                limit = user.sevenDay,
-                size = SEVEN_DAY_SP,
-                ring = SEVEN_DAY_RING
-            )
+            RingNumber(limit = user.fiveHour, size = FIVE_HOUR_SP, ring = FIVE_HOUR_RING, now = now)
+            RingNumber(limit = user.sevenDay, size = SEVEN_DAY_SP, ring = SEVEN_DAY_RING, now = now)
         }
-        Text(
-            text = "5h ${Format.resetsShort(user.fiveHour?.resetsAt, now, ZoneId.systemDefault())} · " +
-                "7d ${Format.resetsShort(user.sevenDay?.resetsAt, now, ZoneId.systemDefault())}",
-            color = DeckColors.dim,
-            fontFamily = DeckType.mono,
-            fontSize = 10.sp,
-            maxLines = 1
-        )
     }
 }
 
@@ -239,35 +224,49 @@ private fun RailUser(user: UserView, name: String, now: Instant) {
  * behind it is the same percent as an arc from twelve o'clock, on a faint full-circle track.
  */
 @Composable
-private fun RingNumber(limit: Limit?, size: Int, ring: Dp, modifier: Modifier = Modifier) {
+private fun RingNumber(limit: Limit?, size: Int, ring: Dp, now: Instant, modifier: Modifier = Modifier) {
     val color = limit?.let { DeckColors.of(it.status) } ?: DeckColors.dim
     val fraction = (limit?.percent ?: 0).coerceIn(0, 100) / 100f
     val track = DeckColors.line
-    Box(modifier = modifier.size(ring), contentAlignment = Alignment.Center) {
-        Canvas(modifier = Modifier.matchParentSize()) {
-            val stroke = RING_STROKE.toPx()
-            val inset = stroke / 2
-            val arcSize = Size(this.size.width - stroke, this.size.height - stroke)
-            drawArc(track, 0f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(stroke))
-            if (fraction > 0f) {
-                drawArc(
-                    color,
-                    -90f,
-                    360f * fraction,
-                    false,
-                    Offset(inset, inset),
-                    arcSize,
-                    style = Stroke(stroke, cap = StrokeCap.Round)
-                )
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Box(modifier = Modifier.size(ring), contentAlignment = Alignment.Center) {
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val stroke = RING_STROKE.toPx()
+                val inset = stroke / 2
+                val arcSize = Size(this.size.width - stroke, this.size.height - stroke)
+                drawArc(track, 0f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(stroke))
+                if (fraction > 0f) {
+                    drawArc(
+                        color,
+                        -90f,
+                        360f * fraction,
+                        false,
+                        Offset(inset, inset),
+                        arcSize,
+                        style = Stroke(stroke, cap = StrokeCap.Round)
+                    )
+                }
             }
+            Text(
+                text = limit?.percent?.toString() ?: "—",
+                color = color,
+                fontFamily = DeckType.numeral,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = size.sp,
+                lineHeight = size.sp
+            )
         }
         Text(
-            text = limit?.percent?.toString() ?: "—",
-            color = color,
-            fontFamily = DeckType.numeral,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = size.sp,
-            lineHeight = size.sp
+            text = Format.resetCountdown(limit?.resetsAt, now),
+            color = DeckColors.dim,
+            fontFamily = DeckType.mono,
+            fontSize = 11.sp,
+            maxLines = 1,
+            modifier = Modifier.semantics { contentDescription = "$RESET_COUNTDOWN ${limit?.id ?: "none"}" }
         )
     }
 }
@@ -279,3 +278,6 @@ private const val SEVEN_DAY_SP = 26
 private val FIVE_HOUR_RING = 104.dp
 private val SEVEN_DAY_RING = 60.dp
 private val RING_STROKE = 5.dp
+
+/** Content description prefix of a ring's reset countdown; the limit id follows. */
+const val RESET_COUNTDOWN = "resets in"
