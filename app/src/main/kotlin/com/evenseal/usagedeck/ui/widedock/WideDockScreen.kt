@@ -1,13 +1,16 @@
 package com.evenseal.usagedeck.ui.widedock
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -21,8 +24,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -202,9 +209,19 @@ private fun RailUser(user: UserView, name: String, now: Instant) {
             fontSize = 11.sp,
             letterSpacing = 1.2.sp
         )
+        // Each figure sits centred in a ring that closes as the window fills (a full circle is
+        // 100 %); the two rings share a bottom edge.
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            BigNumber(limit = user.fiveHour, size = FIVE_HOUR_SP)
-            BigNumber(limit = user.sevenDay, size = SEVEN_DAY_SP)
+            RingNumber(
+                limit = user.fiveHour,
+                size = FIVE_HOUR_SP,
+                ring = FIVE_HOUR_RING
+            )
+            RingNumber(
+                limit = user.sevenDay,
+                size = SEVEN_DAY_SP,
+                ring = SEVEN_DAY_RING
+            )
         }
         Text(
             text = "5h ${Format.resetsShort(user.fiveHour?.resetsAt, now, ZoneId.systemDefault())} · " +
@@ -217,21 +234,48 @@ private fun RailUser(user: UserView, name: String, now: Instant) {
     }
 }
 
-/** The percent alone is the headline; no `%` sign, colour carries the state (mockup D). */
+/**
+ * The percent alone is the headline; no `%` sign, colour carries the state (mockup D). The ring
+ * behind it is the same percent as an arc from twelve o'clock, on a faint full-circle track.
+ */
 @Composable
-private fun BigNumber(limit: Limit?, size: Int) {
+private fun RingNumber(limit: Limit?, size: Int, ring: Dp, modifier: Modifier = Modifier) {
     val color = limit?.let { DeckColors.of(it.status) } ?: DeckColors.dim
-    Text(
-        text = limit?.percent?.toString() ?: "—",
-        color = color,
-        fontFamily = DeckType.numeral,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = size.sp,
-        lineHeight = size.sp
-    )
+    val fraction = (limit?.percent ?: 0).coerceIn(0, 100) / 100f
+    val track = DeckColors.line
+    Box(modifier = modifier.size(ring), contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val stroke = RING_STROKE.toPx()
+            val inset = stroke / 2
+            val arcSize = Size(this.size.width - stroke, this.size.height - stroke)
+            drawArc(track, 0f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(stroke))
+            if (fraction > 0f) {
+                drawArc(
+                    color,
+                    -90f,
+                    360f * fraction,
+                    false,
+                    Offset(inset, inset),
+                    arcSize,
+                    style = Stroke(stroke, cap = StrokeCap.Round)
+                )
+            }
+        }
+        Text(
+            text = limit?.percent?.toString() ?: "—",
+            color = color,
+            fontFamily = DeckType.numeral,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = size.sp,
+            lineHeight = size.sp
+        )
+    }
 }
 
 private val RAIL_WIDTH = 200.dp
 private const val STALE_ALPHA = 0.55f
-private const val FIVE_HOUR_SP = 64
-private const val SEVEN_DAY_SP = 30
+private const val FIVE_HOUR_SP = 56
+private const val SEVEN_DAY_SP = 26
+private val FIVE_HOUR_RING = 104.dp
+private val SEVEN_DAY_RING = 60.dp
+private val RING_STROKE = 5.dp
