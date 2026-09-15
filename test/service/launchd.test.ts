@@ -98,6 +98,58 @@ describe('launchctl commands', () => {
     expect(exec.lines().at(-1)).toBe(`launchctl kickstart -k gui/501/${LAUNCHD_LABEL}`);
   });
 
+  /**
+   * §23.26. `launchctl bootout` returns before the job is actually gone, and anything that
+   * lands in that window fails with `EALREADY` (errno 37). Observed on the Mac Studio during
+   * the very install that was meant to repair it: `bootout` succeeded, the re-`bootstrap`
+   * failed silently into the tolerate branch, `kickstart -k` then died with exit 37, and the
+   * install aborted leaving **nothing loaded** — the daemon down and the LaunchAgent
+   * unregistered. Tolerating the bootstrap is not enough when the failure is a race we can
+   * simply wait out.
+   */
+  it('retries a bootstrap that lost the race with its own bootout', async () => {
+    const h = tempHome();
+    let bootstraps = 0;
+    const exec = fakeExec((f, a) => {
+      if (a[0] !== 'bootstrap') return undefined;
+      bootstraps += 1;
+      return bootstraps < 3 ? { code: 37, stderr: 'Operation already in progress' } : undefined;
+    });
+    const svc = new LaunchdService({ env: h.env, exec: exec.runner, uid: 501, retryWaitMs: 0 });
+    await expect(svc.install(unit())).resolves.toBeUndefined();
+    expect(bootstraps).toBe(3);
+    // And it still went on to start the job rather than stopping at the successful bootstrap.
+    expect(exec.lines().at(-1)).toBe(`launchctl kickstart -k gui/501/${LAUNCHD_LABEL}`);
+  });
+
+  it('gives up retrying rather than looping forever', async () => {
+    const h = tempHome();
+    let bootstraps = 0;
+    const exec = fakeExec((f, a) => {
+      if (a[0] !== 'bootstrap') return undefined;
+      bootstraps += 1;
+      return { code: 37, stderr: 'Operation already in progress' };
+    });
+    const svc = new LaunchdService({ env: h.env, exec: exec.runner, uid: 501, retryWaitMs: 0 });
+    // Still tolerated: a bootstrap failure must never abort an install after the bootout.
+    await expect(svc.install(unit())).resolves.toBeUndefined();
+    expect(bootstraps).toBeLessThanOrEqual(5);
+  });
+
+  /**
+   * In a GUI session `RunAtLoad` fires on its own, so the explicit `kickstart -k` can arrive
+   * while launchd is already starting the job and come back `EALREADY`. That is the job
+   * starting, not failing — treating it as failure is what aborted the Studio's install.
+   */
+  it('accepts EALREADY from kickstart: the job is already on its way up', async () => {
+    const h = tempHome();
+    const exec = fakeExec((f, a) =>
+      a[0] === 'kickstart' ? { code: 37, stderr: 'Operation already in progress' } : undefined,
+    );
+    const svc = new LaunchdService({ env: h.env, exec: exec.runner, uid: 501, retryWaitMs: 0 });
+    await expect(svc.install(unit())).resolves.toBeUndefined();
+  });
+
   it('throws ServiceError when the job cannot be started at all', async () => {
     const h = tempHome();
     const exec = fakeExec((f, a) => (a[0] === 'kickstart' ? { code: 3, stderr: 'No such process' } : undefined));

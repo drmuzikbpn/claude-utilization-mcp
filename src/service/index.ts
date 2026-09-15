@@ -94,6 +94,8 @@ export interface ServiceManagerOptions {
   platform?: NodeJS.Platform | string;
   /** launchd domain target uses the real uid unless overridden (tests). */
   uid?: number;
+  /** Pause between launchd bootstrap retries (§23.26); 0 in tests. */
+  retryWaitMs?: number;
 }
 
 /** Pick the manager for the platform; anything but darwin/linux gets the noop. */
