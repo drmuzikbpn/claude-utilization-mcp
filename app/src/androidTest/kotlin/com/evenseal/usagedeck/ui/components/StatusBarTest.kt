@@ -50,7 +50,9 @@ class StatusBarTest {
     fun noMachinesStillShowsWifiAndClock() {
         show(emptyList())
 
-        compose.onNodeWithText("deck ▂▄▆·").assertIsDisplayed()
+        compose.onNodeWithText("▂▄▆·").assertIsDisplayed()
+        compose.onNodeWithText("deck", substring = true).assertDoesNotExist()
+        compose.onNodeWithContentDescription("$WIFI_CHIP deck").assertIsDisplayed()
         compose.onNodeWithText("12:00").assertIsDisplayed()
         compose.onAllNodesWithContentDescription(MACHINE_CHIP, substring = true).assertCountEquals(0)
     }

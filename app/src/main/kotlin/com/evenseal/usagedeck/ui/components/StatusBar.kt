@@ -56,10 +56,12 @@ fun StatusBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
+        // Bars only: the network's name is on the Wifi screen a tap away and only crowds the bar.
         Chip(
-            text = if (wifi.connected) "${wifi.ssid.orEmpty()} ${bars(wifi.bars)}" else "no wifi",
+            text = if (wifi.connected) bars(wifi.bars) else "no wifi",
             dot = if (wifi.connected) DeckColors.ok else DeckColors.crit,
-            onClick = onWifi
+            onClick = onWifi,
+            modifier = Modifier.semantics { contentDescription = "$WIFI_CHIP ${wifi.ssid ?: "off"}" }
         )
 
         // Everything between wifi and the clock shares one flexible region, so the clock keeps its
@@ -142,6 +144,9 @@ fun Chip(
 
 /** Prefix of every machine chip's content description, so tests and talkback can find one by name. */
 const val MACHINE_CHIP = "machine"
+
+/** Content description prefix of the wifi chip; the SSID follows it, since the text is bars only. */
+const val WIFI_CHIP = "wifi"
 
 private fun dotColor(health: Health): Color = when (health) {
     Health.FRESH -> DeckColors.ok

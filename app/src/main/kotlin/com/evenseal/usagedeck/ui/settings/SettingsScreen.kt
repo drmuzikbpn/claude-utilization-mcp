@@ -128,7 +128,7 @@ fun SettingsScreen(
         Section("Display")
         ToggleRow(
             label = "Keep screen on",
-            description = "Hold the screen on even when unplugged.",
+            description = "Hold the screen on even when unplugged. On power it never dims.",
             checked = settings.keepScreenOn,
             onChange = { on -> onUpdate { it.copy(keepScreenOn = on) } }
         )

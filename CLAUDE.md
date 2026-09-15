@@ -84,6 +84,9 @@ pre-release once the signing secrets exist; until then it only tests.
   the next tool at the gate; `pause.frozenPids` never holds the session pid and an empty list under a
   hard rule is normal. `pause.freezes` ≥ 2 means re-frozen under a standing rule (rendered "frozen again ×N").
   On 0.1.65 and earlier the freeze SIGSTOPs the TUI itself; zsh shows "suspended (signal)" and needs `fg`.
+- `STAY_ON_WHILE_PLUGGED_IN` only stops the screen turning off; Android still dims it after the
+  inactivity timeout. `ScreenHold` keeps `FLAG_KEEP_SCREEN_ON` whenever the deck is on power (adaptive
+  brightness still works), and on battery only when "Keep screen on" is set.
 - A self-update kills the process and Android never restarts a HOME activity on its own; `LockTaskReceiver`
   relaunches the deck on `MY_PACKAGE_REPLACED`. The first unattended update (0.1.55) sat on the stock launcher without it.
 - Compose: `Modifier.clickable` merges descendant semantics, so pause buttons inside a clickable
