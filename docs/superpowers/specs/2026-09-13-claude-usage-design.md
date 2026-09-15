@@ -524,6 +524,7 @@ QA from the Android dashboard, and two Macs in daily use.
 | §23.23 | Registration gets its own deadline, and a retry (2026-09-14) |
 | §23.24 | A session we watched stop must not come back to life (2026-09-14) |
 | §23.25 | The §23.20 check could never fire from an install (2026-09-14) |
+| §23.26 | `install` lost a race with its own `bootout` (2026-09-14) |
 
 15 findings survived a 3-vote adversarial review (56 unique candidates). Where Part I
 conflicts with this section, this section wins.
@@ -998,3 +999,43 @@ fine. Caught by the Studio-side session during this work, before it reached the 
 **Still open, and not fixable from here.** The Studio's service remains unsupervised: the
 repair needs an `install` from that machine's own desktop, which is a GUI session no ssh
 login can reach without root. What changed is that the installer now says so.
+
+### §23.26 `install` lost a race with its own `bootout` (2026-09-14)
+
+The first desktop `install` on the Mac Studio — the one §23.25 exists to make people run —
+failed and left the machine **worse than it started**: daemon down, LaunchAgent not
+registered at all.
+
+```
+ServiceError: launchctl kickstart -k gui/501/com.github.drmuzikbpn.claude-usage failed (exit 37)
+```
+
+Exit 37 is `EALREADY`. `launchctl bootout` returns before launchd has finished tearing the
+job down, and anything landing in that window gets it. The sequence was: `bootout` succeeded
+→ `bootstrap` hit the tail of it and failed into the *tolerate* branch, silently →
+`kickstart -k` failed the same way and, not being tolerated, threw → `runInstall` aborted
+before the hooks, the MCP registration and the §23.25 diagnostic. Nothing was loaded
+afterwards: `launchctl print` reported the service as not found.
+
+The tolerate-on-bootstrap rule came from the right instinct — "aborting after the bootout is
+worse than a redundant load" (§23.9) — but tolerating is the wrong response to a *race*.
+A race should be waited out.
+
+- `bootstrap` is retried up to `BOOTSTRAP_ATTEMPTS` (5) times, `BOOTSTRAP_RETRY_WAIT_MS`
+  (400 ms) apart, but **only** on `EALREADY`. Any other failure is tolerated exactly as
+  before, and the retries give up rather than looping.
+- `kickstart -k` now accepts `EALREADY` as success. In a GUI session `RunAtLoad` genuinely
+  fires, so the explicit kickstart can arrive while launchd is already starting the job —
+  which means this failure mode gets *more* likely on precisely the machines where the
+  install is finally being done correctly. Every other kickstart failure still throws.
+
+Ordering note for anyone reading `install()`: the explicit `kickstart` exists because
+`RunAtLoad` does **not** fire from a non-GUI session (§23.20). It is not redundant; it is the
+thing that makes an ssh install produce a running daemon at all. It just must not treat "the
+job is already coming up" as a failure.
+
+**What this cost, and the general shape of it.** Both §23.25 and this were introduced by
+work whose stated purpose was to make remote installs safer, and both made the remote-install
+path worse in a way that only showed on a real machine. The unit tests passed throughout:
+`fakeExec` returns exit 0 for everything, so no test had ever exercised a launchctl that
+answers `EALREADY`. A fake that always succeeds cannot catch a race.

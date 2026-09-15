@@ -68,6 +68,13 @@ ${envKeys.map((k) => `\t\t<key>${xml(k)}</key>\n\t\t<string>${xml(unit.env[k] ??
 `;
 }
 
+/** errno 37, `EALREADY` — launchctl's answer while a previous operation is still settling. */
+const EALREADY = 37;
+/** How many times to re-attempt a bootstrap that raced its own bootout (§23.26). */
+const BOOTSTRAP_ATTEMPTS = 5;
+/** Pause between those attempts. */
+const BOOTSTRAP_RETRY_WAIT_MS = 400;
+
 /** macOS `launchctl` (per-user GUI domain) implementation of `ServiceManager`. */
 export class LaunchdService implements ServiceManager {
   readonly kind = 'launchd' as const;
@@ -78,6 +85,8 @@ export class LaunchdService implements ServiceManager {
   readonly stderrLog: string;
   private readonly exec: ExecRunner;
   private readonly uid: number;
+  /** Pause between bootstrap retries; 0 in tests. */
+  private readonly retryWaitMs: number;
 
   constructor(opts: ServiceManagerOptions & { label?: string } = {}) {
     const env = opts.env ?? process.env;
@@ -88,6 +97,7 @@ export class LaunchdService implements ServiceManager {
     this.stderrLog = join(this.logDir, 'daemon.err.log');
     this.exec = opts.exec ?? defaultExec;
     this.uid = opts.uid ?? (typeof process.getuid === 'function' ? process.getuid() : 0);
+    this.retryWaitMs = opts.retryWaitMs ?? BOOTSTRAP_RETRY_WAIT_MS;
   }
 
   /** `gui/<uid>` — the domain target. */
@@ -132,12 +142,39 @@ export class LaunchdService implements ServiceManager {
     });
     // bootout first so a re-run picks up the rewritten plist; not being loaded is fine.
     await this.run(['bootout', this.target], true);
-    // Tolerate a bootstrap that reports the job already loaded: booting it out and failing
-    // to bootstrap would leave the daemon DOWN, which is worse than a redundant load.
-    await this.run(['bootstrap', this.domain, this.unitPath], true);
+    await this.bootstrapWithRetry();
     // RunAtLoad does not reliably start the job when bootstrapping from a non-GUI session
     // (e.g. over SSH), so ask for it explicitly; this is also what makes install idempotent.
-    await this.run(['kickstart', '-k', this.target]);
+    // In a GUI session RunAtLoad *does* fire, so this can arrive while launchd is already
+    // starting the job and come back EALREADY — that is the job starting, not failing.
+    const kick = await this.exec('launchctl', ['kickstart', '-k', this.target]);
+    if (kick.code !== 0 && kick.code !== EALREADY) {
+      throw new ServiceError(`launchctl kickstart -k ${this.target} failed (exit ${String(kick.code)})`, kick);
+    }
+  }
+
+  /**
+   * Bootstrap the job, waiting out the tail of our own `bootout` (§23.26).
+   *
+   * `launchctl bootout` returns before launchd has finished tearing the job down, and
+   * anything that lands in that window fails with `EALREADY` (errno 37). On the Mac Studio
+   * this bit during the desktop install meant to repair it: the bootstrap failed into the
+   * tolerate branch, `kickstart` then failed too, and the install aborted having booted the
+   * service out and never put it back — daemon down, LaunchAgent unregistered.
+   *
+   * A race is worth waiting out rather than tolerating. Other failures stay tolerated for the
+   * original reason: aborting after the bootout is what leaves the daemon down.
+   */
+  private async bootstrapWithRetry(): Promise<void> {
+    for (let attempt = 0; attempt < BOOTSTRAP_ATTEMPTS; attempt += 1) {
+      const result = await this.exec('launchctl', ['bootstrap', this.domain, this.unitPath]);
+      if (result.code === 0 || result.code !== EALREADY) return;
+      if (attempt < BOOTSTRAP_ATTEMPTS - 1 && this.retryWaitMs > 0) {
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, this.retryWaitMs).unref?.();
+        });
+      }
+    }
   }
 
   async uninstall(): Promise<void> {
