@@ -84,6 +84,8 @@ pre-release once the signing secrets exist; until then it only tests.
   the next tool at the gate; `pause.frozenPids` never holds the session pid and an empty list under a
   hard rule is normal. `pause.freezes` ≥ 2 means re-frozen under a standing rule (rendered "frozen again ×N").
   On 0.1.65 and earlier the freeze SIGSTOPs the TUI itself; zsh shows "suspended (signal)" and needs `fg`.
+- A self-update kills the process and Android never restarts a HOME activity on its own; `LockTaskReceiver`
+  relaunches the deck on `MY_PACKAGE_REPLACED`. The first unattended update (0.1.55) sat on the stock launcher without it.
 - Compose: `Modifier.clickable` merges descendant semantics, so pause buttons inside a clickable
   row are only addressable with `useUnmergedTree = true`.
 - Android 10 returns an **empty** wifi scan list without location permission rather than throwing.
