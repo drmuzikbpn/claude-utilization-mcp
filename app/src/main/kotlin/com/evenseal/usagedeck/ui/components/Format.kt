@@ -89,7 +89,10 @@ object Format {
      */
     fun resetCountdown(until: Instant?, now: Instant): String {
         if (until == null) return "—"
-        val seconds = Duration.between(now, until).seconds.coerceAtLeast(0)
+        val seconds = Duration.between(now, until).seconds
+        // The daemon only learns the new window from the next request, so a reset time that has
+        // gone by means "rolls over on the next call", not "zero left".
+        if (seconds <= 0) return "due"
         val days = seconds / 86_400
         val hours = seconds / 3_600 % 24
         val minutes = seconds / 60 % 60

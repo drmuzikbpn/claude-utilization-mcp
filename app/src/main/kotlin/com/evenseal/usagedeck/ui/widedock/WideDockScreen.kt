@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -48,8 +49,11 @@ import com.evenseal.usagedeck.ui.components.HomeEmpty
 import com.evenseal.usagedeck.ui.components.HomeEmptyBody
 import com.evenseal.usagedeck.ui.components.MachineWaitRow
 import com.evenseal.usagedeck.ui.components.PrimaryButton
+import com.evenseal.usagedeck.ui.components.REORDER_SLIDE
 import com.evenseal.usagedeck.ui.components.SessionRow
 import com.evenseal.usagedeck.ui.components.StatusBar
+import com.evenseal.usagedeck.ui.components.liftOnReorder
+import com.evenseal.usagedeck.ui.components.rowRank
 import com.evenseal.usagedeck.ui.components.usersWithData
 import com.evenseal.usagedeck.ui.ledger.homeNavigation
 import com.evenseal.usagedeck.ui.theme.DeckColors
@@ -109,24 +113,31 @@ fun WideDockScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
                     )
                 } else {
                     ColumnHeader(liveCount = team.liveSessionCount)
+                    // Rank by project slot then session slot, so a session arriving in one project
+                    // does not read as a move for every row of the projects below it.
+                    val rows = team.projects.filter { it.sessions.isNotEmpty() }.flatMapIndexed { rank, project ->
+                        project.sessions.mapIndexed { i, session -> Triple(project, session, rowRank(rank, i)) }
+                    }
                     LazyColumn(modifier = Modifier.weight(1f)) {
-                        team.projects.filter { it.sessions.isNotEmpty() }.forEach { project ->
-                            items(project.sessions, key = { "${project.machineId}:${it.sessionId}" }) { session ->
-                                val target = PauseTarget.Session(project.machineId, session.sessionId)
-                                SessionRow(
-                                    session = session,
-                                    rate = vm.rate(project.machineId, session.sessionId),
-                                    series = vm.series(project.machineId, session.sessionId),
-                                    machineName = if (showMachine) team.machine(project.machineId)?.name else null,
-                                    visual = vm.visual(target),
-                                    now = now,
-                                    onTap = { vm.tap(target) },
-                                    onHold = { vm.hold(target) },
-                                    onOpen = { onOpen(Route.Project(project.machineId, project.key)) },
-                                    headline = project.name,
-                                    compact = true
-                                )
-                            }
+                        items(
+                            rows,
+                            key = { (project, session, _) -> "${project.machineId}:${session.sessionId}" }
+                        ) { (project, session, rank) ->
+                            val target = PauseTarget.Session(project.machineId, session.sessionId)
+                            SessionRow(
+                                session = session,
+                                rate = vm.rate(project.machineId, session.sessionId),
+                                series = vm.series(project.machineId, session.sessionId),
+                                machineName = if (showMachine) team.machine(project.machineId)?.name else null,
+                                visual = vm.visual(target),
+                                now = now,
+                                onTap = { vm.tap(target) },
+                                onHold = { vm.hold(target) },
+                                onOpen = { onOpen(Route.Project(project.machineId, project.key)) },
+                                modifier = Modifier.animateItem(placementSpec = REORDER_SLIDE).liftOnReorder(rank),
+                                headline = project.name,
+                                compact = true
+                            )
                         }
                     }
                 }
@@ -197,7 +208,7 @@ private fun Rail(
                     fontFamily = DeckType.text,
                     fontSize = 12.sp
                 )
-                team.machines.forEach { MachineWaitRow(machine = it, now = now) }
+                team.machines.forEach { MachineWaitRow(machine = it, now = now, compact = true) }
             }
         }
 
@@ -315,14 +326,20 @@ private fun RingNumber(
             fontFamily = DeckType.mono,
             fontSize = 11.sp,
             maxLines = 1,
-            modifier = Modifier.semantics { contentDescription = "$RESET_COUNTDOWN ${limit?.id ?: "none"}" }
+            softWrap = false,
+            modifier = Modifier
+                .wrapContentWidth(unbounded = true)
+                .semantics { contentDescription = "$RESET_COUNTDOWN ${limit?.id ?: "none"}" }
         )
         Text(
             text = Format.resetAt(limit?.resetsAt, now, ZoneId.systemDefault(), use24h),
             color = DeckColors.dim,
             fontFamily = DeckType.mono,
             fontSize = 10.sp,
-            maxLines = 1
+            maxLines = 1,
+            softWrap = false,
+            // "Thu 2:00 AM" is wider than the 7 d ring; let it centre under the ring rather than clip.
+            modifier = Modifier.wrapContentWidth(unbounded = true)
         )
     }
 }

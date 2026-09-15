@@ -4,17 +4,22 @@ import android.content.res.Configuration
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.evenseal.usagedeck.core.model.MachineConfig
+import com.evenseal.usagedeck.core.model.MachineState
 import com.evenseal.usagedeck.core.model.TeamState
 import com.evenseal.usagedeck.ui.components.SETTINGS_CHIP
 import com.evenseal.usagedeck.ui.theme.DeckTheme
 import com.evenseal.usagedeck.ui.widedock.WideDockScreen
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -85,6 +90,64 @@ class WideDockScreenTest {
         showLandscape(fakeViewModel(team = TeamState(emptyList())))
         compose.onNodeWithText("Projects").assertDoesNotExist()
         compose.onNodeWithText("Pair").assertExists()
+    }
+
+    @Test
+    fun rowsSwapPlacesWhenAProjectOvertakesAnother() {
+        val flow = MutableStateFlow(Fx.twoUsers())
+        showLandscape(fakeViewModel(teamFlow = flow))
+        val calendarBefore = compose.onNodeWithText("calendarpa").fetchSemanticsNode().positionInRoot.y
+        val audioBefore = compose.onNodeWithText("audioleveler").fetchSemanticsNode().positionInRoot.y
+        assertTrue(calendarBefore < audioBefore)
+
+        // audioleveler's session burns past calendarpa's: projects rank by live tokens.
+        flow.value = TeamState(
+            listOf(
+                Fx.machine(
+                    id = "m1",
+                    name = "Alan",
+                    email = "alan@evensealproductions.com",
+                    fiveHour = 42,
+                    sevenDay = 18,
+                    sessions = listOf(Fx.session("a1b2c3d4"))
+                ),
+                Fx.machine(
+                    id = "m2",
+                    name = "Sam",
+                    email = "sam@evensealproductions.com",
+                    fiveHour = 77,
+                    sevenDay = 31,
+                    sessions = listOf(
+                        Fx.session(
+                            "e5f6a7b8",
+                            projectKey = "/repo/audioleveler",
+                            projectName = "audioleveler",
+                            tokens = 99_000_000
+                        )
+                    )
+                )
+            )
+        )
+        compose.mainClock.advanceTimeBy(2_000)
+        compose.waitForIdle()
+
+        val calendarAfter = compose.onNodeWithText("calendarpa").fetchSemanticsNode().positionInRoot.y
+        val audioAfter = compose.onNodeWithText("audioleveler").fetchSemanticsNode().positionInRoot.y
+        assertTrue(audioAfter < calendarAfter)
+        compose.onNodeWithText("calendarpa").assertIsDisplayed()
+        compose.onNodeWithText("audioleveler").assertIsDisplayed()
+    }
+
+    @Test
+    fun aMachineWithoutDataShowsAShortNameAndNoAddressInTheRail() {
+        val waiting = MachineState(config = MachineConfig("m9", "studio.tail42c6d2.ts.net", "100.1.1.9", 8787, "token"))
+        showLandscape(fakeViewModel(team = TeamState(listOf(waiting))))
+        // Short name twice: the status-bar chip and the rail card. The right pane's full-width
+        // card keeps the full hostname and the address, so each of those appears exactly once.
+        compose.onAllNodesWithText("studio").assertCountEquals(2)
+        compose.onAllNodesWithText("studio.tail42c6d2.ts.net").assertCountEquals(1)
+        compose.onAllNodesWithText("100.1.1.9", substring = true).assertCountEquals(1)
+        compose.onAllNodesWithText("connecting…").assertCountEquals(2)
     }
 
     @Test

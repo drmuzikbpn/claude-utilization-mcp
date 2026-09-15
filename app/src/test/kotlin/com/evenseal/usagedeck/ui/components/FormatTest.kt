@@ -91,7 +91,8 @@ class FormatTest {
         assertEquals("2d03h", Format.resetCountdown(now.plusSeconds(2 * 86_400 + 3 * 3_600 + 59 * 60), now))
         assertEquals("1h36m", Format.resetCountdown(now.plusSeconds(3_600 + 36 * 60 + 12), now))
         assertEquals("36m12s", Format.resetCountdown(now.plusSeconds(36 * 60 + 12), now))
-        assertEquals("0m00s", Format.resetCountdown(now.minusSeconds(5), now))
+        assertEquals("due", Format.resetCountdown(now.minusSeconds(5), now))
+        assertEquals("due", Format.resetCountdown(now, now))
         assertEquals("—", Format.resetCountdown(null, now))
     }
 

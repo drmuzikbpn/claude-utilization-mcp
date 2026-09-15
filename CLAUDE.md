@@ -34,6 +34,13 @@ ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest
 scripts/fakedaemon.sh warnCrossing                              # idle | warnCrossing | freeze | machineDrop
 ```
 
+To see real numbers on the emulator, push this Mac's own pairing file (LAN address; the daemon
+rejects the emulator's `10.0.2.2` loopback with "Host header is not an address this daemon is bound to"):
+`adb -s emulator-5554 push ~/.config/claude-usage/pairing.json /sdcard/Android/data/com.evenseal.usagedeck/files/pairing-import.json`.
+Never print that file: it holds the bearer token. `connectedDebugAndroidTest` wipes the pairing, so
+push it again afterwards. Landscape is `adb -s emulator-5554 emu rotate`. Show UI changes there and
+wait for Alan's OK before pushing a release.
+
 A real Nexus 5X is often attached over USB alongside the emulator — **always set
 `ANDROID_SERIAL`** for anything instrumented, and never `pm uninstall`/`pm clear` the app on the
 phone (it would drop Device Owner). The phone runs release-signed builds since 2026-09-14, so
@@ -89,6 +96,9 @@ pre-release once the signing secrets exist; until then it only tests.
   brightness still works), and on battery only when "Keep screen on" is set.
 - A self-update kills the process and Android never restarts a HOME activity on its own; `LockTaskReceiver`
   relaunches the deck on `MY_PACKAGE_REPLACED`. The first unattended update (0.1.55) sat on the stock launcher without it.
+- List rows animate with `animateItem` + `liftOnReorder(rowRank(project, row))`. Rank by project slot,
+  never by a running row index: a running index makes every row below a fold or a new session "move"
+  and blink.
 - Compose: `Modifier.clickable` merges descendant semantics, so pause buttons inside a clickable
   row are only addressable with `useUnmergedTree = true`.
 - Android 10 returns an **empty** wifi scan list without location permission rather than throwing.
