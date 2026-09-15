@@ -70,10 +70,10 @@ ${envKeys.map((k) => `\t\t<key>${xml(k)}</key>\n\t\t<string>${xml(unit.env[k] ??
 
 /** errno 37, `EALREADY` — launchctl's answer while a previous operation is still settling. */
 const EALREADY = 37;
-/** How many times to re-attempt a bootstrap that raced its own bootout (§23.26). */
-const BOOTSTRAP_ATTEMPTS = 5;
-/** Pause between those attempts. */
-const BOOTSTRAP_RETRY_WAIT_MS = 400;
+/** How many times to re-attempt a bootstrap that raced its own bootout (§23.26, §23.28). */
+const BOOTSTRAP_ATTEMPTS = 8;
+/** Pause between those attempts — 8 × 500 ms covers a daemon that takes a moment to exit. */
+const BOOTSTRAP_RETRY_WAIT_MS = 500;
 
 /** macOS `launchctl` (per-user GUI domain) implementation of `ServiceManager`. */
 export class LaunchdService implements ServiceManager {
@@ -151,27 +151,50 @@ export class LaunchdService implements ServiceManager {
     if (kick.code !== 0 && kick.code !== EALREADY) {
       throw new ServiceError(`launchctl kickstart -k ${this.target} failed (exit ${String(kick.code)})`, kick);
     }
+    // Everything above tolerates something, so confirm the end state rather than inferring it
+    // from exit codes: the Studio's install reported success three times while leaving the
+    // LaunchAgent unregistered (§23.28).
+    const loaded = await this.exec('launchctl', ['print', this.target]);
+    if (loaded.code !== 0) {
+      throw new ServiceError(
+        `launchd did not keep the service after bootstrap (launchctl print exit ${String(loaded.code)}) — ` +
+          'the job was booted out and never came back',
+        loaded,
+      );
+    }
   }
 
   /**
    * Bootstrap the job, waiting out the tail of our own `bootout` (§23.26).
    *
    * `launchctl bootout` returns before launchd has finished tearing the job down, and
-   * anything that lands in that window fails with `EALREADY` (errno 37). On the Mac Studio
-   * this bit during the desktop install meant to repair it: the bootstrap failed into the
-   * tolerate branch, `kickstart` then failed too, and the install aborted having booted the
-   * service out and never put it back — daemon down, LaunchAgent unregistered.
+   * anything landing in that window fails. Measured on the Mac Studio, booting out a
+   * *running* job and bootstrapping immediately:
    *
-   * A race is worth waiting out rather than tolerating. Other failures stay tolerated for the
-   * original reason: aborting after the bootout is what leaves the daemon down.
+   * ```
+   * bootout   rc=0
+   * bootstrap → "Bootstrap failed: 5: Input/output error"   (EIO, not EALREADY)
+   * kickstart rc=37                                          (EALREADY)
+   * 3 s later → not loaded
+   * ```
+   *
+   * So the errno differs by verb, and keying the retry on one of them (§23.26 keyed it on 37)
+   * misses the other. Retry on **any** failure instead: a bootstrap that fails is worth
+   * re-attempting whatever it says, because the cost of being wrong is a machine with no
+   * LaunchAgent at all. `install` verifies the job is really loaded afterwards, so a genuine
+   * failure is reported rather than swallowed.
+   *
+   * Note that `launchctl print` keeps succeeding throughout this window — the dying job is
+   * still listed — so "is it loaded?" cannot be used to detect the race, only to confirm the
+   * end state once the retries are done.
    */
   private async bootstrapWithRetry(): Promise<void> {
     for (let attempt = 0; attempt < BOOTSTRAP_ATTEMPTS; attempt += 1) {
       const result = await this.exec('launchctl', ['bootstrap', this.domain, this.unitPath]);
-      if (result.code === 0 || result.code !== EALREADY) return;
+      if (result.code === 0) return;
       if (attempt < BOOTSTRAP_ATTEMPTS - 1 && this.retryWaitMs > 0) {
         await new Promise<void>((resolve) => {
-          setTimeout(resolve, this.retryWaitMs).unref?.();
+          setTimeout(resolve, this.retryWaitMs);
         });
       }
     }

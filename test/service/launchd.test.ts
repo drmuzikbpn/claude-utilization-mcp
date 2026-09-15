@@ -79,6 +79,8 @@ describe('launchctl commands', () => {
       `launchctl bootstrap gui/501 ${svc.unitPath}`,
       // RunAtLoad does not fire reliably when bootstrapping from a non-GUI session.
       `launchctl kickstart -k gui/501/${LAUNCHD_LABEL}`,
+      // …and confirm launchd actually kept the job (§23.28).
+      `launchctl print gui/501/${LAUNCHD_LABEL}`,
     ]);
   });
 
@@ -93,9 +95,9 @@ describe('launchctl commands', () => {
     const h = tempHome();
     // A bootstrap failure used to abort install *after* bootout, leaving the daemon down.
     const exec = fakeExec((f, a) => (a[0] === 'bootstrap' ? { code: 5, stderr: 'Load failed' } : undefined));
-    const svc = new LaunchdService({ env: h.env, exec: exec.runner, uid: 501 });
+    const svc = new LaunchdService({ env: h.env, exec: exec.runner, uid: 501, retryWaitMs: 0 });
     await expect(svc.install(unit())).resolves.toBeUndefined();
-    expect(exec.lines().at(-1)).toBe(`launchctl kickstart -k gui/501/${LAUNCHD_LABEL}`);
+    expect(exec.lines()).toContain(`launchctl kickstart -k gui/501/${LAUNCHD_LABEL}`);
   });
 
   /**
@@ -113,13 +115,15 @@ describe('launchctl commands', () => {
     const exec = fakeExec((f, a) => {
       if (a[0] !== 'bootstrap') return undefined;
       bootstraps += 1;
-      return bootstraps < 3 ? { code: 37, stderr: 'Operation already in progress' } : undefined;
+      // EIO (5) is what launchctl actually returns here — see the §23.28 measurement. The
+      // first version of this fix retried only EALREADY (37) and therefore never fired.
+      return bootstraps < 3 ? { code: 5, stderr: 'Bootstrap failed: 5: Input/output error' } : undefined;
     });
     const svc = new LaunchdService({ env: h.env, exec: exec.runner, uid: 501, retryWaitMs: 0 });
     await expect(svc.install(unit())).resolves.toBeUndefined();
     expect(bootstraps).toBe(3);
     // And it still went on to start the job rather than stopping at the successful bootstrap.
-    expect(exec.lines().at(-1)).toBe(`launchctl kickstart -k gui/501/${LAUNCHD_LABEL}`);
+    expect(exec.lines()).toContain(`launchctl kickstart -k gui/501/${LAUNCHD_LABEL}`);
   });
 
   it('gives up retrying rather than looping forever', async () => {
@@ -128,12 +132,32 @@ describe('launchctl commands', () => {
     const exec = fakeExec((f, a) => {
       if (a[0] !== 'bootstrap') return undefined;
       bootstraps += 1;
-      return { code: 37, stderr: 'Operation already in progress' };
+      return { code: 5, stderr: 'Bootstrap failed: 5: Input/output error' };
     });
     const svc = new LaunchdService({ env: h.env, exec: exec.runner, uid: 501, retryWaitMs: 0 });
-    // Still tolerated: a bootstrap failure must never abort an install after the bootout.
+    // Still tolerated when the job is loaded regardless: aborting after the bootout is what
+    // leaves the daemon down, which is the §23.9 rule this must not undo.
     await expect(svc.install(unit())).resolves.toBeUndefined();
-    expect(bootstraps).toBeLessThanOrEqual(5);
+    expect(bootstraps).toBeGreaterThan(1);
+    expect(bootstraps).toBeLessThanOrEqual(8);
+  });
+
+  /**
+   * §23.28. Every launchctl step in `install` tolerates something, so the only honest report
+   * is the end state. On the Studio the bootstrap failed EIO, the kickstart failed EALREADY,
+   * both were tolerated, and `install` announced success on a machine whose LaunchAgent had
+   * been booted out and never replaced.
+   */
+  it('throws when launchd did not keep the job, however the steps exited', async () => {
+    const h = tempHome();
+    const exec = fakeExec((f, a) => {
+      if (a[0] === 'bootstrap') return { code: 5, stderr: 'Bootstrap failed: 5: Input/output error' };
+      if (a[0] === 'kickstart') return { code: 37, stderr: 'Operation already in progress' };
+      if (a[0] === 'print') return { code: 113, stdout: '', stderr: 'Could not find service' };
+      return undefined;
+    });
+    const svc = new LaunchdService({ env: h.env, exec: exec.runner, uid: 501, retryWaitMs: 0 });
+    await expect(svc.install(unit())).rejects.toThrow(/did not keep the service/);
   });
 
   /**
