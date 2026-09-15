@@ -54,6 +54,7 @@ import com.evenseal.usagedeck.ui.ledger.homeSecondary
 import com.evenseal.usagedeck.ui.theme.DeckColors
 import com.evenseal.usagedeck.ui.theme.DeckType
 import java.time.Instant
+import java.time.ZoneId
 
 /**
  * Landscape home (spec §11.2). The rail carries numbers big enough to read from the other side
@@ -81,7 +82,13 @@ fun WideDockScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
         )
 
         Row(modifier = Modifier.weight(1f)) {
-            Rail(team = team, now = now, nameOf = prefs::nameFor, modifier = Modifier.width(RAIL_WIDTH).fillMaxHeight())
+            Rail(
+                team = team,
+                now = now,
+                nameOf = prefs::nameFor,
+                use24h = prefs.clock24h,
+                modifier = Modifier.width(RAIL_WIDTH).fillMaxHeight()
+            )
 
             Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 if (empty != null) {
@@ -156,7 +163,7 @@ private fun ColumnHeader(liveCount: Int) {
 }
 
 @Composable
-private fun Rail(team: TeamState, now: Instant, nameOf: (UserView) -> String, modifier: Modifier) {
+private fun Rail(team: TeamState, now: Instant, nameOf: (UserView) -> String, use24h: Boolean, modifier: Modifier) {
     Column(
         modifier = modifier
             .drawBehind {
@@ -175,7 +182,7 @@ private fun Rail(team: TeamState, now: Instant, nameOf: (UserView) -> String, mo
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             val users = team.usersWithData()
-            users.forEach { user -> RailUser(user = user, name = nameOf(user), now = now) }
+            users.forEach { user -> RailUser(user = user, name = nameOf(user), now = now, use24h = use24h) }
             if (users.isEmpty()) {
                 Text(
                     text = if (team.machines.isEmpty()) "nothing paired" else "waiting for data",
@@ -199,7 +206,7 @@ private fun Rail(team: TeamState, now: Instant, nameOf: (UserView) -> String, mo
 }
 
 @Composable
-private fun RailUser(user: UserView, name: String, now: Instant) {
+private fun RailUser(user: UserView, name: String, now: Instant, use24h: Boolean) {
     val faded = user.health != Health.FRESH
     Column(modifier = Modifier.fillMaxWidth().alpha(if (faded) STALE_ALPHA else 1f)) {
         Text(
@@ -213,8 +220,8 @@ private fun RailUser(user: UserView, name: String, now: Instant) {
         // Each figure sits centred in a ring that closes as the window fills (a full circle is
         // 100 %); the two rings share a bottom edge and each counts down to its own reset.
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            RingNumber(limit = user.fiveHour, size = FIVE_HOUR_SP, ring = FIVE_HOUR_RING, now = now)
-            RingNumber(limit = user.sevenDay, size = SEVEN_DAY_SP, ring = SEVEN_DAY_RING, now = now)
+            RingNumber(limit = user.fiveHour, size = FIVE_HOUR_SP, ring = FIVE_HOUR_RING, now = now, use24h = use24h)
+            RingNumber(limit = user.sevenDay, size = SEVEN_DAY_SP, ring = SEVEN_DAY_RING, now = now, use24h = use24h)
         }
     }
 }
@@ -224,7 +231,14 @@ private fun RailUser(user: UserView, name: String, now: Instant) {
  * behind it is the same percent as an arc from twelve o'clock, on a faint full-circle track.
  */
 @Composable
-private fun RingNumber(limit: Limit?, size: Int, ring: Dp, now: Instant, modifier: Modifier = Modifier) {
+private fun RingNumber(
+    limit: Limit?,
+    size: Int,
+    ring: Dp,
+    now: Instant,
+    use24h: Boolean,
+    modifier: Modifier = Modifier
+) {
     val color = limit?.let { DeckColors.of(it.status) } ?: DeckColors.dim
     val fraction = (limit?.percent ?: 0).coerceIn(0, 100) / 100f
     val track = DeckColors.line
@@ -267,6 +281,13 @@ private fun RingNumber(limit: Limit?, size: Int, ring: Dp, now: Instant, modifie
             fontSize = 11.sp,
             maxLines = 1,
             modifier = Modifier.semantics { contentDescription = "$RESET_COUNTDOWN ${limit?.id ?: "none"}" }
+        )
+        Text(
+            text = Format.resetAt(limit?.resetsAt, now, ZoneId.systemDefault(), use24h),
+            color = DeckColors.dim,
+            fontFamily = DeckType.mono,
+            fontSize = 10.sp,
+            maxLines = 1
         )
     }
 }
