@@ -15,7 +15,7 @@ jobs:
         with:
           # The action's default list includes the retired `tools` package, which Google's
           # repository stopped serving in September 2026 and sdkmanager then fails outright.
-          packages: platform-tools
+          packages: platform-tools build-tools;34.0.0
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew ktlintCheck :core:test :fakedaemon:test :app:testDebugUnitTest
       - name: Instrumented tests (API 29)
@@ -46,14 +46,16 @@ jobs:
       - name: Sign release
         if: steps.signing.outputs.ok == 'true'
         run: |
-          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          set -x
+          BT="$ANDROID_HOME/build-tools/34.0.0"   # the version the lineage and the phone were verified with
+          ls "$BT/zipalign" "$BT/apksigner"
           printf '%s' "$SIGNING_STORE_PASSWORD" > /tmp/store.pw
           "$BT/zipalign" -p 4 app/build/outputs/apk/release/app-release-unsigned.apk /tmp/aligned.apk
           "$BT/apksigner" sign --ks /tmp/release.jks --ks-pass file:/tmp/store.pw --ks-key-alias "$SIGNING_KEY_ALIAS" \
             --lineage app/signing/usage-deck.lineage --rotation-min-sdk-version 28 \
             --v1-signing-enabled false --v2-signing-enabled false --v3-signing-enabled true \
             --out usage-deck.apk /tmp/aligned.apk
-          "$BT/apksigner" verify --print-certs usage-deck.apk | grep 'Signer #1 certificate SHA-256'
+          "$BT/apksigner" verify --print-certs -v usage-deck.apk
           rm -f /tmp/store.pw /tmp/release.jks /tmp/aligned.apk
         env:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
