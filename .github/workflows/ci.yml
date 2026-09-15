@@ -36,14 +36,28 @@ jobs:
         if: steps.signing.outputs.ok == 'true'
         run: echo "$SIGNING_KEYSTORE_B64" | base64 -d > /tmp/release.jks
         env: { SIGNING_KEYSTORE_B64: "${{ secrets.SIGNING_KEYSTORE_B64 }}" }
-      - name: Assemble release
+      - name: Assemble release (unsigned)
         if: steps.signing.outputs.ok == 'true'
         run: ./gradlew :app:assembleRelease
+      # apksigner rather than Gradle: the phone was provisioned with a debug-signed build, and only
+      # a v3 signature carrying app/signing/usage-deck.lineage (debug key → release key) installs
+      # over it in place, keeping Device Owner and the pairing. v1/v2 are off because minSdk is 29
+      # and both would need the retired debug key present at signing time.
+      - name: Sign release
+        if: steps.signing.outputs.ok == 'true'
+        run: |
+          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          printf '%s' "$SIGNING_STORE_PASSWORD" > /tmp/store.pw
+          "$BT/zipalign" -p 4 app/build/outputs/apk/release/app-release-unsigned.apk /tmp/aligned.apk
+          "$BT/apksigner" sign --ks /tmp/release.jks --ks-pass file:/tmp/store.pw --ks-key-alias "$SIGNING_KEY_ALIAS" \
+            --lineage app/signing/usage-deck.lineage --rotation-min-sdk-version 28 \
+            --v1-signing-enabled false --v2-signing-enabled false --v3-signing-enabled true \
+            --out usage-deck.apk /tmp/aligned.apk
+          "$BT/apksigner" verify --print-certs usage-deck.apk | grep 'Signer #1 certificate SHA-256'
+          rm -f /tmp/store.pw /tmp/release.jks /tmp/aligned.apk
         env:
-          SIGNING_KEYSTORE_PATH: /tmp/release.jks
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
       - name: Version
         if: steps.signing.outputs.ok == 'true'
         id: v
@@ -52,9 +66,7 @@ jobs:
       # pre-release so the daemon's /releases/latest never returns an APK.
       - name: Package
         if: steps.signing.outputs.ok == 'true'
-        run: |
-          cp app/build/outputs/apk/release/app-release.apk usage-deck.apk
-          sha256sum usage-deck.apk > usage-deck.apk.sha256
+        run: sha256sum usage-deck.apk > usage-deck.apk.sha256
       - name: Release
         if: steps.signing.outputs.ok == 'true'
         uses: softprops/action-gh-release@v2

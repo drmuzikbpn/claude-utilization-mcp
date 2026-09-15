@@ -36,7 +36,9 @@ scripts/fakedaemon.sh warnCrossing                              # idle | warnCro
 
 A real Nexus 5X is often attached over USB alongside the emulator — **always set
 `ANDROID_SERIAL`** for anything instrumented, and never `pm uninstall`/`pm clear` the app on the
-phone (it would drop Device Owner).
+phone (it would drop Device Owner). The phone runs release-signed builds since 2026-09-14, so
+`run-as` no longer works there: sideload a pairing with
+`adb push pairing.json /sdcard/Android/data/com.evenseal.usagedeck/files/pairing-import.json`.
 
 lefthook runs `ktlintCheck` and `:core:test` on pre-commit. Install with `lefthook install` if the
 hook is missing.
@@ -56,7 +58,7 @@ hook is missing.
 - Aging: fresh < 30 s since heartbeat, stale < 120 s, dead ≥ 120 s. Dead disables pause controls.
 - Escalation default 90 s; range 30 s–600 s or off; persisted across process death.
 - Self-update defers while a gesture is in progress, a hold is mid-press, or any escalation is pending.
-- Version: `versionName = 0.MINOR.<commit-count>+<sha>`, `versionCode = commit-count`. Release repo `BuildConfig.RELEASE_REPO`, default `drmuzikbpn/claude-utilization-mcp` (shared with the daemon): APK releases are tags `deck-<version>`, pre-release, assets `usage-deck.apk` + `usage-deck.apk.sha256`; the checker considers `deck-` tags only.
+- Version: `versionName = 0.MINOR.<commit-count>+<sha>`, `versionCode = commit-count`. Release repo `BuildConfig.RELEASE_REPO`, default `drmuzikbpn/claude-utilization-mcp` (shared with the daemon): APK releases are tags `deck-<version>`, pre-release, assets `usage-deck.apk` + `usage-deck.apk.sha256`; the checker considers `deck-` tags only. CI signs with `apksigner` + `app/signing/usage-deck.lineage` (v3, rotated from this Mac's debug key) so the debug-provisioned phone updates in place; Gradle never signs release.
 - Every error shown to the user comes from the daemon envelope: `hint` → `message` → per-code default.
 - Single dark theme, colours and fonts from spec §11.6. Tabular numerals everywhere.
 - Commit after every task with a conventional-commit message ending in `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Never push.

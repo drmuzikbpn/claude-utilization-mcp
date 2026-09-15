@@ -105,7 +105,7 @@ node, and do not route this device through one.**
 ## 7. Install Usage Deck and make it Device Owner
 
 ```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r usage-deck.apk        # a deck- release asset, or app-debug.apk for a dev phone
 adb shell dpm set-device-owner com.evenseal.usagedeck/.kiosk.DeviceAdminReceiver
 ```
 
@@ -159,20 +159,24 @@ USB debugging stays enabled on this device on purpose.
 There is **no charge cap in v1**. Writing battery sysfs needs root, and Device Owner does not
 grant it. The app dims to 30 % and slows sparkline redraws to every 10 s above 42 °C.
 
-## Release signing (done by a human, once)
+## Release signing (done once, 2026-09-14)
 
-```bash
-keytool -genkeypair -v -keystore /tmp/usage-deck-release.jks -alias usagedeck \
-  -keyalg RSA -keysize 4096 -validity 10000
-```
+The release key lives in **1Password vault `usagedeck`, item `usagedeck-ci`** (fields
+`SIGNING_KEYSTORE_B64`, `SIGNING_KEY_ALIAS` = `usagedeck`, `SIGNING_STORE_PASSWORD`,
+`SIGNING_KEY_PASSWORD`) and nowhere else; the GitHub Actions secrets of the same names are
+copies. The keystore is PKCS12 (Java 17's default), which has a single password, so the key
+password equals the store password. Values were streamed through pipes (`op read … | gh secret
+set`), never typed as arguments.
 
-Generate both passwords with `openssl rand -base64 24`. Store the base64 of the keystore and the
-passwords in **1Password vault `usagedeck`, item `usagedeck-ci`**, fields `SIGNING_KEYSTORE_B64`,
-`SIGNING_KEY_ALIAS`, `SIGNING_STORE_PASSWORD`, `SIGNING_KEY_PASSWORD` — entered through the
-desktop app, never as command arguments, which end up in shell history. Then delete
-`/tmp/usage-deck-release.jks`.
+**The phone was provisioned with a debug-signed build**, so the release key is a *rotation* from
+this MacBook's `~/.android/debug.keystore`: `app/signing/usage-deck.lineage` (public
+certificates and rotation proofs only, safe to commit) was made with `apksigner rotate`, and CI
+signs with `apksigner … --lineage … --rotation-min-sdk-version 28`, v3 only. Android 9+ then
+installs the release over the debug build in place, keeping Device Owner and the pairing. Never
+`pm uninstall` the app to "switch keys"; the lineage is the switch.
 
-The GitHub Actions secrets of the same four names are populated from that item.
+If the debug keystore on this MacBook is ever lost, nothing breaks: the lineage file already
+carries the proof, and only the release key is needed from then on.
 
 ## Daemon install on the Mac Studio
 

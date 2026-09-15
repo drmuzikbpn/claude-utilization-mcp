@@ -95,8 +95,9 @@ Versions are `0.MINOR.<commit-count>+<short-sha>`; `versionCode` is the commit c
 
 Signing secrets (`SIGNING_KEYSTORE_B64`, `SIGNING_KEY_ALIAS`, `SIGNING_STORE_PASSWORD`,
 `SIGNING_KEY_PASSWORD`) are populated in GitHub from **1Password vault `usagedeck`, item
-`usagedeck-ci`**. Generating the keystore is a one-off human step, written up in
-[docs/device-setup.md](docs/device-setup.md) under *Release signing*.
+`usagedeck-ci`**. CI signs with `apksigner` and `app/signing/usage-deck.lineage`, a rotation from
+the debug key the phone was provisioned with, so releases install over it in place; the story is
+in [docs/device-setup.md](docs/device-setup.md) under *Release signing*.
 
 ## Licence
 

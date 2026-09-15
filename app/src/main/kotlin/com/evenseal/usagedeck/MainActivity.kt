@@ -102,7 +102,8 @@ class MainActivity : ComponentActivity() {
      * kiosk process is protected and cannot be force-stopped, so "relaunch" often means resume.
      */
     private fun consumePairingImport() {
-        when (val imported = PairingImport(filesDir, graph.machineStore).consume()) {
+        val dirs = listOfNotNull(filesDir, getExternalFilesDir(null))
+        when (val imported = PairingImport(dirs, graph.machineStore).consume()) {
             is PairingImport.Result.Imported -> Log.i(TAG, "paired ${imported.name} from import file")
             is PairingImport.Result.Rejected -> Log.w(TAG, "pairing import rejected: ${imported.reason}")
             PairingImport.Result.Nothing -> Unit

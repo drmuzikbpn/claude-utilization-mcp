@@ -47,6 +47,18 @@ class PairingImportTest {
     }
 
     @Test
+    fun `a file in the external files dir is consumed when the private dir has none`() {
+        val external = File(context.filesDir, "import-test-external").apply { mkdirs() }
+        File(external, PairingImport.FILE_NAME)
+            .writeText("""{"v":1,"name":"studio","addr":"192.168.1.249","port":47291,"token":"s"}""")
+
+        val result = PairingImport(listOf(dir, external), store).consume()
+
+        assertEquals(PairingImport.Result.Imported("studio"), result)
+        assertFalse(File(external, PairingImport.FILE_NAME).exists())
+    }
+
+    @Test
     fun `an invalid payload is rejected and the file still removed`() {
         drop("""{"v":2,"name":"x","addr":"1.2.3.4","port":1,"token":"t"}""")
         assertTrue(import.consume() is PairingImport.Result.Rejected)
