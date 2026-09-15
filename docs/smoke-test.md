@@ -361,28 +361,28 @@ with `kickstart`, so the service is always up the moment you finish installing, 
 manual fix restores it too — nothing reveals the problem until the process dies on its own.
 Test the *supervisor*, not the daemon.
 
-**There is no `launchctl print` field that answers this.** While the job is up, a supervised
-Mac and an unsupervised one are byte-identical apart from the node path — `runs`,
-`properties = runatload` and `immediate reason` were each checked and none of them separate
-the two (§23.25). What you can read cheaply is the session type:
+**No `launchctl print` field answers this while the job is up.** A supervised Mac and an
+unsupervised one are byte-identical there apart from the node path. Checked and rejected as
+detectors: `runs`, `properties = runatload`, `immediate reason`, the domain's
+`on-demand count`, `launchctl print-disabled`, and `launchctl managername` (§23.25, §23.30).
+
+**The only reliable test is behavioural — kill it and see.** That is the block below, and it
+is the one thing in this document that cannot be faked by a healthy-looking daemon.
+
+While the job is **down**, `launchctl print` does say so outright:
 
 ```bash
-# macOS. Aqua = this shell can install a supervised service; anything else cannot.
-launchctl managername
-#   Aqua                            ← a GUI login session
-#   Background / StandardIO         ← ssh: install here and launchd will not supervise it
+launchctl print gui/$(id -u)/com.github.drmuzikbpn.claude-usage | grep 'pended nondemand spawn'
 ```
 
-A non-`Aqua` install means **launchd will not bring the daemon back after a crash or a
-reboot**, though it runs fine and auto-update restarts it. `install` prints a warning saying
-so. The fix is to re-run `install` from a terminal on that machine's own desktop — Screen
-Sharing counts, ssh does not.
+Grep the whole phrase. `pended` is a substring of `started suspended = 0`, which every healthy
+job prints twice, so `grep -c pended` returns 2 on a perfectly good machine. The line is
+absent while the job is running, so it is never visible during or just after an install.
 
-`pended nondemand spawn` in `launchctl print` is the same fault caught in the act, but it is
-**only printed while the job is not running**, so it is absent during and after any install.
-If you do grep for it, grep the whole phrase: `pended` is a substring of
-`started suspended = 0`, which every healthy job prints twice, so `grep -c pended` returns 2
-on a perfectly good machine.
+An affected machine reports `pending spawn, domain in on-demand-only mode` in
+`/usr/bin/log show --predicate 'eventMessage CONTAINS "drmuzikbpn"'`. That is a `gui/<uid>`
+domain state; **the cause is still open and re-running `install` does not clear it**, from
+the desktop or anywhere else.
 
 Then prove it rather than trusting the plist:
 
