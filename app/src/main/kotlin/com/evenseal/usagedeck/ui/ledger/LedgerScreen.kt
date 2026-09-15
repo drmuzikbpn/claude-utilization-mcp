@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -47,12 +47,15 @@ import com.evenseal.usagedeck.ui.components.HomeEmpty
 import com.evenseal.usagedeck.ui.components.HomeEmptyBody
 import com.evenseal.usagedeck.ui.components.LimitBar
 import com.evenseal.usagedeck.ui.components.PauseButton
+import com.evenseal.usagedeck.ui.components.REORDER_SLIDE
 import com.evenseal.usagedeck.ui.components.RenameDialog
 import com.evenseal.usagedeck.ui.components.SessionRow
 import com.evenseal.usagedeck.ui.components.Sparkline
 import com.evenseal.usagedeck.ui.components.StatusBar
 import com.evenseal.usagedeck.ui.components.Tag
 import com.evenseal.usagedeck.ui.components.identity
+import com.evenseal.usagedeck.ui.components.liftOnReorder
+import com.evenseal.usagedeck.ui.components.rowRank
 import com.evenseal.usagedeck.ui.components.usersWithData
 import com.evenseal.usagedeck.ui.theme.DeckColors
 import com.evenseal.usagedeck.ui.theme.DeckType
@@ -124,7 +127,9 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
                 )
             } else {
                 LazyColumn(modifier = Modifier.weight(1f)) {
-                    team.projects.filter { it.sessions.isNotEmpty() }.forEach { project ->
+                    // Rows rank by project so folding a block or a new session elsewhere does not
+                    // register as a move for everything beneath it.
+                    team.projects.filter { it.sessions.isNotEmpty() }.forEachIndexed { rank, project ->
                         val open = DeckViewModel.projectId(project.machineId, project.key) in expanded
                         item(key = "h:${project.machineId}:${project.key}") {
                             ProjectHeader(
@@ -133,11 +138,17 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
                                 now = now,
                                 expanded = open,
                                 onToggle = { vm.toggleExpanded(project.machineId, project.key) },
-                                onOpen = onOpen
+                                onOpen = onOpen,
+                                modifier = Modifier.animateItem(
+                                    placementSpec = REORDER_SLIDE
+                                ).liftOnReorder(rowRank(rank, 0))
                             )
                         }
-                        if (!open) return@forEach
-                        items(project.sessions, key = { "${project.machineId}:${it.sessionId}" }) { session ->
+                        if (!open) return@forEachIndexed
+                        itemsIndexed(
+                            project.sessions,
+                            key = { _, it -> "${project.machineId}:${it.sessionId}" }
+                        ) { i, session ->
                             val target = PauseTarget.Session(project.machineId, session.sessionId)
                             SessionRow(
                                 session = session,
@@ -148,7 +159,10 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
                                 now = now,
                                 onTap = { vm.tap(target) },
                                 onHold = { vm.hold(target) },
-                                onOpen = { onOpen(Route.Project(project.machineId, project.key)) }
+                                onOpen = { onOpen(Route.Project(project.machineId, project.key)) },
+                                modifier = Modifier.animateItem(
+                                    placementSpec = REORDER_SLIDE
+                                ).liftOnReorder(rowRank(rank, i + 1))
                             )
                         }
                     }
@@ -335,11 +349,12 @@ internal fun ProjectHeader(
     now: Instant,
     expanded: Boolean,
     onToggle: () -> Unit,
-    onOpen: (Route) -> Unit
+    onOpen: (Route) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val target = PauseTarget.Project(project.machineId, project.key)
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onToggle)
             .semantics { contentDescription = "${if (expanded) "collapse" else "expand"} ${project.name}" }

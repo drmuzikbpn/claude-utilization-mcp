@@ -160,9 +160,11 @@ fun fakeViewModel(
     alert: Alert? = null,
     settings: Settings = Settings(),
     /** Where the view model's settings writes land; the Ledger's rename test reads it back. */
-    settingsFlow: MutableStateFlow<Settings> = MutableStateFlow(settings)
+    settingsFlow: MutableStateFlow<Settings> = MutableStateFlow(settings),
+    /** Swap the team mid-test to exercise reordering. */
+    teamFlow: MutableStateFlow<TeamState> = MutableStateFlow(team)
 ): DeckViewModel = DeckViewModel(
-    team = MutableStateFlow(team),
+    team = teamFlow,
     wifi = MutableStateFlow(wifi),
     mode = MutableStateFlow(DeckMode.DOCK),
     settings = settingsFlow,

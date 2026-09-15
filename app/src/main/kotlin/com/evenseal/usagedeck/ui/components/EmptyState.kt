@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.evenseal.usagedeck.core.model.Health
@@ -108,8 +109,10 @@ fun EmptyState(
 
 /** One row per paired machine while we wait for it: name, its state, and the last error if any. */
 @Composable
-fun MachineWaitRow(machine: MachineState, now: Instant, modifier: Modifier = Modifier) {
-    val label = machine.name ?: machine.config.name
+fun MachineWaitRow(machine: MachineState, now: Instant, modifier: Modifier = Modifier, compact: Boolean = false) {
+    // The wide dock's rail is 200 dp: a tailnet hostname wraps a syllable per line there, so the
+    // compact form keeps the short name and drops the address (it is on the machine screen).
+    val label = (machine.name ?: machine.config.name).let { if (compact) Format.hostShort(it) else it }
     val error = machine.lastError
     val status =
         when {
@@ -132,22 +135,28 @@ fun MachineWaitRow(machine: MachineState, now: Instant, modifier: Modifier = Mod
                 color = DeckColors.fg,
                 fontFamily = DeckType.text,
                 fontWeight = FontWeight.Medium,
-                fontSize = 13.sp
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = status,
                 color = if (error != null) DeckColors.warn else DeckColors.muted,
                 fontFamily = DeckType.mono,
                 fontSize = 11.sp,
+                maxLines = if (compact) 2 else Int.MAX_VALUE,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 2.dp)
             )
         }
-        Text(
-            text = "${machine.config.addr}:${machine.config.port}",
-            color = DeckColors.dim,
-            fontFamily = DeckType.mono,
-            fontSize = 10.sp
-        )
+        if (!compact) {
+            Text(
+                text = "${machine.config.addr}:${machine.config.port}",
+                color = DeckColors.dim,
+                fontFamily = DeckType.mono,
+                fontSize = 10.sp
+            )
+        }
     }
 }
 
