@@ -285,13 +285,17 @@ export class LimitsPoller {
       return { rateLimited: true, snapshot: this.current };
     }
     this.lastRefreshAt = now;
-    const snapshot = await this.tick();
+    // Fresh token read: an explicit refresh is the escape hatch from a previous account's
+    // still-valid credential (§23.31), and reusing the cached one would defeat it. A refresh
+    // that lands on top of an in-flight scheduled poll joins that poll instead — one interval
+    // late, not wrong.
+    const snapshot = await this.tick(true);
     return { rateLimited: false, snapshot };
   }
 
-  private async tick(): Promise<LimitsSnapshot> {
+  private async tick(freshToken = false): Promise<LimitsSnapshot> {
     if (this.inFlight !== null) return this.inFlight;
-    const run = this.fetchOnce().finally(() => {
+    const run = this.fetchOnce(freshToken).finally(() => {
       this.inFlight = null;
       this.reschedule();
     });
@@ -308,10 +312,10 @@ export class LimitsPoller {
     }, this.nextDelayMs);
   }
 
-  private async fetchOnce(): Promise<LimitsSnapshot> {
+  private async fetchOnce(freshToken = false): Promise<LimitsSnapshot> {
     let token: string;
     try {
-      token = await this.getToken();
+      token = await this.getToken(freshToken ? { fresh: true } : undefined);
     } catch (err) {
       return this.fail(toErrorInfo(err));
     }
