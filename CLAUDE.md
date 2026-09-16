@@ -41,6 +41,11 @@ Never print that file: it holds the bearer token. `connectedDebugAndroidTest` wi
 push it again afterwards. Landscape is `adb -s emulator-5554 emu rotate`. Show UI changes there and
 wait for Alan's OK before pushing a release.
 
+Android 11 check: an API 30 AVD (`deck30`, same Nexus 5X profile, image `system-images;android-30;default;arm64-v8a`)
+runs the app and the full instrumented suite green (2026-09-15). On API 30 adb cannot write
+`/sdcard/Android/data/<pkg>` (scoped storage), so sideload a pairing into the debug build with
+`adb push pairing.json /data/local/tmp/pi.json && adb shell run-as com.evenseal.usagedeck cp /data/local/tmp/pi.json files/pairing-import.json`.
+
 A real Nexus 5X is often attached over USB alongside the emulator — **always set
 `ANDROID_SERIAL`** for anything instrumented, and never `pm uninstall`/`pm clear` the app on the
 phone (it would drop Device Owner). The phone runs release-signed builds since 2026-09-14, so
