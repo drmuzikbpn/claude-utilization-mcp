@@ -341,4 +341,55 @@ class TeamStateTest {
         assertEquals("alan", TeamState(listOf(m)).users.single().displayName)
         assertEquals("alan@example.com", TeamState(listOf(m)).users.single().emailAddress)
     }
+
+    @Test
+    fun `one account on two machines shows the copy the daemon fetched most recently`() {
+        val stale = machineWithLimits("m1", fetchedAt = Instant.parse("2026-09-16T02:10:00Z"), weekly = 74)
+        val fresh = machineWithLimits("m2", fetchedAt = Instant.parse("2026-09-16T02:54:00Z"), weekly = 80)
+
+        assertEquals(80, TeamState(listOf(stale, fresh)).users.single().sevenDay?.percent)
+        // Order must not matter: the rail flipped between 74 and 80 as machines re-snapshotted.
+        assertEquals(80, TeamState(listOf(fresh, stale)).users.single().sevenDay?.percent)
+    }
+
+    @Test
+    fun `a machine that never reports a fetch time does not outrank one that does`() {
+        val unknown = machineWithLimits("m1", fetchedAt = null, weekly = 74)
+        val known = machineWithLimits("m2", fetchedAt = Instant.parse("2026-09-16T02:10:00Z"), weekly = 80)
+
+        assertEquals(80, TeamState(listOf(unknown, known)).users.single().sevenDay?.percent)
+        assertEquals(80, TeamState(listOf(known, unknown)).users.single().sevenDay?.percent)
+    }
+
+    @Test
+    fun `a machine whose limits fetch failed never blanks the headline`() {
+        val empty = machineWithLimits("m1", fetchedAt = Instant.parse("2026-09-16T03:00:00Z"), weekly = null)
+        val known = machineWithLimits("m2", fetchedAt = Instant.parse("2026-09-16T02:10:00Z"), weekly = 80)
+
+        assertEquals(80, TeamState(listOf(empty, known)).users.single().sevenDay?.percent)
+    }
+
+    /** One account (same uuid and org) seen through one machine; [weekly] null means no limits at all. */
+    private fun machineWithLimits(id: String, fetchedAt: Instant?, weekly: Int?) = MachineState(
+        config = MachineConfig(id, id, "100.64.0.1", 47291, "t"),
+        health = Health.FRESH,
+        lastHeartbeatAt = fetchedAt,
+        user = User("alan@example.com", "account-1", "Alan", organizationUuid = "org-1"),
+        limits = weekly?.let {
+            listOf(
+                Limit(
+                    id = "weekly_all",
+                    kind = "weekly",
+                    group = "all",
+                    percent = it,
+                    severity = "normal",
+                    resetsAt = null,
+                    scopeModel = null,
+                    isActive = true,
+                    status = LimitStatus.OK
+                )
+            )
+        }.orEmpty(),
+        limitsFetchedAt = fetchedAt
+    )
 }

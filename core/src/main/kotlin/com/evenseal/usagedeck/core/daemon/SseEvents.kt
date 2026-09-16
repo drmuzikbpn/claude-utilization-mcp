@@ -19,7 +19,9 @@ sealed interface DaemonEvent {
         val sessions: List<SessionDto>,
         val rules: List<PauseRuleDto>,
         val update: UpdateDto?,
-        val rev: Long
+        val rev: Long,
+        /** When the *daemon* last read the account's usage, not when this phone received it. */
+        val fetchedAt: String?
     ) : DaemonEvent
 
     /**
@@ -121,7 +123,8 @@ object SseParser {
         sessions = dto.sessions,
         rules = rulesOf(dto.rules),
         update = dto.update,
-        rev = dto.rev
+        rev = dto.rev,
+        fetchedAt = dto.summary.fetchedAt ?: dto.limits.fetchedAt
     )
 
     private fun rulesOf(element: JsonElement?): List<PauseRuleDto> = when (element) {

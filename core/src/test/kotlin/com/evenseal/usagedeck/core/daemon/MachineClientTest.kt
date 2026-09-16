@@ -101,7 +101,8 @@ class MachineClientTest {
         rules: List<PauseRuleDto> = emptyList(),
         todayInput: Long = 100,
         percent: Int = 42,
-        rev: Long = 7
+        rev: Long = 7,
+        fetchedAt: String? = "2026-09-13T12:00:00Z"
     ) = DaemonEvent.Snapshot(
         name = "alans-mbp",
         version = "0.1.417+3f9c2ab",
@@ -113,7 +114,8 @@ class MachineClientTest {
         sessions = sessions,
         rules = rules,
         update = UpdateDto(state = "idle"),
-        rev = rev
+        rev = rev,
+        fetchedAt = fetchedAt
     )
 
     private fun rule(scope: String) = PauseRuleDto(
@@ -153,13 +155,25 @@ class MachineClientTest {
         assertEquals("0.1.417+3f9c2ab", s.version)
         assertEquals("Alan", s.user!!.displayName)
         assertEquals(1, s.limits.size)
-        assertEquals(t0, s.limitsFetchedAt)
+        // The daemon's own fetch time, not this phone's clock: the team merge compares two
+        // machines' copies of the same account, so a local stamp would make the last machine to
+        // reconnect always look freshest.
+        assertEquals(Instant.parse("2026-09-13T12:00:00Z"), s.limitsFetchedAt)
         assertEquals(100L, s.today.input)
         assertEquals(1, s.sessions.size)
         assertEquals("idle", s.update!!.state)
         assertEquals(7L, s.rev)
         assertEquals(MachineState.Transport.SSE, s.transport)
         assertEquals(Health.FRESH, s.health)
+    }
+
+    @Test
+    fun `a snapshot without a fetch time leaves it unknown rather than claiming now`() = runTest {
+        val f = fixture()
+        f.events.emit(Connection.Open)
+        f.events.emit(snapshot(fetchedAt = null))
+        runCurrent()
+        assertNull(f.client.state.value.limitsFetchedAt)
     }
 
     @Test
