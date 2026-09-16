@@ -273,6 +273,19 @@ describe('LimitsPoller refresh', () => {
     h.poller.stop();
   });
 
+  // §23.31: the manual escape hatch after an account switch. A scheduled poll reuses the
+  // cached token; an explicit refresh must go back to the credential store, or the only
+  // way off a previous account's still-valid token is a daemon restart.
+  it('re-reads the credential store rather than reusing the cached token', async () => {
+    const h = harness();
+    h.poller.start();
+    await flush();
+    expect(h.tokenReads).toEqual([{ fresh: false }]);
+    await h.poller.refresh();
+    expect(h.tokenReads).toEqual([{ fresh: false }, { fresh: true }]);
+    h.poller.stop();
+  });
+
   it('rate-limits to one per 10 s', async () => {
     const h = harness();
     const first = await h.poller.refresh();

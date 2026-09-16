@@ -529,6 +529,7 @@ QA from the Android dashboard, and two Macs in daily use.
 | §23.28 | The bootout race, measured instead of guessed (2026-09-15) |
 | §23.29 | A second `install` aborted on its own idempotency (2026-09-15) |
 | §23.30 | The ssh-install diagnosis was wrong (2026-09-15) |
+| §23.31 | An account switch kept serving the previous account's limits (2026-09-16) |
 
 15 findings survived a 3-vote adversarial review (56 unique candidates). Where Part I
 conflicts with this section, this section wins.
@@ -1232,3 +1233,47 @@ The common cause is not haste — it is that I repeatedly inferred a mechanism f
 correlation and shipped the inference with a confident remedy attached. `/usr/bin/log show`
 was available from the first minute and answered the question outright. Ask the system what it
 is doing before telling a user what to do about it.
+
+### §23.31 An account switch kept serving the previous account's limits (2026-09-16)
+
+Reported from the deck: after the Mac Studio was switched to a different Claude account,
+its daemon reported the **new** email address alongside the **previous** account's
+percentages — same weekly 95%, same 5 h 24%, and the same reset instants to the minute as
+the other machine still on the old account. Identical reset boundaries across two accounts
+is what made it read as a cache rather than a coincidence.
+
+It was not the `limits-cache.json` of §23.19 — that file is read once in the constructor
+and overwritten by the first successful poll. The daemon was fetching live numbers the
+whole time. It was fetching them **as the previous account**.
+
+**Cause: two reads of "who am I" with different lifetimes.**
+
+| Read | Store | Lifetime |
+| ---- | ----- | -------- |
+| identity (`oauthAccount`) | `~/.claude.json` | re-read every 10 min (`USER_REFRESH_MS`) |
+| token | Keychain / credentials file | **read once per process** |
+
+`createTokenReader` cached the access token for the life of the daemon, re-reading only
+when asked for a `fresh` one — and the only caller that ever asked was the once-on-401
+retry path. That was sound under the assumption it encoded: *a token that is no longer the
+right one will 401*. An account switch breaks exactly that assumption. The previous
+account's token is not revoked; it stays valid, every poll returns 200, and no 401 ever
+fires. So identity moved on its 10-minute timer and the token never moved at all.
+
+**Fix.** The token cache gets a TTL — `TOKEN_REFRESH_MS`, deliberately the same 600 000 ms
+as `USER_REFRESH_MS`. The two constants answer the same question from different stores and
+must not be allowed to disagree; that disagreement *is* this bug. The TTL is a correctness
+property here, not an optimisation.
+
+`POST /v1/refresh` now reads the credential store with `{ fresh: true }` rather than
+reusing the cached token, so there is a manual escape hatch that does not require a daemon
+restart. A refresh that lands on top of an in-flight scheduled poll still joins that poll —
+one interval late, not wrong.
+
+**Bound on the symptom:** up to 10 minutes of mismatched identity-and-limits after a
+switch, self-healing, or immediate via `POST /v1/refresh` (there is no `refresh`
+subcommand on the CLI — the endpoint is the only manual trigger).
+
+**Test-first, per Part III:** all three tests were watched to fail against the unfixed
+code — the TTL boundary, a token swapped underneath the reader with no 401 (the reported
+bug, reproduced), and `refresh()` reading fresh rather than reusing the cache.

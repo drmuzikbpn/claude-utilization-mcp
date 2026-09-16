@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   createTokenReader,
+  TOKEN_REFRESH_MS,
   getAccessToken,
   getAccessTokenFromFile,
   getAccessTokenFromKeychain,
@@ -16,6 +17,7 @@ import {
 } from '../src/credentials/index.js';
 
 const FAKE_TOKEN = 'sk-ant-oat01-FAKE-TEST-TOKEN';
+const OTHER_TOKEN = 'sk-ant-oat01-FAKE-SECOND-ACCOUNT';
 const GOOD_JSON = JSON.stringify({
   claudeAiOauth: {
     accessToken: FAKE_TOKEN,
@@ -122,5 +124,36 @@ describe('createTokenReader', () => {
     expect(calls).toHaveLength(1);
     await read({ fresh: true });
     expect(calls).toHaveLength(2);
+  });
+
+  it('re-reads the credential store once the TTL expires', async () => {
+    const calls: string[][] = [];
+    let clock = 0;
+    const read = createTokenReader({
+      platform: 'darwin',
+      runner: runner({ stdout: GOOD_JSON }, calls),
+      now: () => clock,
+    });
+    await read();
+    clock = TOKEN_REFRESH_MS - 1;
+    await read();
+    expect(calls).toHaveLength(1);
+    clock = TOKEN_REFRESH_MS;
+    await read();
+    expect(calls).toHaveLength(2);
+  });
+
+  // The account-switch bug (§23.31): the daemon kept using the previous account's
+  // still-valid token, so it reported the new identity beside the old account's limits.
+  // Nothing 401s in that window, so the once-on-401 path never fires.
+  it('picks up a token swapped underneath it without a 401', async () => {
+    let clock = 0;
+    let stdout = GOOD_JSON;
+    const swapRunner: CommandRunner = async () => ({ code: 0, stdout, stderr: '' });
+    const read = createTokenReader({ platform: 'darwin', runner: swapRunner, now: () => clock });
+    expect(await read()).toBe(FAKE_TOKEN);
+    stdout = GOOD_JSON.replace(FAKE_TOKEN, OTHER_TOKEN);
+    clock = TOKEN_REFRESH_MS;
+    expect(await read()).toBe(OTHER_TOKEN);
   });
 });
