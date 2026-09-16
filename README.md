@@ -71,6 +71,21 @@ scripts/fakedaemon.sh warnCrossing      # also: idle, freeze, machineDrop
 
 Pair the emulator against `10.0.2.2` on the port the script printed, with token `fake-token`.
 
+## Pairing a Mac
+
+On any Mac running the `claude-usage` daemon (from `main` of this repo, reachable over Tailscale):
+
+```bash
+claude-usage configure pairing
+```
+
+That prints a QR code. On the deck, open **Projects → Pairing → Scan QR** and hold the phone up
+to the Mac's screen. The QR is a live bearer token: scan it off the Mac's own display, never a
+photo or a shared screen, and run `claude-usage configure rotate-token` if it is ever exposed.
+Repeat for each Mac; the deck merges them into one view. The full walkthrough, including
+Tailscale and what "Token rejected" means, is in
+[docs/teammate-onboarding.md](docs/teammate-onboarding.md).
+
 ## Setting up a phone
 
 See **[docs/device-setup.md](docs/device-setup.md)** — flashing LineageOS 17.1, skipping
