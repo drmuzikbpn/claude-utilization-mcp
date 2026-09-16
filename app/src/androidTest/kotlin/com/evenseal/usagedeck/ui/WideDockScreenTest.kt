@@ -159,6 +159,57 @@ class WideDockScreenTest {
     }
 
     @Test
+    fun eachAccountCarriesItsOwnRingsAndResetCard() {
+        // Two accounts, two windows: neither page may borrow the other's figures or reset time.
+        val esp = Fx.machine(
+            id = "m1",
+            name = "ESP Testing",
+            email = "alan@example.com",
+            fiveHour = 24,
+            sevenDay = 95
+        ).let {
+            it.copy(
+                user = User("alan@example.com", "account-esp", "ESP Testing"),
+                limits = listOf(
+                    Fx.limit("session", 24, resetsAt = Fx.NOW.plusSeconds(5_400)),
+                    Fx.limit("weekly_all", 95, resetsAt = Fx.NOW.plusSeconds(31_200))
+                )
+            )
+        }
+        val alan = Fx.machine(
+            id = "m2",
+            name = "Alan",
+            email = "alan@other.example",
+            fiveHour = 7,
+            sevenDay = 12
+        ).let {
+            it.copy(
+                user = User("alan@other.example", "account-alan", "Alan"),
+                limits = listOf(
+                    Fx.limit("session", 7, resetsAt = Fx.NOW.plusSeconds(600)),
+                    Fx.limit("weekly_all", 12, resetsAt = Fx.NOW.plusSeconds(180_000))
+                )
+            )
+        }
+        showLandscape(fakeViewModel(team = TeamState(listOf(esp, alan))))
+
+        compose.onNodeWithText("24").assertIsDisplayed()
+        compose.onNodeWithText("95").assertIsDisplayed()
+        compose.onNodeWithText("1h30m").assertIsDisplayed()
+        compose.onNodeWithText("8h40m").assertIsDisplayed()
+
+        compose.onNodeWithContentDescription(ACCOUNT_PAGER).performTouchInput { swipeLeft() }
+        compose.waitForIdle()
+
+        compose.onNodeWithText("7").assertIsDisplayed()
+        compose.onNodeWithText("12").assertIsDisplayed()
+        compose.onNodeWithText("10m00s").assertIsDisplayed()
+        compose.onNodeWithText("2d02h").assertIsDisplayed()
+        // The first account's window must not follow the swipe.
+        compose.onNodeWithText("1h30m").assertDoesNotExist()
+    }
+
+    @Test
     fun oneAccountOnTwoMachinesIsOneBlockWithNoPager() {
         val account = User("alan@example.com", "account-1", "Alan")
         val team = TeamState(
