@@ -61,7 +61,11 @@ data class TeamState(val machines: List<MachineState> = emptyList()) {
         machine(machineId)?.sessions?.firstOrNull { it.sessionId == sessionId }
 
     private fun buildUsers(): List<UserView> = machines.groupBy { userKey(it) }.map { (key, group) ->
-        val freshest = group.maxByOrNull { it.limitsFetchedAt ?: Instant.EPOCH }
+        // Both daemons poll the same account and cache the answer for different lengths of time,
+        // so the copy to show is the one fetched latest — and a machine that has no limits at all
+        // never wins, or a failed fetch would blank a headline the other machine can still supply.
+        val freshest = group.filter { it.limits.isNotEmpty() }.ifEmpty { group }
+            .maxByOrNull { it.limitsFetchedAt ?: Instant.EPOCH }
         UserView(
             key = key,
             displayName = group.firstNotNullOfOrNull { displayNameOf(it) } ?: key,

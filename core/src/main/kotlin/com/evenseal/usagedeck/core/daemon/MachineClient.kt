@@ -220,7 +220,11 @@ class MachineClient(
                 version = event.version,
                 user = event.user?.toModel(),
                 limits = limitsOf(event.limits),
-                limitsFetchedAt = now,
+                // The daemon's own fetch time, never `now`: limits belong to the account, and the
+                // team merge ranks two machines' copies against each other. Stamping the local
+                // clock makes whichever machine reconnected last look freshest, so a stale copy
+                // wins and the headline flips between two values.
+                limitsFetchedAt = event.fetchedAt.toInstantOrNull(),
                 today = event.today.toModel(),
                 sessions = sessions,
                 rules = event.rules.map { r -> r.toModel() },
@@ -244,8 +248,7 @@ class MachineClient(
     }
 
     private fun applyLimits(event: DaemonEvent.Limits) {
-        val fetchedAt = event.fetchedAt.toInstantOrNull() ?: clock.now()
-        _state.update { it.copy(limits = limitsOf(event.limits), limitsFetchedAt = fetchedAt) }
+        _state.update { it.copy(limits = limitsOf(event.limits), limitsFetchedAt = event.fetchedAt.toInstantOrNull()) }
     }
 
     /** `today` is the cumulative authority; the per-event `delta` is deliberately not used. */
@@ -296,7 +299,7 @@ class MachineClient(
         _state.update {
             it.copy(
                 limits = summary.toLimits(),
-                limitsFetchedAt = summary.fetchedAt.toInstantOrNull() ?: now,
+                limitsFetchedAt = summary.fetchedAt.toInstantOrNull(),
                 today = today
             )
         }
