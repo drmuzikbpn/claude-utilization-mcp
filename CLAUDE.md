@@ -108,6 +108,8 @@ pre-release once the signing secrets exist; until then it only tests.
   must read `0:9.81:0` (`emu rotate` cycles it). The launcher can look portrait while the test activity,
   which follows the sensor, opens landscape, and `WifiScreenTest` then fails because its fourth
   network row is below the fold.
+- The wide dock's rings page per **account**, never per machine: machines sharing an account share
+  one quota, so paging them would deal the same numbers twice. One account renders no pager at all.
 - Compose: `Modifier.clickable` merges descendant semantics, so pause buttons inside a clickable
   row are only addressable with `useUnmergedTree = true`.
 - Android 10 returns an **empty** wifi scan list without location permission rather than throwing.

@@ -10,12 +10,16 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.evenseal.usagedeck.core.model.MachineConfig
 import com.evenseal.usagedeck.core.model.MachineState
 import com.evenseal.usagedeck.core.model.TeamState
+import com.evenseal.usagedeck.core.model.User
 import com.evenseal.usagedeck.ui.components.SETTINGS_CHIP
 import com.evenseal.usagedeck.ui.theme.DeckTheme
+import com.evenseal.usagedeck.ui.widedock.ACCOUNT_PAGER
 import com.evenseal.usagedeck.ui.widedock.WideDockScreen
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
@@ -45,22 +49,26 @@ class WideDockScreenTest {
     @Test
     fun theRailCarriesTheBigFiveHourNumeral() {
         showLandscape(fakeViewModel())
-        compose.onNodeWithText("42").assertExists()
-        compose.onNodeWithText("77").assertExists()
+        compose.onNodeWithText("42").assertIsDisplayed()
+        compose.onNodeWithContentDescription(ACCOUNT_PAGER).performTouchInput { swipeLeft() }
+        compose.waitForIdle()
+        compose.onNodeWithText("77").assertIsDisplayed()
     }
 
     @Test
     fun eachRingCountsDownToItsReset() {
         showLandscape(fakeViewModel())
-        // Every fixture limit resets 2 h 33 m after Fx.NOW: two people, two rings each.
-        compose.onAllNodesWithText("2h33m").assertCountEquals(4)
+        // Every fixture limit resets 2 h 33 m after Fx.NOW; the page in hand carries two rings.
+        compose.onAllNodesWithText("2h33m").assertCountEquals(2)
     }
 
     @Test
     fun theRailCarriesTheSevenDayNumeral() {
         showLandscape(fakeViewModel())
-        compose.onNodeWithText("18").assertExists()
-        compose.onNodeWithText("31").assertExists()
+        compose.onNodeWithText("18").assertIsDisplayed()
+        compose.onNodeWithContentDescription(ACCOUNT_PAGER).performTouchInput { swipeLeft() }
+        compose.waitForIdle()
+        compose.onNodeWithText("31").assertIsDisplayed()
     }
 
     @Test
@@ -148,6 +156,20 @@ class WideDockScreenTest {
         compose.onAllNodesWithText("studio.tail0fake.ts.net").assertCountEquals(1)
         compose.onAllNodesWithText("100.1.1.9", substring = true).assertCountEquals(1)
         compose.onAllNodesWithText("connecting…").assertCountEquals(2)
+    }
+
+    @Test
+    fun oneAccountOnTwoMachinesIsOneBlockWithNoPager() {
+        val account = User("alan@example.com", "account-1", "Alan")
+        val team = TeamState(
+            Fx.twoUsers().machines.map { it.copy(user = account) }
+        )
+        showLandscape(fakeViewModel(team = team))
+
+        compose.onNodeWithContentDescription(ACCOUNT_PAGER).assertDoesNotExist()
+        // The freshest copy of the one quota, shown once rather than dealt out per machine.
+        compose.onAllNodesWithText("42").assertCountEquals(1)
+        compose.onNodeWithText("77").assertDoesNotExist()
     }
 
     @Test

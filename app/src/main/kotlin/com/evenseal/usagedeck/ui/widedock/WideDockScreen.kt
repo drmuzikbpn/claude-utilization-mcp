@@ -15,7 +15,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -195,20 +199,27 @@ private fun Rail(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        val users = team.usersWithData()
         Column(
             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            val users = team.usersWithData()
-            users.forEach { user -> RailUser(user = user, name = nameOf(user), now = now, use24h = use24h) }
-            if (users.isEmpty()) {
-                Text(
-                    text = if (team.machines.isEmpty()) "nothing paired" else "waiting for data",
-                    color = DeckColors.dim,
-                    fontFamily = DeckType.text,
-                    fontSize = 12.sp
-                )
-                team.machines.forEach { MachineWaitRow(machine = it, now = now, compact = true) }
+            // Quotas are per account, so only separate accounts are worth paging between. Several
+            // machines signed into one account are one quota and stay one block: swiping there
+            // would deal the same two numbers twice.
+            when {
+                users.isEmpty() -> {
+                    Text(
+                        text = if (team.machines.isEmpty()) "nothing paired" else "waiting for data",
+                        color = DeckColors.dim,
+                        fontFamily = DeckType.text,
+                        fontSize = 12.sp
+                    )
+                    team.machines.forEach { MachineWaitRow(machine = it, now = now, compact = true) }
+                }
+                users.size == 1 ->
+                    RailUser(user = users.first(), name = nameOf(users.first()), now = now, use24h = use24h)
+                else -> AccountPager(users = users, nameOf = nameOf, now = now, use24h = use24h)
             }
         }
 
@@ -248,6 +259,37 @@ private fun RailActions(onPauseAll: () -> Unit, onPauseAllHold: () -> Unit, navi
             modifier = Modifier.fillMaxWidth(),
             pad = 6.dp
         )
+    }
+}
+
+/**
+ * One page per account, because each carries its own quota. The name sits above the rings on every
+ * page, and the dots say how many accounts there are and which one is in hand.
+ */
+@Composable
+private fun AccountPager(users: List<UserView>, nameOf: (UserView) -> String, now: Instant, use24h: Boolean) {
+    val state = rememberPagerState(pageCount = { users.size })
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        HorizontalPager(
+            state = state,
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = ACCOUNT_PAGER }
+        ) { page ->
+            val user = users[page]
+            RailUser(user = user, name = nameOf(user), now = now, use24h = use24h)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
+        ) {
+            users.indices.forEach { i ->
+                Box(
+                    modifier = Modifier
+                        .size(PAGE_DOT)
+                        .clip(CircleShape)
+                        .background(if (i == state.currentPage) DeckColors.muted else DeckColors.line)
+                )
+            }
+        }
     }
 }
 
@@ -344,7 +386,11 @@ private fun RingNumber(
     }
 }
 
+/** Content description of the account pager; absent entirely when there is only one account. */
+const val ACCOUNT_PAGER = "accounts"
+
 private val RAIL_WIDTH = 200.dp
+private val PAGE_DOT = 5.dp
 private const val STALE_ALPHA = 0.55f
 private const val FIVE_HOUR_SP = 56
 private const val SEVEN_DAY_SP = 26

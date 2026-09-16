@@ -19,7 +19,9 @@ at once.
   reset times and model-scoped windows), then every live session grouped by project. Project rows
   start folded with a project sparkline and a project pause; tap to see the sessions. Sessions show
   their `/rename` title when they have one.
-- **Wide dock (landscape)** — the same data as numbers big enough to read across a room.
+- **Wide dock (landscape)** — the same data as numbers big enough to read across a room. With
+  more than one account paired, the rings page sideways: swipe to the next account, its name
+  above the circles. Several machines on one account are one quota and stay one page.
 - **People** — quotas are per account *and* organisation, so one account on a team seat and on a
   personal plan is two rows. Long-press a row (or use *Settings › Users*) to name it.
 - **Pause** — tap for a soft pause, hold 600 ms to freeze. A soft pause holds the session at its
