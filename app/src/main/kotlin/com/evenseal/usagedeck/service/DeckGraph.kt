@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import com.evenseal.usagedeck.BuildConfig
 import com.evenseal.usagedeck.UsageDeckApp
+import com.evenseal.usagedeck.alerts.AlertLedger
 import com.evenseal.usagedeck.alerts.Notifier
 import com.evenseal.usagedeck.core.Clock
 import com.evenseal.usagedeck.core.SystemClock
@@ -100,6 +101,9 @@ class DeckGraph(private val app: Application) {
 
     val evaluator: AlertEvaluator = AlertEvaluator(settings.thresholds, ZoneId.systemDefault())
 
+    /** Which limit alerts have already spoken, per window, across process death. */
+    val alerts: AlertLedger = AlertLedger(app.getSharedPreferences(ALERT_PREFS, Context.MODE_PRIVATE))
+
     val notifier: Notifier = Notifier(app, scope)
 
     val updater: Updater = Updater(
@@ -181,6 +185,7 @@ class DeckGraph(private val app: Application) {
     private companion object {
         const val SETTINGS_PREFS = "settings"
         const val ESCALATION_PREFS = "escalations"
+        const val ALERT_PREFS = "alerts"
         const val PIN_PREFS = "exit_pin"
         const val TICKER_MS = 1_000L
     }

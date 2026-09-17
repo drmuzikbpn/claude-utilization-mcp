@@ -71,6 +71,11 @@ hook is missing.
 - Escalation default 90 s; range 30 s–600 s or off; persisted across process death.
 - Self-update defers while a gesture is in progress, a hold is mid-press, or any escalation is pending.
 - Version: `versionName = 0.MINOR.<commit-count>+<sha>`, `versionCode = commit-count`. Release repo `BuildConfig.RELEASE_REPO`, default `drmuzikbpn/claude-utilization-mcp` (shared with the daemon): APK releases are tags `deck-<version>`, pre-release, assets `usage-deck.apk` + `usage-deck.apk.sha256`; the checker considers `deck-` tags only. CI signs with `apksigner` + `app/signing/usage-deck.lineage` (v3, rotated from this Mac's debug key) so the debug-provisioned phone updates in place; Gradle never signs release.
+- A limit alert fires **once per window**. `Alert.window` is the limit's `resetsAt`, and `AlertLedger`
+  (SharedPreferences `alerts`) remembers what has spoken across process death — a self-update must
+  never re-announce a 7-day window that is already over the line. Dropping back under a threshold
+  forgets the key so a real re-crossing still speaks. There is no perpetual critical repeat; it used
+  to re-announce every 10 minutes, which meant a Monday crossing nagged until the reset.
 - Every error shown to the user comes from the daemon envelope: `hint` → `message` → per-code default.
 - Single dark theme, colours and fonts from spec §11.6. Tabular numerals everywhere.
 - Commit after every task with a conventional-commit message ending in `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Never push.
