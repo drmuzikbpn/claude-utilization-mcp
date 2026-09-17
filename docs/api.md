@@ -206,8 +206,12 @@ Auth: loopback GET exempt. This is the hook's and the status line's single call.
 
 Auth: **token required** (it is a mutating method, even from loopback).
 
-Forces a limits refetch and returns the new `/v1/limits` body. Rate-limited to one per
-10 s:
+Forces a limits refetch and returns the new `/v1/limits` body. Unlike a scheduled poll,
+this **re-reads the credential store** rather than reusing the cached access token, which
+makes it the manual escape hatch after a Claude Code account switch (§23.31) — otherwise
+the daemon serves the previous account's numbers until the token TTL lapses. A refresh that
+arrives while a scheduled poll is already in flight joins that poll and does not re-read.
+Rate-limited to one per 10 s:
 
 ```json
 { "error": { "code": "rate_limited",
