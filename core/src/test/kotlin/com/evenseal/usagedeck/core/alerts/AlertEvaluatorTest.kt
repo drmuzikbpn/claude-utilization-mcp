@@ -16,6 +16,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -191,5 +192,20 @@ class AlertEvaluatorTest {
         val before = team(machine(limits = listOf(limit("weekly_all", 40))))
         val after = team(machine(limits = listOf(limit("weekly_all", 55))))
         assertEquals(AlertKind.WARN, strict.evaluate(before, after).single().kind)
+    }
+
+    @Test
+    fun `a limit alert carries the window it belongs to, so it can be announced once`() {
+        val at = Instant.parse("2026-09-23T13:00:00Z")
+        val next = team(machine(limits = listOf(limit("weekly_all", 96, at))))
+
+        assertEquals(at.toEpochMilli(), evaluator.evaluate(null, next).single().window)
+    }
+
+    @Test
+    fun `an alert without a reset time carries no window`() {
+        val next = team(machine(limits = listOf(limit("weekly_all", 96))))
+
+        assertNull(evaluator.evaluate(null, next).single().window)
     }
 }

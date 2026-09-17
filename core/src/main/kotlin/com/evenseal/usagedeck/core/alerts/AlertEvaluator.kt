@@ -17,7 +17,19 @@ enum class AlertKind { WARN, CRITICAL, FROZEN, UNREACHABLE }
  * [key] is the dedupe key: `"$kind|$userKey|$limitId"`, `"$kind|$machineId"` or
  * `"$kind|$machineId|$sessionId"`.
  */
-data class Alert(val kind: AlertKind, val key: String, val title: String, val body: String)
+data class Alert(
+    val kind: AlertKind,
+    val key: String,
+    val title: String,
+    val body: String,
+    /**
+     * For a limit alert, the window this crossing belongs to, as `resetsAt` in epoch millis (null
+     * when the daemon does not say). It is the identity a once-per-window gate keys on: the same
+     * window must never announce twice, however many times the deck restarts. Event-like alerts
+     * (frozen, unreachable) carry none and rely on the caller's debounce instead.
+     */
+    val window: Long? = null
+)
 
 data class AlertThresholds(val warn: Int = 80, val critical: Int = 95)
 
@@ -58,7 +70,8 @@ class AlertEvaluator(
         kind = kind,
         key = "$kind|${user.key}|${limit.id}",
         title = title,
-        body = "${user.displayName} ${labelOf(limit)} at ${limit.percent}% · ${resetOf(limit)}"
+        body = "${user.displayName} ${labelOf(limit)} at ${limit.percent}% · ${resetOf(limit)}",
+        window = limit.resetsAt?.toEpochMilli()
     )
 
     private fun labelOf(limit: Limit): String = when (limit.id) {

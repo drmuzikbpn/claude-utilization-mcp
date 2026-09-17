@@ -31,7 +31,6 @@ class DeckService : LifecycleService() {
     private val lastRaisedAt = mutableMapOf<String, Instant>()
 
     /** Last time each still-critical limit was re-announced. */
-    private val lastCriticalAt = mutableMapOf<String, Instant>()
 
     override fun onCreate() {
         super.onCreate()
@@ -63,9 +62,10 @@ class DeckService : LifecycleService() {
     }
 
     /**
-     * Evaluates every state transition and decides what actually reaches the user: a key that
-     * fired inside the debounce window is dropped, and a limit sitting above critical is
-     * re-announced every ten minutes rather than once and never again.
+     * Evaluates every state transition and decides what actually reaches the user. A limit alert
+     * speaks **once per window**: the ledger remembers it across process death, so a self-update
+     * cannot turn one crossing into a notification every few hours for the rest of the week.
+     * Falling back under a threshold forgets it, so a real re-crossing is still announced.
      */
     private suspend fun alertLoop() {
         graph.team
@@ -75,38 +75,25 @@ class DeckService : LifecycleService() {
             .collect { (prev, next) ->
                 val now = graph.clock.now()
                 graph.evaluator.evaluate(prev, next).forEach { alert -> raise(alert, now) }
-                repeatCriticals(next, now)
+                forgetSettledLimits(next)
             }
     }
 
-    private fun repeatCriticals(state: TeamState, now: Instant) {
-        val critical = graph.settings.settings.value.critical
-        val stillCritical = state.users.flatMap { user ->
-            user.limits.filter { it.percent >= critical }.map { limit ->
-                Alert(
-                    kind = AlertKind.CRITICAL,
-                    key = "${AlertKind.CRITICAL}|${user.key}|${limit.id}",
-                    title = "Usage critical",
-                    body = "${user.displayName} still at ${limit.percent}%"
-                )
-            }
-        }
-        val live = stillCritical.map { it.key }.toSet()
-        lastCriticalAt.keys.retainAll(live)
-
-        stillCritical.forEach { alert ->
-            val last = lastCriticalAt[alert.key]
-            if (last == null) {
-                // The crossing itself was already reported by the evaluator; start the clock here.
-                lastCriticalAt[alert.key] = now
-            } else if (Duration.between(last, now) >= CRITICAL_REPEAT) {
-                lastCriticalAt[alert.key] = now
-                deliver(alert, now)
+    /** A limit back under a threshold clears its ledger entry, so crossing it again is news. */
+    private fun forgetSettledLimits(state: TeamState) {
+        val prefs = graph.settings.settings.value
+        state.users.forEach { user ->
+            user.limits.forEach { limit ->
+                if (limit.percent < prefs.critical) graph.alerts.forget("${AlertKind.CRITICAL}|${user.key}|${limit.id}")
+                if (limit.percent < prefs.warn) graph.alerts.forget("${AlertKind.WARN}|${user.key}|${limit.id}")
             }
         }
     }
 
     private fun raise(alert: Alert, now: Instant) {
+        // A limit crossing is announced once for its window, whatever the process has forgotten.
+        val window = alert.window
+        if (window != null && !graph.alerts.markFired(alert.key, window)) return
         val last = lastRaisedAt[alert.key]
         if (last != null && Duration.between(last, now) < DEBOUNCE) return
         deliver(alert, now)
@@ -142,7 +129,6 @@ class DeckService : LifecycleService() {
         private const val CHANNEL_ID = "usage_deck_service"
 
         private val DEBOUNCE: Duration = Duration.ofSeconds(60)
-        private val CRITICAL_REPEAT: Duration = Duration.ofMinutes(10)
 
         fun start(context: Context) {
             context.startService(Intent(context, DeckService::class.java))
