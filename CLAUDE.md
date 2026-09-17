@@ -108,6 +108,11 @@ pre-release once the signing secrets exist; until then it only tests.
   must read `0:9.81:0` (`emu rotate` cycles it). The launcher can look portrait while the test activity,
   which follows the sensor, opens landscape, and `WifiScreenTest` then fails because its fourth
   network row is below the fold.
+- Two machines showing the *same* percentages **and the same reset instants** for different accounts
+  is a daemon bug, not a deck one: before daemon 0.1.93 the access token was read once per process
+  while the identity was re-read every 10 min, so after an account switch it kept polling the old
+  account (its token still returned 200, so no 401 ever forced a re-read). Fixed upstream; the deck
+  renders whatever each daemon reports.
 - The wide dock's rings page per **account**, never per machine: machines sharing an account share
   one quota, so paging them would deal the same numbers twice. One account renders no pager at all.
 - Compose: `Modifier.clickable` merges descendant semantics, so pause buttons inside a clickable
