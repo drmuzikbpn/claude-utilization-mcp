@@ -43,7 +43,8 @@ rebinding can make an attacker-controlled name resolve to a loopback or tailnet 
 
 The impact being defended is **disclosure** — local paths, project names, session ids,
 token counts — and **attacker-forced upstream fetches** via `POST /v1/refresh`. That POST
-needs the token even from loopback.
+needs the token even from loopback. It also forces a credential-store read (§23.31); at one
+per 10 s that is a Keychain lookup, not a prompt, and it discloses nothing to the caller.
 
 ### 3. Other users on the same machine
 

@@ -5,6 +5,12 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 ## [Unreleased]
 
 ### Fixed
+- An account switch no longer leaves the daemon serving the previous account's limits. The
+  OAuth access token was cached for the life of the process and re-read only on a 401 —
+  but a switched-away token stays valid, so no 401 ever fired and the daemon reported the
+  new identity beside the old account's percentages indefinitely. The token cache now has a
+  TTL (`TOKEN_REFRESH_MS`, 10 min, deliberately equal to the identity re-read interval), and
+  `POST /v1/refresh` re-reads the credential store instead of reusing the cached token.
 - Version directories now get their production `node_modules` (`npm install --omit=dev`) so the `mcp` and `configure pairing` subcommands work from the installed copy and from release tarballs.
 
 ### Added
