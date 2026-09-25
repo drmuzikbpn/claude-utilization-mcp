@@ -194,7 +194,7 @@ export function createServer(opts: ServerOptions): UsageServer {
   async function refresh(res: ServerResponse): Promise<void> {
     const result = await opts.limits.refresh();
     if (result.rateLimited) {
-      sendError(res, 429, 'rate_limited', 'limits refresh is rate-limited to one per 10 s', 'retry shortly');
+      sendError(res, 429, 'rate_limited', 'limits were fetched from Anthropic under a minute ago — refresh is limited to once a minute', 'use GET /v1/limits for the current numbers');
       return;
     }
     sendJson(res, 200, result.snapshot);

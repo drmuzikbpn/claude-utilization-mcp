@@ -136,7 +136,9 @@ Auth: loopback GET exempt. `HEAD` allowed.
 Auth: loopback GET exempt.
 
 The daemon's cached copy of `GET https://api.anthropic.com/api/oauth/usage`
-(`anthropic-beta: oauth-2025-04-20`), polled every `pollIntervalMs`.
+(`anthropic-beta: oauth-2025-04-20`), polled every `pollIntervalMs` (never faster than
+120 s; each upstream 429 doubles the interval, up to 30 min, easing back after 12 good polls —
+§23.33).
 
 ```json
 {
@@ -173,7 +175,8 @@ carries one of:
 | --- | --- |
 | `no_credentials` | the Keychain item / credentials file is unreadable |
 | `unauthorized` | upstream answered 401/403 after one credentials re-read and retry; hint `run \`claude\` to re-login`; the poll interval parks at 10 min until a fetch succeeds |
-| `network` | transport failure or a non-2xx that is not 401/403 |
+| `network` | transport failure or a non-2xx that is not 401/403/429 |
+| `rate_limited` | upstream answered 429. `retryAt` (ISO 8601) is present when upstream sent a usable `Retry-After`, and no poll or refresh calls upstream before it; the window persists across restarts. `hint` says nothing needs fixing locally (§23.32) |
 | `schema_drift` | the body was not JSON, not an object, or had no `limits` array |
 
 `raw` is always served verbatim when there is one — `raw` keeps everything the normalizer
@@ -211,16 +214,18 @@ this **re-reads the credential store** rather than reusing the cached access tok
 makes it the manual escape hatch after a Claude Code account switch (§23.31) — otherwise
 the daemon serves the previous account's numbers until the token TTL lapses. A refresh that
 arrives while a scheduled poll is already in flight joins that poll and does not re-read.
-Rate-limited to one per 10 s:
+Anthropic rate-limits the usage endpoint, so a refresh within 60 s of the last upstream call
+— by a refresh **or** a scheduled poll — is refused (§23.33):
 
 ```json
 { "error": { "code": "rate_limited",
-             "message": "limits refresh is rate-limited to one per 10 s",
-             "hint": "retry shortly" } }
+             "message": "limits were fetched from Anthropic under a minute ago — refresh is limited to once a minute",
+             "hint": "use GET /v1/limits for the current numbers" } }
 ```
 
 → `429`. The MCP `refresh_limits` tool catches that and returns the current limits with a
-note instead of an error.
+note instead of an error. Inside an upstream 429 window (`error.code: "rate_limited"` with a
+future `retryAt`) a refresh returns `200` with the current snapshot and does not call upstream.
 
 ## `GET /v1/tokens`
 
@@ -282,7 +287,7 @@ appear here too.
 
 ```json
 { "name": "demo-host", "port": 47291, "bind": ["127.0.0.1"],
-  "auth": { "token": "<redacted>" }, "pollIntervalMs": 60000,
+  "auth": { "token": "<redacted>" }, "pollIntervalMs": 300000,
   "thresholds": { "warn": 80, "critical": 95 },
   "hookDebounceMinutes": 10, "retentionDays": 90,
   "projectsDir": "/Users/you/.claude/projects",

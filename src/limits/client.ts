@@ -14,6 +14,8 @@ export interface RequestInitLike {
 export interface HttpResponseLike {
   ok: boolean;
   status: number;
+  /** Optional so test doubles can omit it; only `Retry-After` is ever read (§23.32). */
+  headers?: { get(name: string): string | null };
   text(): Promise<string>;
 }
 
@@ -26,6 +28,22 @@ export function defaultFetch(): FetchLike {
 export interface FetchLimitsOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** Clock for an HTTP-date `Retry-After` (tests). */
+  now?: () => number;
+}
+
+/**
+ * `Retry-After` → milliseconds from now, or `undefined` when absent or unusable.
+ * Both RFC 9110 forms: delay-seconds (what the usage endpoint sends) and an HTTP-date.
+ */
+export function parseRetryAfter(value: string | null | undefined, now: number): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1000;
+  if (!/[a-z]/i.test(trimmed)) return undefined;
+  const at = Date.parse(trimmed);
+  if (Number.isNaN(at)) return undefined;
+  return Math.max(0, at - now);
 }
 
 /**
@@ -61,6 +79,15 @@ export async function fetchLimits(
     throw new LimitsError('unauthorized', `usage request rejected with ${res.status}`, {
       hint: 'run `claude` to re-login',
       status: res.status,
+    });
+  }
+  if (res.status === 429) {
+    // Not a network fault: upstream is up and has told us to back off, often for most of an
+    // hour. Carry its Retry-After so the poller can honour it (§23.32).
+    const retryAfterMs = parseRetryAfter(res.headers?.get('retry-after'), (opts.now ?? Date.now)());
+    throw new LimitsError('rate_limited', 'usage request returned HTTP 429', {
+      status: 429,
+      ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
     });
   }
   if (!res.ok) {

@@ -1,9 +1,11 @@
-export type LimitsErrorCode = 'unauthorized' | 'network' | 'schema_drift' | 'no_credentials';
+export type LimitsErrorCode = 'unauthorized' | 'network' | 'schema_drift' | 'no_credentials' | 'rate_limited';
 
 export interface LimitsErrorInfo {
   code: LimitsErrorCode;
   message: string;
   hint?: string;
+  /** `rate_limited` only: when upstream said to try again (ISO 8601), if it said (§23.32). */
+  retryAt?: string;
 }
 
 /** Error thrown by `fetchLimits`. Never carries token material. */
@@ -11,12 +13,19 @@ export class LimitsError extends Error {
   readonly code: LimitsErrorCode;
   readonly hint: string | undefined;
   readonly status: number | undefined;
-  constructor(code: LimitsErrorCode, message: string, opts: { hint?: string; status?: number } = {}) {
+  /** `rate_limited` only: upstream's `Retry-After`, in ms, when it sent a usable one. */
+  readonly retryAfterMs: number | undefined;
+  constructor(
+    code: LimitsErrorCode,
+    message: string,
+    opts: { hint?: string; status?: number; retryAfterMs?: number } = {},
+  ) {
     super(message);
     this.name = 'LimitsError';
     this.code = code;
     this.hint = opts.hint;
     this.status = opts.status;
+    this.retryAfterMs = opts.retryAfterMs;
   }
 
   toInfo(): LimitsErrorInfo {

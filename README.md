@@ -146,7 +146,7 @@ followed by the raw JSON body.
 | `get_summary` | limits + per-limit `ok`/`warn`/`critical` + today's tokens — prefer this |
 | `get_tokens` | token spend, `{ since?, groupBy? }` |
 | `get_sessions` | live sessions: project, worktree, pid, model, tokens, pause |
-| `refresh_limits` | force a refetch (rate-limited to one per 10 s) |
+| `refresh_limits` | force a refetch (at most one upstream call a minute, counting scheduled polls) |
 
 There is deliberately **no** pause/resume/freeze tool. Controlling sessions stays with the
 human.
@@ -291,7 +291,7 @@ load/save round-trip. An invalid value is an error naming the key.
 | `port` | `47291` | HTTP port (0–65535) |
 | `bind` | `["127.0.0.1"]` | IP literals and/or the keyword `tailscale` |
 | `auth.token` | `""` | bearer token; minted by `install`, `0600` |
-| `pollIntervalMs` | `60000` | limits poll interval (1 000 – 86 400 000) |
+| `pollIntervalMs` | `300000` | limits poll interval (1 000 – 86 400 000; values under 120 000 are raised to 120 000) |
 | `thresholds.warn` | `80` | percent at which a limit becomes `warn` (0–100) |
 | `thresholds.critical` | `95` | percent at which a limit becomes `critical`; must be ≥ `warn` |
 | `hookDebounceMinutes` | `10` | quiet window for repeated nudges (0–1440) |

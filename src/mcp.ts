@@ -105,9 +105,25 @@ function limitsHeadline(body: unknown, overall?: LimitStatus | null, prefix?: st
   else parts.push(...limits.map(limitPart));
   if (overall !== undefined && overall !== null) parts.push(`status ${overall}`);
   if (rec['stale'] === true) parts.push('stale');
-  const error = record(rec['error'])['code'];
-  if (typeof error === 'string') parts.push(`error ${error}`);
+  const error = record(rec['error']);
+  if (error['code'] === 'rate_limited') parts.push(...rateLimitedParts(error, rec['fetchedAt']));
+  else if (typeof error['code'] === 'string') parts.push(`error ${error['code']}`);
   return parts.join(' · ');
+}
+
+/** `2026-09-25T23:18:40.000Z` → `2026-09-25 23:18 UTC`; anything else → null. */
+function utcMinute(value: unknown): string | null {
+  if (typeof value !== 'string' || Number.isNaN(Date.parse(value))) return null;
+  return `${new Date(value).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+}
+
+/** §23.32: an upstream 429 says until when, and how old the numbers being served are. */
+function rateLimitedParts(error: Record<string, unknown>, fetchedAt: unknown): string[] {
+  const until = utcMinute(error['retryAt']);
+  const from = utcMinute(fetchedAt);
+  const parts = [`rate-limited by Anthropic (HTTP 429)${until === null ? '' : ` until ${until}`}`];
+  if (from !== null) parts.push(`numbers from ${from}`);
+  return parts;
 }
 
 function summaryHeadline(body: unknown): string {
@@ -301,7 +317,7 @@ const TOOL_DEFS: readonly ToolDef[] = [
         'Forces the daemon to refetch the rate limits from Anthropic right now and returns the fresh ' +
         'body, same shape as `get_limits`. The daemon already polls on its own, so only use this when ' +
         'the cached numbers are known to be stale — for example straight after a long burst of work. ' +
-        'Refreshes are rate-limited to one per 10 s; when that limit is hit this returns the *current* ' +
+        'Anthropic rate-limits the usage endpoint, so a refresh within a minute of the last fetch returns the *current* ' +
         'limits with a note on the first line instead of an error. ' +
         RESETS_NOTE,
       inputSchema: NO_ARGS,
@@ -314,7 +330,7 @@ const TOOL_DEFS: readonly ToolDef[] = [
       } catch (err) {
         if (errorEnvelopeOf(err)?.code !== 'rate_limited') throw err;
         const body = withoutRaw(await client.get('/v1/limits', { timeoutMs: MCP_TIMEOUT_MS }));
-        return payloadResult(limitsHeadline(body, null, 'refresh rate-limited (one per 10 s) — current limits'), body);
+        return payloadResult(limitsHeadline(body, null, 'refresh skipped (fetched under a minute ago) — current limits'), body);
       }
     },
   },

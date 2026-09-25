@@ -40,7 +40,7 @@ describe('defaults', () => {
   it('matches the documented §9 + §21 defaults', () => {
     const d = defaultConfig();
     expect(d.port).toBe(47291);
-    expect(d.pollIntervalMs).toBe(60_000);
+    expect(d.pollIntervalMs).toBe(300_000);
     expect(d.thresholds).toEqual({ warn: 80, critical: 95 });
     expect(d.hookDebounceMinutes).toBe(10);
     expect(d.retentionDays).toBe(90);

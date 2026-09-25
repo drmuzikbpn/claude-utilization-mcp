@@ -85,7 +85,7 @@ export function defaultConfig(): Config {
     port: 47291,
     bind: ['127.0.0.1'],
     auth: { token: '' },
-    pollIntervalMs: 60_000,
+    pollIntervalMs: 300_000,
     thresholds: { warn: 80, critical: 95 },
     hookDebounceMinutes: 10,
     retentionDays: 90,

@@ -5,6 +5,18 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 ## [Unreleased]
 
 ### Fixed
+- An upstream `HTTP 429` from the usage endpoint is now reported as `error.code:
+  "rate_limited"` with `retryAt` and a hint, instead of a generic `network` error, and the
+  MCP headline says `rate-limited by Anthropic (HTTP 429) until … · numbers from …`. The
+  daemon honours `Retry-After` (capped at 6 h) for scheduled polls and `POST /v1/refresh`,
+  and persists the window so an auto-update restart does not poll inside it. Previously it
+  ignored a 50-minute `Retry-After` and retried every ≤ 10 min for eleven hours.
+- The daemon polls the usage endpoint far less, to stay under its unpublished budget:
+  the default `pollIntervalMs` is 300 000 (was 60 000) with a 120 000 floor applied to
+  existing configs; each 429 doubles the interval (to 30 min max), easing back after 12
+  good polls; a restart whose cached numbers are younger than the interval waits instead of
+  polling at once; and `POST /v1/refresh` is served from cache within 60 s of any upstream
+  call (was: 10 s between refreshes, ignoring scheduled polls).
 - An account switch no longer leaves the daemon serving the previous account's limits. The
   OAuth access token was cached for the life of the process and re-read only on a 401 —
   but a switched-away token stays valid, so no 401 ever fired and the daemon reported the
