@@ -136,7 +136,7 @@ Auth: loopback GET exempt. `HEAD` allowed.
 Auth: loopback GET exempt.
 
 The daemon's cached copy of `GET https://api.anthropic.com/api/oauth/usage`
-(`anthropic-beta: oauth-2025-04-20`), polled every `pollIntervalMs` (never faster than
+(`anthropic-beta: oauth-2025-04-20`, `User-Agent: claude-usage/<version>`), polled every `pollIntervalMs` (never faster than
 120 s; each upstream 429 doubles the interval, up to 30 min, easing back after 12 good polls —
 §23.33).
 

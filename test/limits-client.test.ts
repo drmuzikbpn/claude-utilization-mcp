@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { OAUTH_BETA_HEADER, USAGE_ENDPOINT, fetchLimits, type FetchLike } from '../src/limits/client.js';
+import { OAUTH_BETA_HEADER, USAGE_ENDPOINT, USER_AGENT, fetchLimits, type FetchLike } from '../src/limits/client.js';
+import { getVersion } from '../src/version.js';
 import { LimitsError } from '../src/limits/types.js';
 import { liveLimitsFixture } from './helpers/fixtures.js';
 
@@ -23,6 +24,22 @@ describe('fetchLimits', () => {
     expect(init.headers?.['authorization']).toBe(`Bearer ${TOKEN}`);
     expect(init.headers?.['anthropic-beta']).toBe(OAUTH_BETA_HEADER);
     expect((payload as { limits: unknown[] }).limits).toHaveLength(3);
+  });
+
+  // Upstream should see an honest client identity — this daemon's own name and version,
+  // never Node's default and never a borrowed Claude Code identity.
+  it('identifies itself as claude-usage/<version> in User-Agent', async () => {
+    let headers: Record<string, string> | undefined;
+    const impl: FetchLike = async (_url, init) => {
+      headers = init?.headers;
+      return { ok: true, status: 200, text: async () => JSON.stringify(liveLimitsFixture()) };
+    };
+    await fetchLimits(TOKEN, impl);
+    const ua = headers?.['user-agent'];
+    expect(ua).toBe(`claude-usage/${getVersion()}`);
+    expect(ua).toBe(USER_AGENT);
+    expect(getVersion()).toMatch(/^\d+\.\d+\.\d+/);
+    expect(ua).not.toMatch(/claude-cli|claude-code|anthropic-sdk|node/i);
   });
 
   it('returns the payload verbatim', async () => {
