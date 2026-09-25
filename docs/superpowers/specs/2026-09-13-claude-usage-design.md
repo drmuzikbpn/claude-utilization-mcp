@@ -1325,3 +1325,15 @@ The budget is unpublished, so the daemon is built to need less of it and to lear
 **Test-first, per Part III:** `test/limits-rate-limit.test.ts`. The §23.32 tests were watched
 to fail against the unfixed code; each §23.33 behaviour was checked by mutation (restart
 delay, adaptive doubling, attempt tracking, in-window refresh) and every mutant failed a test.
+
+### §23.34 An honest User-Agent on the usage call (2026-09-25)
+
+After §23.32/§23.33 shipped, the 429 renewed for another hour at the first call after
+`retryAt`, while Claude Code's own `/usage` — same endpoint, same Keychain token — succeeded
+mid-block. The likeliest reading is a limit keyed on client identity rather than the account.
+The daemon was sending Node's default `User-Agent`.
+
+`fetchLimits` now sends `User-Agent: claude-usage/<version>` (`USER_AGENT`, from
+`getVersion()`), so upstream sees this client as what it is. Deliberately **not** Claude
+Code's identifier: borrowing it to share Claude Code's allowance would be disguising a
+third-party client to get around a rate limit. Retry-After handling is unchanged.

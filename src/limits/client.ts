@@ -1,8 +1,14 @@
+import { getVersion } from '../version.js';
 import { LimitsError } from './types.js';
 
 export const USAGE_ENDPOINT = 'https://api.anthropic.com/api/oauth/usage';
 /** Literal beta header Claude Code sends (§23.3, fixture README). */
 export const OAUTH_BETA_HEADER = 'oauth-2025-04-20';
+/**
+ * Our own identity, never Node's default and never Claude Code's (§23.34): upstream should
+ * be able to see — and budget — this client for what it is.
+ */
+export const USER_AGENT = `claude-usage/${getVersion()}`;
 
 export interface RequestInitLike {
   method?: string;
@@ -63,6 +69,7 @@ export async function fetchLimits(
       authorization: `Bearer ${token}`,
       'anthropic-beta': OAUTH_BETA_HEADER,
       accept: 'application/json',
+      'user-agent': USER_AGENT,
     },
   };
   if (opts.signal !== undefined) init.signal = opts.signal;

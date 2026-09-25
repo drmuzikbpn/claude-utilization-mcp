@@ -5,6 +5,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 ## [Unreleased]
 
 ### Fixed
+- The usage request now identifies itself with `User-Agent: claude-usage/<version>` instead
+  of Node's default, so Anthropic can see and budget this client (§23.34).
 - An upstream `HTTP 429` from the usage endpoint is now reported as `error.code:
   "rate_limited"` with `retryAt` and a hint, instead of a generic `network` error, and the
   MCP headline says `rate-limited by Anthropic (HTTP 429) until … · numbers from …`. The
