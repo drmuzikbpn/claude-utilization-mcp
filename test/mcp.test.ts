@@ -129,6 +129,44 @@ describe('get_limits', () => {
     const result = await mcpFor(d).callTool('get_limits');
     expect(headline(result)).toBe('no limits data yet · stale · error unauthorized');
   });
+
+  it('spells out an upstream 429: until when, and how old the numbers are (§23.32)', async () => {
+    const d = await daemon();
+    d.limits.set({
+      fetchedAt: '2026-09-25T10:51:17.351Z',
+      stale: true,
+      error: {
+        code: 'rate_limited',
+        message: 'Anthropic is rate-limiting the usage endpoint (HTTP 429)',
+        retryAt: '2026-09-25T23:18:40.000Z',
+      },
+      limits: [
+        { id: 'weekly_all', kind: 'weekly_all', group: 'weekly', percent: 20, severity: 'normal', resetsAt: null, scope: null, isActive: true },
+      ],
+      legacyWindows: {},
+      extraUsage: null,
+      raw: null,
+    });
+    const result = await mcpFor(d).callTool('get_limits');
+    expect(headline(result)).toBe(
+      'weekly 20% · stale · rate-limited by Anthropic (HTTP 429) until 2026-09-25 23:18 UTC · numbers from 2026-09-25 10:51 UTC',
+    );
+  });
+
+  it('says rate-limited without a time when upstream gave no Retry-After', async () => {
+    const d = await daemon();
+    d.limits.set({
+      fetchedAt: null,
+      stale: false,
+      error: { code: 'rate_limited', message: 'Anthropic is rate-limiting the usage endpoint (HTTP 429)' },
+      limits: [],
+      legacyWindows: {},
+      extraUsage: null,
+      raw: null,
+    });
+    const result = await mcpFor(d).callTool('get_limits');
+    expect(headline(result)).toBe('no limits data yet · rate-limited by Anthropic (HTTP 429)');
+  });
 });
 
 describe('get_summary', () => {
@@ -238,7 +276,7 @@ describe('refresh_limits', () => {
 
     const result = await mcpFor(d, { token: TOKEN }).callTool('refresh_limits');
     expect(result.isError).toBeUndefined();
-    expect(headline(result)).toContain('refresh rate-limited (one per 10 s) — current limits');
+    expect(headline(result)).toContain('refresh skipped (fetched under a minute ago) — current limits');
     expect(headline(result)).toContain('session 41%');
     expect(body(result)['limits']).toBeInstanceOf(Array);
   });

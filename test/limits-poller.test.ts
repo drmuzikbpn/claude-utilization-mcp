@@ -6,6 +6,7 @@ import { FakeTimers, flush } from './helpers/fake-timers.js';
 import { liveLimitsFixture } from './helpers/fixtures.js';
 
 const INTERVAL = 60_000;
+const REFRESH_FLOOR = 10_000;
 
 interface Harness {
   poller: LimitsPoller;
@@ -25,6 +26,9 @@ function harness(): Harness {
 
   const poller = new LimitsPoller({
     intervalMs: INTERVAL,
+    // These tests exercise refresh mechanics on a 10 s grid; the production floor and its
+    // "no upstream call right after a poll" rule are covered in limits-rate-limit.test.ts.
+    refreshMinIntervalMs: REFRESH_FLOOR,
     timers,
     now: () => 1_757_000_000_000 + timers.clock,
     getToken: async (o) => {
@@ -266,6 +270,7 @@ describe('LimitsPoller refresh', () => {
     h.poller.start();
     await flush();
     expect(h.calls).toHaveLength(1);
+    h.timers.clock += REFRESH_FLOOR;
     const res = await h.poller.refresh();
     expect(res.rateLimited).toBe(false);
     expect(h.calls).toHaveLength(2);
@@ -281,12 +286,13 @@ describe('LimitsPoller refresh', () => {
     h.poller.start();
     await flush();
     expect(h.tokenReads).toEqual([{ fresh: false }]);
+    h.timers.clock += REFRESH_FLOOR;
     await h.poller.refresh();
     expect(h.tokenReads).toEqual([{ fresh: false }, { fresh: true }]);
     h.poller.stop();
   });
 
-  it('rate-limits to one per 10 s', async () => {
+  it('rate-limits to one per refreshMinIntervalMs', async () => {
     const h = harness();
     const first = await h.poller.refresh();
     expect(first.rateLimited).toBe(false);

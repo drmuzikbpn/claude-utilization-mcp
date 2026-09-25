@@ -120,7 +120,7 @@ Interface: `getAccessToken(): Promise<string>`; throws `NoCredentialsError`.
   **The exact response shape is verified in the first implementation step** (read-only
   GET with the live token) and captured as a redacted fixture; normalization is written
   against that fixture.
-- `poller.ts`: fetch every `pollIntervalMs` (default 60 000). On failure: exponential
+- `poller.ts`: fetch every `pollIntervalMs` (default 60 000 — 300 000 since §23.33). On failure: exponential
   backoff (2× from 60 s, cap 10 min), keep serving last-good with `stale: true`.
 
 ### 5.3 Token spend (`src/spend/`)
@@ -216,7 +216,7 @@ Reverses all install steps; keeps `~/.config/claude-usage/` unless `--purge`.
 ## 9. Configuration file
 `~/.config/claude-usage/config.json` (XDG; `$XDG_CONFIG_HOME` respected):
 ```json
-{ "port": 47291, "pollIntervalMs": 60000,
+{ "port": 47291, "pollIntervalMs": 300000,
   "thresholds": { "warn": 80, "critical": 95 },
   "hookDebounceMinutes": 10, "retentionDays": 90,
   "projectsDir": "~/.claude/projects",
@@ -1277,3 +1277,51 @@ subcommand on the CLI — the endpoint is the only manual trigger).
 **Test-first, per Part III:** all three tests were watched to fail against the unfixed
 code — the TTL boundary, a token swapped underneath the reader with no 401 (the reported
 bug, reproduced), and `refresh()` reading fresh rather than reusing the cache.
+
+### §23.32 An upstream 429 is its own error, and `Retry-After` is honoured (2026-09-25)
+
+Found live: from 10:51Z every poll of `GET /api/oauth/usage` answered `HTTP 429` for more
+than eleven hours. A manual probe showed the response carries `retry-after: 3023` (seconds)
+and a `rate_limit_error` body. The daemon mapped it to `error.code: "network"` — telling
+callers to suspect their connection — and retried on its own backoff, capped at 10 min, so
+it kept calling back well inside the window it had just been told to stay out of. Every
+auto-update restart (and a manual `kickstart -k`) reset the backoff and polled immediately.
+
+**Fix.**
+- `fetchLimits` maps 429 to `LimitsError('rate_limited')` and parses `Retry-After` in both
+  RFC 9110 forms (delay-seconds, HTTP-date) into `retryAfterMs`; absent, garbage or
+  negative values leave it undefined. `HttpResponseLike.headers` is optional so test doubles
+  need not model it.
+- `LimitsErrorInfo` gains `retryAt` (ISO 8601). The poller serves `{ code: "rate_limited",
+  message: "Anthropic is rate-limiting the usage endpoint (HTTP 429); next attempt after
+  <retryAt>", hint, retryAt }` alongside the last good numbers.
+- No scheduled poll and no `refresh()` calls upstream before `retryAt`. `Retry-After` is
+  capped at `MAX_RETRY_AFTER_MS` (6 h): a value in days is likelier a parse or clock fault
+  than an instruction.
+- The window is persisted as `rateLimitedUntil` in `limits-cache.json`, read independently of
+  the snapshot so it survives even a 429 before any successful fetch. A restarted poller
+  inside the window schedules rather than polls, and reports the error from its first request.
+- The MCP headline reads `rate-limited by Anthropic (HTTP 429) until <UTC minute> · numbers
+  from <UTC minute>`.
+
+### §23.33 Staying under the usage endpoint's budget (2026-09-25)
+
+The budget is unpublished, so the daemon is built to need less of it and to learn from a 429:
+
+- **Slower default, with a floor.** `pollIntervalMs` defaults to 300 000. Configs written
+  with the old 60 000 default are raised to `MIN_POLL_INTERVAL_MS` (120 000) with a log line,
+  not rejected — rejecting would stop an installed daemon from starting.
+- **Adaptive slow-down.** Each 429 doubles the effective interval, up to
+  `MAX_ADAPTIVE_INTERVAL_MS` (30 min); `RELAX_AFTER_SUCCESSES` (12) consecutive good polls
+  halve it again, never below the configured interval. In memory only; the persisted
+  `rateLimitedUntil` covers restarts.
+- **No poll on restart when the cache is fresh.** A cached snapshot younger than the interval
+  delays the first poll until it is due.
+- **Refresh counts scheduled polls.** `POST /v1/refresh` is served from cache (the local
+  `429 rate_limited` envelope, which the MCP tool turns into the current limits) within
+  `REFRESH_MIN_INTERVAL_MS` (now 60 s, was 10 s) of *any* upstream call, not just the
+  previous refresh.
+
+**Test-first, per Part III:** `test/limits-rate-limit.test.ts`. The §23.32 tests were watched
+to fail against the unfixed code; each §23.33 behaviour was checked by mutation (restart
+delay, adaptive doubling, attempt tracking, in-window refresh) and every mutant failed a test.

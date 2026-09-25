@@ -1,7 +1,7 @@
 import { rmSync } from 'node:fs';
 import { createTokenReader } from './credentials/index.js';
 import { EventBus } from './events/bus.js';
-import { LimitsPoller } from './limits/poller.js';
+import { LimitsPoller, effectivePollIntervalMs } from './limits/poller.js';
 import { ensureConfigDir, expandHome, loadConfig, resolveConfigDir, writeJsonFile, type Config } from './config.js';
 import { daemonFilePath } from './clients/http.js';
 import { resolveBindAddresses, TAILSCALE_KEYWORD } from './net/bind.js';
@@ -142,7 +142,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
 
   const poller = new LimitsPoller({
     getToken: createTokenReader(),
-    intervalMs: config.pollIntervalMs,
+    intervalMs: effectivePollIntervalMs(config.pollIntervalMs),
     // Serve the last good numbers straight away rather than an empty list until the first
     // poll lands — which matters now that auto-update restarts the daemon regularly, and
     // more still when that first poll comes back 429 (§23.19).
@@ -268,7 +268,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
 
   if (opts.poll !== false) {
     poller.start();
-    debug(`limits: polling every ${config.pollIntervalMs}ms`);
+    if (poller.intervalMs !== config.pollIntervalMs) {
+      log(`limits: pollIntervalMs ${config.pollIntervalMs} is below the floor — polling every ${poller.intervalMs}ms`);
+    }
+    debug(`limits: polling every ${poller.intervalMs}ms`);
   }
 
   // §20: disables itself when `autoUpdate.enabled` is false or we are not running out
