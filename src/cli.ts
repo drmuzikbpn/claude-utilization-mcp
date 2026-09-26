@@ -42,6 +42,7 @@ Usage: claude-usage <command> [options]
   rollback                          point "current" back at the previous version
   hook                              UserPromptSubmit hook (always exits 0)
   statusline                        one-line status for statusLine.command
+  observe                           forward statusline JSON's rate_limits to the daemon
   --version                         print the version
   help                              print this help
 
@@ -423,6 +424,13 @@ export async function run(argv: readonly string[], io: CliIO = {}): Promise<numb
         ...(io.configDir === undefined ? {} : { configDir: io.configDir }),
       };
       return runHook(hookIo);
+    }
+    case 'observe': {
+      const { runObserve } = await import('./observe.js');
+      return runObserve({
+        stdin: io.stdin ?? (await readStdin()),
+        ...(io.configDir === undefined ? {} : { configDir: io.configDir }),
+      });
     }
     case 'statusline': {
       const slIo = {

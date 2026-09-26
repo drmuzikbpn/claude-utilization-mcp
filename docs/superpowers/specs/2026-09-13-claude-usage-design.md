@@ -1355,3 +1355,42 @@ line per state change, and nothing in steady state:
   ` (window from a previous process)`.
 
 Polling behaviour is unchanged.
+
+### §23.36 Headline limits from Claude Code's statusline input (2026-09-26)
+
+§23.33's budget turned out far smaller than one call per 30 min: after the block cleared at
+~07:32Z, four calls in ~82 min (the last two 30 min apart) earned another hour's 429. Polling
+this endpoint cannot keep numbers live. Claude Code, though, reads
+`anthropic-ratelimit-unified-5h/7d-*` from every model response and hands its statusline
+command `rate_limits: { five_hour: {used_percentage, resets_at}, seven_day: {…} }` — live
+numbers at no upstream cost.
+
+- **Ingest.** `POST /v1/limits/observed`, bearer-gated like every mutating route (no loopback
+  exemption). Body: the `rate_limits` object verbatim. `LimitsPoller.observe` validates it
+  field by field and all-or-nothing, so garbage never overwrites a good reading. It stamps
+  `observedAt` with the daemon's clock. Observations are in memory only.
+- **Client.** `claude-usage observe` reads statusline JSON on stdin, POSTs `rate_limits` with
+  the config's token (400 ms timeout), prints nothing, and always exits 0. It skips a payload
+  byte-identical to the last one it sent within `OBSERVE_DEDUPE_MS` (60 s), recording a send
+  only after the daemon accepted it. `claude-usage statusline` does the same, concurrently
+  with its render. A user's own statusline adds one documented line; nothing here edits it.
+- **Precedence.** `five_hour` → `session`, `seven_day` → `weekly_all`. For those ids,
+  whichever of the observation and the last upstream fetch is newer wins (ties to the
+  observation). `weekly_scoped:*`, `extraUsage` and `legacyWindows` come only from upstream.
+  Every served row carries `source` (`upstream` | `statusline`) and `asOf`. Observed rows get
+  `severity: null`, because upstream severity describes an older reading.
+- **Staleness.** An observation is used for `OBSERVATION_TTL_MS` (15 min) and never at or past
+  its own `resets_at`. Claude Code keeps serving the last header values while its requests
+  are refused, so the reset is the only honest expiry. Snapshot `stale` is `false` whenever
+  an observation is applied; otherwise it keeps its upstream meaning. The upstream `error`
+  (e.g. `rate_limited` + `retryAt`) is still reported.
+- **Upstream polling.** While any observation is fresh, the poll interval is at least
+  `OBSERVED_UPSTREAM_INTERVAL_MS` (1 h), and only for what observations lack. Otherwise the
+  §23.33 adaptive schedule applies. This is evaluated when each poll is scheduled.
+  Retry-After, the refresh floor and the persisted window are unchanged.
+- **MCP.** The headline adds `live from Claude Code as of <UTC minute>`. While upstream is
+  429ing it dates the rest as `Anthropic numbers from <fetchedAt>`.
+
+**Test-first, per Part III:** `test/limits-observed.test.ts`. Mutation-checked: skipping a bad
+window instead of rejecting, ignoring `resets_at`, dropping newer-wins, not clearing `stale`,
+and dropping the dedupe each fail their named test.

@@ -153,6 +153,47 @@ describe('get_limits', () => {
     );
   });
 
+  it('statusline-only data: says where the numbers came from and when, and not stale (§23.36)', async () => {
+    const d = await daemon();
+    d.limits.set({
+      fetchedAt: null,
+      stale: false,
+      error: null,
+      limits: [
+        { id: 'session', kind: 'session', group: 'session', percent: 10, severity: null, resetsAt: null, scope: null, isActive: false, source: 'statusline', asOf: '2026-09-26T08:24:10.000Z' },
+        { id: 'weekly_all', kind: 'weekly_all', group: 'weekly', percent: 52, severity: null, resetsAt: null, scope: null, isActive: false, source: 'statusline', asOf: '2026-09-26T08:24:10.000Z' },
+      ],
+      legacyWindows: {},
+      extraUsage: null,
+      raw: null,
+    });
+    const result = await mcpFor(d).callTool('get_limits');
+    expect(headline(result)).toBe('session 10% · weekly 52% · live from Claude Code as of 2026-09-26 08:24 UTC');
+    expect(body(result)['stale']).toBe(false);
+    expect((body(result)['limits'] as Array<Record<string, unknown>>)[0]).toMatchObject({ source: 'statusline', asOf: '2026-09-26T08:24:10.000Z' });
+  });
+
+  it('mixed sources while upstream is 429ing: live headline, Anthropic numbers dated (§23.36)', async () => {
+    const d = await daemon();
+    d.limits.set({
+      fetchedAt: '2026-09-26T08:24:55.043Z',
+      stale: false,
+      error: { code: 'rate_limited', message: 'Anthropic is rate-limiting the usage endpoint (HTTP 429)', retryAt: '2026-09-26T09:54:55.136Z' },
+      limits: [
+        { id: 'session', kind: 'session', group: 'session', percent: 12, severity: null, resetsAt: null, scope: null, isActive: false, source: 'statusline', asOf: '2026-09-26T09:10:00.000Z' },
+        { id: 'weekly_scoped:fable', kind: 'weekly_scoped', group: 'weekly', percent: 43, severity: 'normal', resetsAt: null, scope: null, isActive: false, source: 'upstream', asOf: '2026-09-26T08:24:55.043Z' },
+      ],
+      legacyWindows: {},
+      extraUsage: null,
+      raw: null,
+    });
+    const result = await mcpFor(d).callTool('get_limits');
+    expect(headline(result)).toBe(
+      'session 12% · weekly_scoped:fable 43% · live from Claude Code as of 2026-09-26 09:10 UTC · ' +
+        'rate-limited by Anthropic (HTTP 429) until 2026-09-26 09:54 UTC · Anthropic numbers from 2026-09-26 08:24 UTC',
+    );
+  });
+
   it('says rate-limited without a time when upstream gave no Retry-After', async () => {
     const d = await daemon();
     d.limits.set({

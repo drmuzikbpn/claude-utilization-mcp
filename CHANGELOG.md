@@ -4,6 +4,13 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Added
+- Live headline limits without spending the usage endpoint's budget: `claude-usage observe`
+  (and `claude-usage statusline`, automatically) forwards the `rate_limits` Claude Code passes
+  its statusline to the new `POST /v1/limits/observed`. `session` / `weekly_all` are served
+  from whichever reading is newer, and every row now carries `source` and `asOf`. While
+  observations are fresh the daemon polls Anthropic at most hourly (§23.36).
+
 ### Fixed
 - The daemon log now records each limits state change (`limits: ok`, `limits: rate_limited …
   next attempt after <retryAt>`, `limits: fetch failing (<code>) …`) at the default level, so

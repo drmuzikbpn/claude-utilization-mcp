@@ -9,6 +9,7 @@ import {
   type LimitsErrorInfo,
   type LimitsSnapshot,
   type NormalizedLimit,
+  type ObserveResult,
 } from './types.js';
 
 /**
@@ -41,6 +42,56 @@ export function effectivePollIntervalMs(configured: number): number {
  * go quiet for that long on the strength of one header.
  */
 export const MAX_RETRY_AFTER_MS = 6 * 3_600_000;
+/**
+ * §23.36: how long a statusline observation is believed. Claude Code keeps serving the last
+ * header values while its own requests are refused, so an observation also ends at its
+ * window's `resets_at`, whichever comes first.
+ */
+export const OBSERVATION_TTL_MS = 900_000;
+/** §23.36: upstream poll interval while observations are fresh — only for what they lack. */
+export const OBSERVED_UPSTREAM_INTERVAL_MS = 3_600_000;
+
+/** Statusline window → the limit id it feeds, in the order a statusline-only body lists them. */
+const OBSERVED_WINDOWS: ReadonlyArray<{ key: string; id: string; kind: string; group: string }> = [
+  { key: 'five_hour', id: 'session', kind: 'session', group: 'session' },
+  { key: 'seven_day', id: 'weekly_all', kind: 'weekly_all', group: 'weekly' },
+];
+
+interface Observation {
+  percent: number;
+  resetsAt: string | null;
+  resetsAtMs: number | null;
+  observedAt: number;
+}
+
+/**
+ * One statusline window, validated field by field; `null` when it is not usable.
+ * `used_percentage` must be a finite 0–100; `resets_at` epoch seconds, an ISO string, or absent.
+ */
+function parseObservedWindow(value: unknown): Omit<Observation, 'observedAt'> | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const rec = value as Record<string, unknown>;
+  const pct = rec['used_percentage'];
+  if (typeof pct !== 'number' || !Number.isFinite(pct) || pct < 0 || pct > 100) return null;
+  const raw = rec['resets_at'];
+  let resetsAtMs: number | null = null;
+  if (typeof raw === 'number') {
+    if (!Number.isFinite(raw) || raw <= 0) return null;
+    resetsAtMs = raw * 1000;
+  } else if (typeof raw === 'string') {
+    const at = Date.parse(raw);
+    if (Number.isNaN(at)) return null;
+    resetsAtMs = at;
+  } else if (raw !== undefined && raw !== null) {
+    return null;
+  }
+  return {
+    percent: Math.round(pct),
+    resetsAt: resetsAtMs === null ? null : new Date(resetsAtMs).toISOString(),
+    resetsAtMs,
+  };
+}
+
 /** Where the last good snapshot survives a restart (§23.19). */
 export const LIMITS_CACHE_FILE = 'limits-cache.json';
 
@@ -261,6 +312,8 @@ export class LimitsPoller {
   /** Poll interval after 429-driven slow-downs; never below `intervalMs` (§23.33). */
   private adaptiveIntervalMs: number;
   private successStreak = 0;
+  /** §23.36: the latest statusline observation per limit id. In memory only. */
+  private readonly observed = new Map<string, Observation>();
   /** Epoch ms before which upstream asked not to be called again (§23.32). */
   private rateLimitedUntil: number | null = null;
   private readonly configDir: string | null;
@@ -298,9 +351,73 @@ export class LimitsPoller {
     }
   }
 
-  /** The current `/v1/limits` body. */
+  /**
+   * The current `/v1/limits` body: the upstream snapshot, with `session` / `weekly_all`
+   * replaced by a fresh statusline observation wherever that is newer (§23.36). Every row
+   * carries its `source` and `asOf`.
+   */
   snapshot(): LimitsSnapshot {
-    return this.current;
+    const now = this.now();
+    const fetchedAt = this.current.fetchedAt;
+    const fetchedAtMs = fetchedAt === null ? Number.NEGATIVE_INFINITY : Date.parse(fetchedAt);
+    const limits: NormalizedLimit[] = this.current.limits.map((l) => ({ ...l, source: 'upstream', asOf: fetchedAt }));
+    let applied = false;
+    for (const w of OBSERVED_WINDOWS) {
+      const obs = this.observed.get(w.id);
+      if (obs === undefined || !this.isFresh(obs, now) || obs.observedAt < fetchedAtMs) continue;
+      applied = true;
+      const at = limits.findIndex((l) => l.id === w.id);
+      const base: NormalizedLimit =
+        at >= 0
+          ? (limits[at] as NormalizedLimit)
+          : { id: w.id, kind: w.kind, group: w.group, percent: null, severity: null, resetsAt: null, scope: null, isActive: false };
+      // Upstream severity describes an older reading; a client grades the fresh percent itself.
+      const row: NormalizedLimit = {
+        ...base,
+        percent: obs.percent,
+        severity: null,
+        resetsAt: obs.resetsAt,
+        source: 'statusline',
+        asOf: new Date(obs.observedAt).toISOString(),
+      };
+      if (at >= 0) limits[at] = row;
+      else limits.push(row);
+    }
+    return { ...this.current, limits, stale: applied ? false : this.current.stale };
+  }
+
+  /**
+   * Record Claude Code's statusline `rate_limits` (§23.36). All-or-nothing: one unusable
+   * window rejects the whole body, so garbage never overwrites a good reading.
+   */
+  observe(input: unknown): ObserveResult {
+    if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+      return { accepted: false, reason: 'rate_limits must be a JSON object' };
+    }
+    const rec = input as Record<string, unknown>;
+    const parsed: Array<[string, Omit<Observation, 'observedAt'>]> = [];
+    for (const w of OBSERVED_WINDOWS) {
+      if (!(w.key in rec)) continue;
+      const win = parseObservedWindow(rec[w.key]);
+      if (win === null) return { accepted: false, reason: `rate_limits.${w.key} is not a usable window` };
+      parsed.push([w.id, win]);
+    }
+    if (parsed.length === 0) return { accepted: false, reason: 'rate_limits has no five_hour or seven_day window' };
+    const observedAt = this.now();
+    for (const [id, win] of parsed) this.observed.set(id, { ...win, observedAt });
+    this.notifyIfChanged();
+    return { accepted: true };
+  }
+
+  private isFresh(obs: Observation, now: number): boolean {
+    if (now - obs.observedAt >= OBSERVATION_TTL_MS) return false;
+    return obs.resetsAtMs === null || now < obs.resetsAtMs;
+  }
+
+  private hasFreshObservation(): boolean {
+    const now = this.now();
+    for (const obs of this.observed.values()) if (this.isFresh(obs, now)) return true;
+    return false;
   }
 
   /**
@@ -316,7 +433,7 @@ export class LimitsPoller {
 
   /** Called once per completed poll, after `this.current` has been replaced. */
   private notifyIfChanged(): void {
-    const signature = snapshotSignature(this.current);
+    const signature = snapshotSignature(this.snapshot());
     if (signature === this.lastSignature) return;
     this.lastSignature = signature;
     for (const cb of [...this.listeners]) {
@@ -332,7 +449,11 @@ export class LimitsPoller {
   /** Delay until the next scheduled poll, reflecting backoff. */
   get nextDelayMs(): number {
     const blocked = this.blockedForMs();
-    const base = this.adaptiveIntervalMs;
+    // §23.36: while Claude Code is feeding us the headline numbers, upstream is only needed
+    // for what it alone has (per-model weekly, extra usage) — hourly is plenty.
+    const base = this.hasFreshObservation()
+      ? Math.max(this.adaptiveIntervalMs, OBSERVED_UPSTREAM_INTERVAL_MS)
+      : this.adaptiveIntervalMs;
     if (this.parked) return Math.max(this.maxBackoffMs, blocked);
     if (this.failures === 0) return Math.max(base, blocked);
     return Math.max(Math.min(this.intervalMs * 2 ** this.failures, this.maxBackoffMs), base, blocked);

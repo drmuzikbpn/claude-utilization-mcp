@@ -166,6 +166,22 @@ overwriting it:
                   "command": "/Users/you/.local/share/claude-usage/current/bin/claude-usage statusline" } }
 ```
 
+### Live limits from your own statusline
+
+Anthropic's usage endpoint allows this daemon only a few calls an hour, so the headline
+numbers come from Claude Code itself: it passes its statusline command a `rate_limits`
+object (5-hour and 7-day utilisation, read from its own model responses). `claude-usage
+statusline` forwards it automatically. If you keep your own statusline script, add one line
+after it reads stdin (the example assumes it is in `$input`):
+
+```bash
+printf '%s' "$input" | ~/.local/share/claude-usage/current/bin/claude-usage observe >/dev/null 2>&1 &
+```
+
+`observe` prints nothing, always exits 0, and skips a payload identical to the one it sent
+in the last 60 s. While those observations are fresh the daemon polls Anthropic at most
+hourly, only for the per-model weekly and extra usage.
+
 ## CLI
 
 ```bash
@@ -221,7 +237,7 @@ Whatever it would do next is stopped at the same gate soft pause uses.
 > Short freezes are lossless; hold one for minutes and expect to lose the running tool.
 
 Other subcommands: `serve [--verbose]`, `install`, `configure`, `uninstall`, `mcp`,
-`hook`, `statusline`, `--version`, `help`.
+`hook`, `statusline`, `observe`, `--version`, `help`.
 
 ## Remote dashboard (Tailscale)
 

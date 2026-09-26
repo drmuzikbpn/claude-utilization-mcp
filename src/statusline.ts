@@ -4,6 +4,7 @@ import { resolveConfigDir } from './config.js';
 import type { LimitStatus } from './limits/status.js';
 import type { NormalizedLimit } from './limits/types.js';
 import { HEADLINE_IDS, parseHookStdin, pausedMarkerPath, type SummaryBody } from './hook.js';
+import { runObserve } from './observe.js';
 
 export const STATUSLINE_TIMEOUT_MS = 400;
 export const SEPARATOR = ' · ';
@@ -28,6 +29,8 @@ export interface StatuslineIO {
   /** Force colour on/off; defaults to "colour unless NO_COLOR is set". */
   color?: boolean;
   env?: NodeJS.ProcessEnv;
+  /** §23.36: forwards the payload's `rate_limits`; defaults to `runObserve`. */
+  observe?: (stdin: string) => Promise<number>;
 }
 
 function colorize(text: string, status: LimitStatus, color: boolean): string {
@@ -83,6 +86,10 @@ export async function runStatusline(io: StatuslineIO = {}): Promise<number> {
   const configDir = io.configDir ?? resolveConfigDir();
   const env = io.env ?? process.env;
   const color = io.color ?? (env['NO_COLOR'] === undefined || env['NO_COLOR'] === '');
+  // §23.36: hand Claude Code's rate_limits to the daemon alongside the render — concurrently,
+  // so the line is not held up, and awaited before exit so the POST is not cut off.
+  const observe = io.observe ?? ((stdin: string) => runObserve({ stdin, configDir }));
+  const observing = observe(io.stdin ?? '').catch(() => 0);
 
   try {
     // Claude Code passes session JSON on stdin; the session id tells us whether this very
@@ -100,5 +107,7 @@ export async function runStatusline(io: StatuslineIO = {}): Promise<number> {
     return 0;
   } catch {
     return 0;
+  } finally {
+    await observing;
   }
 }

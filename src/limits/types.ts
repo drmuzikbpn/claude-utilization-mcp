@@ -50,7 +50,21 @@ export interface NormalizedLimit {
   resetsAt: string | null;
   scope: LimitScope | null;
   isActive: boolean;
+  /**
+   * §23.36: where this row's numbers came from — Anthropic's usage endpoint, or Claude
+   * Code's statusline input — and when (ISO 8601). Set on every row `/v1/limits` serves;
+   * absent only on the poller's internal and cached copies.
+   */
+  source?: LimitSource;
+  asOf?: string | null;
 }
+
+export type LimitSource = 'upstream' | 'statusline';
+
+/** §23.36: where `claude-usage observe` posts Claude Code's statusline `rate_limits`. */
+export const OBSERVE_PATH = '/v1/limits/observed';
+
+export type ObserveResult = { accepted: true } | { accepted: false; reason: string };
 
 export interface LegacyWindow {
   utilization: number | null;

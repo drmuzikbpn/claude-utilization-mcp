@@ -69,7 +69,7 @@ Session control belongs to the human, through the CLI or the dashboard.
 | Reachable without the token | Requires the token |
 | --- | --- |
 | `GET`/`HEAD` from loopback: `/health`, `/v1/limits`, `/v1/summary`, `/v1/tokens`, `/v1/config`, `/v1/sessions`, `/v1/sessions/{id}/gate`, `/v1/pause/rules`, `/v1/events` | every request from a non-loopback address, `GET` included |
-| `POST` from loopback to `/v1/sessions/register`, `/v1/sessions/{id}/heartbeat`, `/v1/sessions/{id}/end` | every mutating request: `POST /v1/refresh`, `POST /v1/pause`, `POST /v1/resume`, `DELETE /v1/pause/rules/{id}`, the `/v1/sessions/{id}/pause|resume` sugar |
+| `POST` from loopback to `/v1/sessions/register`, `/v1/sessions/{id}/heartbeat`, `/v1/sessions/{id}/end` | every mutating request: `POST /v1/refresh`, `POST /v1/limits/observed`, `POST /v1/pause`, `POST /v1/resume`, `DELETE /v1/pause/rules/{id}`, the `/v1/sessions/{id}/pause|resume` sugar |
 
 The loopback `GET` exemption is what keeps the hook, the status line and
 `curl localhost:47291/health` zero-config. The three exempt `POST`s are the hook's own
