@@ -273,12 +273,30 @@ describe('scanAll', () => {
     expect(third.events.map((e) => e.dedupKey)).toEqual(['msg_fixture_NEW:req_fixture_new']);
   });
 
+  it('does not open a file whose size still equals its offset', async () => {
+    // The daemon re-scans on every transcript write. With thousands of transcripts, opening
+    // (and buffering) each unchanged one per pass burned whole cores (§23.38).
+    const projects = await copyFixtures();
+    const first = await scanAll(projects, {}, () => {});
+    expect(first.filesRead).toBe(4);
+
+    const second = await scanAll(projects, first.offsets, () => {});
+    expect(second.filesRead).toBe(0);
+    expect(second.filesDone).toBe(4);
+    expect(second.offsets).toEqual(first.offsets);
+
+    await appendFile(join(projects, MAIN_A), '{"type":"user"}\n');
+    const third = await scanAll(projects, second.offsets, () => {});
+    expect(third.filesRead).toBe(1);
+  });
+
   it('reports truncated files so a full background rescan can be scheduled', async () => {
     const projects = await copyFixtures();
     const first = await scanAll(projects, {}, () => {});
     await writeFile(join(projects, MAIN_A), '');
     const res = await scanAll(projects, first.offsets, () => {});
     expect(res.restarted).toEqual([MAIN_A]);
+    expect(res.filesRead).toBe(1);
   });
 
   it('keeps at most `concurrency` files open at once', async () => {

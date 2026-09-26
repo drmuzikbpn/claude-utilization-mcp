@@ -16,6 +16,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   up to an hour for the next poll (§23.37).
 
 ### Fixed
+- The daemon no longer burns 1–4 cores on a machine with many transcripts. Incremental
+  scans skip unchanged files instead of opening each one and allocating a 1 MB buffer for
+  it, and the transcript watcher starts at most one scan every 5 s. On 6,179 transcripts
+  (4.4 GB), a pass went from ~1.6 s to ~0.17 s of CPU (§23.38).
 - The daemon log now records each limits state change (`limits: ok`, `limits: rate_limited …
   next attempt after <retryAt>`, `limits: fetch failing (<code>) …`) at the default level, so
   when a block started and cleared can be read from the log (§23.35).

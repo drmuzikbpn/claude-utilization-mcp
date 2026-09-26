@@ -67,6 +67,8 @@ export interface ScanAllResult extends ScanProgress {
   offsets: Record<string, number>;
   parseErrors: number;
   events: number;
+  /** Files actually opened; an unchanged file (size === offset) is skipped (§23.38). */
+  filesRead: number;
   /** Relative paths that were truncated or replaced and restarted from 0 (§23.8). */
   restarted: string[];
 }
@@ -205,12 +207,14 @@ export async function scanFile(
     }
 
     const decoder = new StringDecoder('utf8');
-    const buffer = Buffer.allocUnsafe(CHUNK_SIZE);
+    // Sized to what is left: most incremental reads are a few KB, and a fresh 1 MB buffer per
+    // file per pass was the bulk of the daemon's GC load (§23.38).
+    const buffer = Buffer.allocUnsafe(Math.max(1, Math.min(CHUNK_SIZE, size - position)));
     let carry = '';
     let offset = position;
 
     while (position < size) {
-      const { bytesRead } = await handle.read(buffer, 0, CHUNK_SIZE, position);
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
       if (bytesRead <= 0) break;
       position += bytesRead;
 
@@ -307,6 +311,7 @@ export async function scanAll(
     offsets: next,
     parseErrors: 0,
     events: 0,
+    filesRead: 0,
     restarted,
     filesDone: 0,
     filesTotal: files.length,
@@ -317,6 +322,17 @@ export async function scanAll(
   const concurrency = Math.max(1, options.concurrency ?? MAX_FILES_IN_FLIGHT);
   let cursor = 0;
 
+  const fileDone = (file: TranscriptFile): void => {
+    result.filesDone += 1;
+    result.bytesDone += file.size;
+    options.onProgress?.({
+      filesDone: result.filesDone,
+      filesTotal: result.filesTotal,
+      bytesDone: result.bytesDone,
+      bytesTotal: result.bytesTotal,
+    });
+  };
+
   const worker = async (): Promise<void> => {
     for (;;) {
       const index = cursor;
@@ -324,8 +340,17 @@ export async function scanAll(
       const file = files[index];
       if (!file) return;
 
-      options.onFileStart?.(file);
       const start = next[file.relPath] ?? 0;
+      // §23.38: the walk already stat'ed it. Nothing new to read, and a size below the offset
+      // (truncation) still goes through `scanFile` so it is reported as restarted.
+      if (file.size === start) {
+        next[file.relPath] = start;
+        fileDone(file);
+        continue;
+      }
+
+      options.onFileStart?.(file);
+      result.filesRead += 1;
       const scanned = await scanFile(file.path, file, start, sink, options.onTitle);
       options.onFileDone?.(file, scanned);
 
@@ -333,14 +358,7 @@ export async function scanAll(
       result.parseErrors += scanned.parseErrors;
       result.events += scanned.events;
       if (scanned.restarted) restarted.push(file.relPath);
-      result.filesDone += 1;
-      result.bytesDone += file.size;
-      options.onProgress?.({
-        filesDone: result.filesDone,
-        filesTotal: result.filesTotal,
-        bytesDone: result.bytesDone,
-        bytesTotal: result.bytesTotal,
-      });
+      fileDone(file);
     }
   };
 
