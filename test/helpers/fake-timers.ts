@@ -32,6 +32,11 @@ export class FakeTimers implements Timers {
     return next === undefined ? null : next.at - this.clock;
   }
 
+  /** Delays of every pending timer, soonest first. */
+  get delays(): number[] {
+    return this.entries.map((e) => e.at - this.clock).sort((x, y) => x - y);
+  }
+
   /** Advance the clock, firing due callbacks and flushing microtasks after each. */
   async advance(ms: number): Promise<void> {
     const target = this.clock + ms;

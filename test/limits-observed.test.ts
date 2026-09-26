@@ -38,6 +38,7 @@ function rateLimits(fiveHour: number, sevenDay: number, resetMs = EPOCH + 3 * 3_
 function harness(opts: { upstream?: boolean } = {}) {
   const timers = new FakeTimers();
   let calls = 0;
+  let failing = opts.upstream === false;
   const poller = new LimitsPoller({
     intervalMs: INTERVAL,
     timers,
@@ -45,11 +46,18 @@ function harness(opts: { upstream?: boolean } = {}) {
     getToken: async () => 'tok',
     fetchLimitsImpl: async () => {
       calls += 1;
-      if (opts.upstream === false) throw new Error('no upstream in this test');
+      if (failing) throw new Error('no upstream in this test');
       return liveLimitsFixture();
     },
   });
-  return { poller, timers, calls: () => calls };
+  return {
+    poller,
+    timers,
+    calls: () => calls,
+    setFailing: (value: boolean) => {
+      failing = value;
+    },
+  };
 }
 
 const byId = (poller: LimitsPoller, id: string) => poller.snapshot().limits.find((l) => l.id === id);
@@ -185,6 +193,51 @@ describe('LimitsPoller.observe (§23.36)', () => {
     expect(fired).toBe(2);
   });
 
+  it('legacyWindows mirrors a fresh observation, unrounded, and falls back once it expires', async () => {
+    const h = harness();
+    h.poller.start();
+    await flush();
+    h.poller.stop();
+    const upstreamLegacy = h.poller.snapshot().legacyWindows;
+
+    h.poller.observe(rateLimits(41.6, 63.2));
+    const legacy = h.poller.snapshot().legacyWindows;
+    expect(legacy['five_hour']).toEqual({ utilization: 41.6, resetsAt: byId(h.poller, 'session')?.resetsAt });
+    expect(legacy['seven_day']).toEqual({ utilization: 63.2, resetsAt: byId(h.poller, 'weekly_all')?.resetsAt });
+
+    h.timers.clock += OBSERVATION_TTL_MS;
+    expect(h.poller.snapshot().legacyWindows).toEqual(upstreamLegacy);
+  });
+
+  it('when an observation lapses, push clients hear it: onChange fires and stale returns', async () => {
+    const h = harness();
+    h.poller.start();
+    await flush();
+    h.setFailing(true);
+    await h.timers.advance(INTERVAL);
+    expect(h.poller.snapshot().stale).toBe(true);
+
+    h.poller.observe(rateLimits(41, 63));
+    expect(h.poller.snapshot().stale).toBe(false);
+    let fired = 0;
+    h.poller.onChange(() => {
+      fired += 1;
+    });
+
+    // Nothing else changes the body between now and the lapse; only the expiry wake-up can.
+    await h.timers.advance(OBSERVATION_TTL_MS - 1);
+    expect(fired).toBe(0);
+    await h.timers.advance(1);
+    expect(fired).toBe(1);
+    expect(h.poller.snapshot().stale).toBe(true);
+    expect(byId(h.poller, 'session')?.source).toBe('upstream');
+
+    // stop() takes a pending expiry wake-up with it.
+    h.poller.observe(rateLimits(42, 63));
+    h.poller.stop();
+    expect(h.timers.pendingCount).toBe(0);
+  });
+
   it('polls upstream at most hourly while observations are fresh, adaptive again after', async () => {
     const h = harness();
     h.poller.start();
@@ -194,7 +247,8 @@ describe('LimitsPoller.observe (§23.36)', () => {
     h.poller.observe(rateLimits(10, 52));
     await h.timers.advance(INTERVAL);
     expect(h.calls()).toBe(2);
-    expect(h.timers.nextDelay).toBe(OBSERVED_UPSTREAM_INTERVAL_MS);
+    // The poll, plus the §23.37 wake-up for when the observation lapses.
+    expect(h.timers.delays).toEqual([OBSERVATION_TTL_MS - INTERVAL, OBSERVED_UPSTREAM_INTERVAL_MS]);
 
     // Observation long gone by the time the hourly poll lands: back to the base interval.
     await h.timers.advance(OBSERVED_UPSTREAM_INTERVAL_MS);

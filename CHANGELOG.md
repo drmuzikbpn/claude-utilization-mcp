@@ -10,6 +10,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   its statusline to the new `POST /v1/limits/observed`. `session` / `weekly_all` are served
   from whichever reading is newer, and every row now carries `source` and `asOf`. While
   observations are fresh the daemon polls Anthropic at most hourly (§23.36).
+- `legacyWindows.five_hour` / `.seven_day` now mirror a fresh statusline observation instead
+  of lagging `limits[]`. When an observation lapses (15 min without a statusline render, or
+  its window resets), SSE clients get a `limits` event right away. Before, that event waited
+  up to an hour for the next poll (§23.37).
 
 ### Fixed
 - The daemon log now records each limits state change (`limits: ok`, `limits: rate_limited …

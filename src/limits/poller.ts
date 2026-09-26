@@ -59,6 +59,8 @@ const OBSERVED_WINDOWS: ReadonlyArray<{ key: string; id: string; kind: string; g
 
 interface Observation {
   percent: number;
+  /** `used_percentage` as sent, unrounded, for `legacyWindows` (§23.37). */
+  utilization: number;
   resetsAt: string | null;
   resetsAtMs: number | null;
   observedAt: number;
@@ -87,6 +89,7 @@ function parseObservedWindow(value: unknown): Omit<Observation, 'observedAt'> | 
   }
   return {
     percent: Math.round(pct),
+    utilization: pct,
     resetsAt: resetsAtMs === null ? null : new Date(resetsAtMs).toISOString(),
     resetsAtMs,
   };
@@ -305,6 +308,8 @@ export class LimitsPoller {
   private failures = 0;
   private parked = false;
   private handle: unknown = null;
+  /** Wakes the poller when a statusline observation lapses (§23.37). */
+  private expiryHandle: unknown = null;
   private running = false;
   private inFlight: Promise<LimitsSnapshot> | null = null;
   /** When upstream was last called, by a poll or a refresh (§23.33). */
@@ -361,6 +366,7 @@ export class LimitsPoller {
     const fetchedAt = this.current.fetchedAt;
     const fetchedAtMs = fetchedAt === null ? Number.NEGATIVE_INFINITY : Date.parse(fetchedAt);
     const limits: NormalizedLimit[] = this.current.limits.map((l) => ({ ...l, source: 'upstream', asOf: fetchedAt }));
+    const legacyWindows = { ...this.current.legacyWindows };
     let applied = false;
     for (const w of OBSERVED_WINDOWS) {
       const obs = this.observed.get(w.id);
@@ -382,8 +388,10 @@ export class LimitsPoller {
       };
       if (at >= 0) limits[at] = row;
       else limits.push(row);
+      // §23.37: the legacy key names are the statusline's own, and must never lag `limits[]`.
+      legacyWindows[w.key] = { utilization: obs.utilization, resetsAt: obs.resetsAt };
     }
-    return { ...this.current, limits, stale: applied ? false : this.current.stale };
+    return { ...this.current, limits, legacyWindows, stale: applied ? false : this.current.stale };
   }
 
   /**
@@ -406,12 +414,37 @@ export class LimitsPoller {
     const observedAt = this.now();
     for (const [id, win] of parsed) this.observed.set(id, { ...win, observedAt });
     this.notifyIfChanged();
+    this.scheduleObservationExpiry();
     return { accepted: true };
   }
 
   private isFresh(obs: Observation, now: number): boolean {
     if (now - obs.observedAt >= OBSERVATION_TTL_MS) return false;
     return obs.resetsAtMs === null || now < obs.resetsAtMs;
+  }
+
+  /**
+   * §23.37: wake when the earliest fresh observation lapses. Without this a push client keeps
+   * the last live figure until the next poll — up to an hour — instead of hearing it went stale.
+   */
+  private scheduleObservationExpiry(): void {
+    if (this.expiryHandle !== null) {
+      this.timers.clearTimeout(this.expiryHandle);
+      this.expiryHandle = null;
+    }
+    if (!this.running) return;
+    const now = this.now();
+    let lapsesAt = Number.POSITIVE_INFINITY;
+    for (const obs of this.observed.values()) {
+      if (!this.isFresh(obs, now)) continue;
+      lapsesAt = Math.min(lapsesAt, obs.observedAt + OBSERVATION_TTL_MS, obs.resetsAtMs ?? Number.POSITIVE_INFINITY);
+    }
+    if (lapsesAt === Number.POSITIVE_INFINITY) return;
+    this.expiryHandle = this.timers.setTimeout(() => {
+      this.expiryHandle = null;
+      this.notifyIfChanged();
+      this.scheduleObservationExpiry();
+    }, lapsesAt - now);
   }
 
   private hasFreshObservation(): boolean {
@@ -493,6 +526,10 @@ export class LimitsPoller {
     if (this.handle !== null) {
       this.timers.clearTimeout(this.handle);
       this.handle = null;
+    }
+    if (this.expiryHandle !== null) {
+      this.timers.clearTimeout(this.expiryHandle);
+      this.expiryHandle = null;
     }
   }
 
