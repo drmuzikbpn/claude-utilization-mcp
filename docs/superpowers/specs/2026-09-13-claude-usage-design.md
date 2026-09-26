@@ -1376,7 +1376,8 @@ numbers at no upstream cost.
   with its render. A user's own statusline adds one documented line; nothing here edits it.
 - **Precedence.** `five_hour` → `session`, `seven_day` → `weekly_all`. For those ids,
   whichever of the observation and the last upstream fetch is newer wins (ties to the
-  observation). `weekly_scoped:*`, `extraUsage` and `legacyWindows` come only from upstream.
+  observation). `weekly_scoped:*` and `extraUsage` come only from upstream. (`legacyWindows`
+  did too until §23.37 made it mirror the observation.)
   Every served row carries `source` (`upstream` | `statusline`) and `asOf`. Observed rows get
   `severity: null`, because upstream severity describes an older reading.
 - **Staleness.** An observation is used for `OBSERVATION_TTL_MS` (15 min) and never at or past
@@ -1394,3 +1395,26 @@ numbers at no upstream cost.
 **Test-first, per Part III:** `test/limits-observed.test.ts`. Mutation-checked: skipping a bad
 window instead of rejecting, ignoring `resets_at`, dropping newer-wins, not clearing `stale`,
 and dropping the dedupe each fail their named test.
+
+### §23.37 `legacyWindows` follows observations; a lapse is pushed (2026-09-26)
+
+The first live observation exposed two gaps in §23.36.
+
+- **`legacyWindows` lagged.** It stayed upstream-only, so one body said `session` 41%
+  (`statusline`) beside `five_hour.utilization` 3 (upstream, two hours old). That number has
+  no provenance, so anyone reading it gets a wrong answer. `legacyWindows.five_hour` /
+  `.seven_day` are now replaced by the observation whenever the matching `limits[]` row is.
+  They use the same freshness and newer-wins rules and carry the unrounded
+  `used_percentage`. When the observation lapses they fall back to upstream.
+- **A lapse was silent to push clients.** A pull read (`GET /v1/limits`, `get_limits`)
+  re-evaluates freshness on every call. SSE `limits` events, though, fired only on a poll or
+  an observation. After the last render, a push client could keep a "live" figure for up to
+  `OBSERVED_UPSTREAM_INTERVAL_MS` (1 h). The poller now arms a wake-up for the earliest lapse
+  (`observedAt + OBSERVATION_TTL_MS`, or the window's own `resets_at` if sooner). The wake-up
+  runs the usual change check, so the event carries the upstream rows with their own `asOf`
+  and `stale` back at its upstream value. The wake-up is armed only while the poller runs,
+  and `stop()` clears it.
+
+**Test-first, per Part III:** `test/limits-observed.test.ts`. Mutation-checked: not
+mirroring, mirroring the rounded percent, no wake-up, and a wake-up left behind by `stop()`
+each fail a named test.
