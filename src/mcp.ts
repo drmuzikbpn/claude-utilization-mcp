@@ -104,9 +104,18 @@ function limitsHeadline(body: unknown, overall?: LimitStatus | null, prefix?: st
   if (limits.length === 0) parts.push('no limits data yet');
   else parts.push(...limits.map(limitPart));
   if (overall !== undefined && overall !== null) parts.push(`status ${overall}`);
+  // §23.36: say when the headline numbers came from Claude Code rather than Anthropic.
+  const observedAt = limits
+    .filter((l) => l.source === 'statusline')
+    .map((l) => l.asOf)
+    .filter((at): at is string => typeof at === 'string')
+    .sort()
+    .at(-1);
+  const live = observedAt === undefined ? null : utcMinute(observedAt);
+  if (live !== null) parts.push(`live from Claude Code as of ${live}`);
   if (rec['stale'] === true) parts.push('stale');
   const error = record(rec['error']);
-  if (error['code'] === 'rate_limited') parts.push(...rateLimitedParts(error, rec['fetchedAt']));
+  if (error['code'] === 'rate_limited') parts.push(...rateLimitedParts(error, rec['fetchedAt'], live !== null));
   else if (typeof error['code'] === 'string') parts.push(`error ${error['code']}`);
   return parts.join(' · ');
 }
@@ -118,11 +127,11 @@ function utcMinute(value: unknown): string | null {
 }
 
 /** §23.32: an upstream 429 says until when, and how old the numbers being served are. */
-function rateLimitedParts(error: Record<string, unknown>, fetchedAt: unknown): string[] {
+function rateLimitedParts(error: Record<string, unknown>, fetchedAt: unknown, mixed: boolean): string[] {
   const until = utcMinute(error['retryAt']);
   const from = utcMinute(fetchedAt);
   const parts = [`rate-limited by Anthropic (HTTP 429)${until === null ? '' : ` until ${until}`}`];
-  if (from !== null) parts.push(`numbers from ${from}`);
+  if (from !== null) parts.push(`${mixed ? 'Anthropic numbers' : 'numbers'} from ${from}`);
   return parts;
 }
 

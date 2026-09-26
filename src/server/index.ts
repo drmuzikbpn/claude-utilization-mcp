@@ -2,7 +2,8 @@ import { createServer as createHttpServer, type IncomingMessage, type Server, ty
 import type { AddressInfo } from 'node:net';
 import { redactConfig, type Config } from '../config.js';
 import { EventBus } from '../events/bus.js';
-import type { LimitsSnapshot } from '../limits/types.js';
+import { OBSERVE_PATH, type LimitsSnapshot, type ObserveResult } from '../limits/types.js';
+import { readJsonBody } from '../sessions/routes.js';
 import { getVersion } from '../version.js';
 import {
   createEventsEndpoint,
@@ -35,6 +36,8 @@ export const REQUEST_TIMEOUT_MS = 5_000;
 export interface LimitsProvider {
   snapshot(): LimitsSnapshot;
   refresh(): Promise<{ rateLimited: boolean; snapshot: LimitsSnapshot }>;
+  /** §23.36: Claude Code's statusline `rate_limits`; absent → the route 404s. */
+  observe?(input: unknown): ObserveResult;
 }
 
 export interface ServerOptions {
@@ -103,6 +106,7 @@ const ROUTES: readonly RouteKey[] = [
   { method: 'GET', path: '/v1/summary' },
   { method: 'GET', path: '/v1/tokens' },
   { method: 'POST', path: '/v1/refresh' },
+  { method: 'POST', path: OBSERVE_PATH },
   { method: 'GET', path: '/v1/config' },
   { method: 'GET', path: EVENTS_PATH },
 ];
@@ -200,6 +204,22 @@ export function createServer(opts: ServerOptions): UsageServer {
     sendJson(res, 200, result.snapshot);
   }
 
+  /** §23.36: bearer-gated like every mutating route; all-or-nothing validation in the poller. */
+  async function observe(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (opts.limits.observe === undefined) {
+      sendError(res, 404, 'not_found', `no route for ${OBSERVE_PATH}`);
+      return;
+    }
+    const body = await readJsonBody(req);
+    const result: ObserveResult =
+      body === null ? { accepted: false, reason: 'body must be a JSON object' } : opts.limits.observe(body);
+    if (!result.accepted) {
+      sendError(res, 400, 'bad_request', result.reason, 'send the statusline JSON\'s rate_limits object');
+      return;
+    }
+    sendJson(res, 200, { accepted: true });
+  }
+
   // --- request pipeline -----------------------------------------------------
 
   function handle(req: IncomingMessage, res: ServerResponse): void {
@@ -265,6 +285,9 @@ export function createServer(opts: ServerOptions): UsageServer {
         return;
       case '/v1/refresh':
         await refresh(res);
+        return;
+      case OBSERVE_PATH:
+        await observe(req, res);
         return;
       case '/v1/config':
         sendJson(res, 200, redactConfig(opts.config));

@@ -165,6 +165,11 @@ The daemon's cached copy of `GET https://api.anthropic.com/api/oauth/usage`
 }
 ```
 
+Every row also carries `source` — `"upstream"` (the usage endpoint) or `"statusline"` (Claude
+Code's statusline input, §23.36) — and `asOf`, the ISO time of that reading. Rows from the
+statusline have `severity: null`. `fetchedAt` stays the last upstream fetch (`null` if there has
+never been one), and `stale` is `false` whenever a fresh statusline reading is in use.
+
 Before the first successful poll: `{ "fetchedAt": null, "stale": false, "error": null,
 "limits": [], "legacyWindows": {}, "extraUsage": null, "raw": null }`.
 
@@ -226,6 +231,27 @@ Anthropic rate-limits the usage endpoint, so a refresh within 60 s of the last u
 → `429`. The MCP `refresh_limits` tool catches that and returns the current limits with a
 note instead of an error. Inside an upstream 429 window (`error.code: "rate_limited"` with a
 future `retryAt`) a refresh returns `200` with the current snapshot and does not call upstream.
+
+## `POST /v1/limits/observed`
+
+Auth: **token required** (mutating, even from loopback). §23.36.
+
+The body is the `rate_limits` object from Claude Code's statusline JSON, verbatim; `claude-usage
+observe` sends it:
+
+```json
+{ "five_hour": { "used_percentage": 10.4, "resets_at": 1790000000 },
+  "seven_day": { "used_percentage": 52, "resets_at": "2026-10-01T06:00:00.000Z" } }
+```
+
+`five_hour` feeds limit `session`, `seven_day` feeds `weekly_all`; other keys are ignored.
+`used_percentage` must be a finite 0–100 (rounded to an integer); `resets_at` is epoch seconds,
+an ISO string, or absent. Validation is all-or-nothing: one unusable window rejects the body
+with `400 bad_request` and the previous reading stands. `200 {"accepted": true}` otherwise.
+
+An observation is used for 15 min (`OBSERVATION_TTL_MS`) and never past its own `resets_at`.
+For `session` / `weekly_all`, `/v1/limits` serves whichever of the observation and the last
+upstream fetch is newer. While one is fresh, the upstream poll drops to at most hourly.
 
 ## `GET /v1/tokens`
 
