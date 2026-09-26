@@ -190,6 +190,11 @@ export interface PollerOptions {
   now?: () => number;
   log?: (line: string) => void;
   /**
+   * Default-level log for state *transitions* only — ok, rate_limited (with each new
+   * retryAt), or another error code (§23.35). Silent in steady state, so it can stay on.
+   */
+  notice?: (line: string) => void;
+  /**
    * Config dir to persist the last good snapshot in, so a restart serves numbers instead
    * of an empty list (§23.19). Omitted (tests, one-shot CLI reads) disables the cache.
    */
@@ -241,6 +246,9 @@ export class LimitsPoller {
   private readonly timers: Timers;
   private readonly now: () => number;
   private readonly log: (line: string) => void;
+  private readonly notice: (line: string) => void;
+  /** The last state `notice` reported; `null` before the first outcome. */
+  private lastStateKey: string | null = null;
 
   private current: LimitsSnapshot = emptySnapshot();
   private failures = 0;
@@ -270,6 +278,7 @@ export class LimitsPoller {
     this.timers = opts.timers ?? realTimers;
     this.now = opts.now ?? Date.now;
     this.log = opts.log ?? (() => undefined);
+    this.notice = opts.notice ?? (() => undefined);
     this.configDir = opts.configDir ?? null;
     const restored = this.configDir === null ? null : readCachedSnapshot(this.configDir);
     if (restored !== null) {
@@ -285,6 +294,7 @@ export class LimitsPoller {
       this.rateLimitedUntil = until;
       this.current = { ...this.current, error: rateLimitedInfo(until) };
       this.lastSignature = snapshotSignature(this.current);
+      this.noteState(' (window from a previous process)');
     }
   }
 
@@ -457,8 +467,27 @@ export class LimitsPoller {
       raw: payload,
     };
     this.writeCache();
+    this.noteState();
     this.notifyIfChanged();
     return this.current;
+  }
+
+  /**
+   * One default-level line per state change (§23.35). A new `retryAt` counts as a change,
+   * so each re-armed 429 window is on record; a repeated network error does not.
+   */
+  private noteState(suffix = ''): void {
+    const error = this.current.error;
+    const key = error === null ? 'ok' : `${error.code}|${error.code === 'rate_limited' ? (error.retryAt ?? '') : ''}`;
+    if (key === this.lastStateKey) return;
+    this.lastStateKey = key;
+    let line: string;
+    if (error === null) line = 'limits: ok';
+    else if (error.code === 'rate_limited') {
+      const when = error.retryAt === undefined ? 'no Retry-After given' : `next attempt after ${error.retryAt}`;
+      line = `limits: rate_limited by Anthropic (HTTP 429) — ${when}`;
+    } else line = `limits: fetch failing (${error.code}) — ${error.message}`;
+    this.notice(`${line}${suffix}`);
   }
 
   /**
@@ -504,6 +533,7 @@ export class LimitsPoller {
       stale: this.current.fetchedAt !== null,
       error,
     };
+    this.noteState();
     this.notifyIfChanged();
     return this.current;
   }

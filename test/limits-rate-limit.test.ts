@@ -343,3 +343,84 @@ describe('staying under the upstream budget (§23.33)', () => {
     h.poller.stop();
   });
 });
+
+describe('state transitions are logged at the default level (§23.35)', () => {
+  function logged(configDir: string | null = null) {
+    const timers = new FakeTimers();
+    const lines: string[] = [];
+    let result: () => Promise<unknown> = async () => liveLimitsFixture();
+    const poller = new LimitsPoller({
+      intervalMs: INTERVAL,
+      timers,
+      now: () => EPOCH + timers.clock,
+      getToken: async () => 'tok',
+      fetchLimitsImpl: async () => result(),
+      notice: (line) => lines.push(line),
+      configDir,
+    });
+    return {
+      poller,
+      timers,
+      lines,
+      setResult: (fn: () => Promise<unknown>) => {
+        result = fn;
+      },
+    };
+  }
+
+  it('ok → rate_limited → ok, one line each, with retryAt', async () => {
+    const h = logged();
+    h.poller.start();
+    await flush();
+    expect(h.lines).toEqual(['limits: ok']);
+
+    h.setResult(rateLimited(3_600_000));
+    await h.timers.advance(INTERVAL);
+    const retryAt = new Date(EPOCH + INTERVAL + 3_600_000).toISOString();
+    expect(h.lines).toEqual(['limits: ok', `limits: rate_limited by Anthropic (HTTP 429) — next attempt after ${retryAt}`]);
+
+    h.setResult(async () => liveLimitsFixture());
+    await h.timers.advance(3_600_000);
+    expect(h.lines.at(-1)).toBe('limits: ok');
+    expect(h.lines).toHaveLength(3);
+
+    // Steady state is silent.
+    await h.timers.advance(INTERVAL * 5);
+    expect(h.lines).toHaveLength(3);
+    h.poller.stop();
+  });
+
+  it('logs a re-armed window (a new retryAt), but not a repeat of the same state', async () => {
+    const h = logged();
+    h.setResult(rateLimited(3_600_000));
+    h.poller.start();
+    await flush();
+    await h.timers.advance(3_600_000);
+    expect(h.lines).toHaveLength(2);
+    expect(h.lines[0]).toContain(new Date(EPOCH + 3_600_000).toISOString());
+    expect(h.lines[1]).toContain(new Date(EPOCH + 7_200_000).toISOString());
+
+    h.setResult(() => Promise.reject(new LimitsError('network', 'boom')));
+    await h.timers.advance(3_600_000);
+    await h.timers.advance(h.timers.nextDelay ?? 0);
+    expect(h.lines.slice(2)).toEqual(['limits: fetch failing (network) — boom']);
+    h.poller.stop();
+  });
+
+  it('logs a 429 window restored from a previous process', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cu-notice-'));
+    const first = logged(dir);
+    first.setResult(rateLimited(3_600_000));
+    first.poller.start();
+    await flush();
+    first.poller.stop();
+
+    const second = logged(dir);
+    second.timers.clock = 60_000;
+    second.poller.start();
+    await flush();
+    expect(second.lines).toEqual([
+      `limits: rate_limited by Anthropic (HTTP 429) — next attempt after ${new Date(EPOCH + 3_600_000).toISOString()} (window from a previous process)`,
+    ]);
+  });
+});

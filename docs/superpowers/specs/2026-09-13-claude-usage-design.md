@@ -1337,3 +1337,21 @@ The daemon was sending Node's default `User-Agent`.
 `getVersion()`), so upstream sees this client as what it is. Deliberately **not** Claude
 Code's identifier: borrowing it to share Claude Code's allowance would be disguising a
 third-party client to get around a rate limit. Retry-After handling is unchanged.
+
+### §23.35 Limits state transitions are logged at the default level (2026-09-26)
+
+When the §23.32 block cleared, the log could not say which call first succeeded: poll
+outcomes were logged only at verbose level, and the cache keeps only the latest good fetch.
+
+`LimitsPoller` takes a `notice` sink, which the daemon wires to its default log. It writes one
+line per state change, and nothing in steady state:
+
+- `limits: ok`
+- `limits: rate_limited by Anthropic (HTTP 429) — next attempt after <retryAt>` (or
+  `no Retry-After given`); a new `retryAt` counts as a change, so every re-armed window is
+  on record
+- `limits: fetch failing (<code>) — <message>`; a repeat of the same code is not logged again
+- a window restored from `limits-cache.json` at startup is logged with
+  ` (window from a previous process)`.
+
+Polling behaviour is unchanged.
