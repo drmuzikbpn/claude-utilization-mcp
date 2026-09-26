@@ -5,6 +5,9 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 ## [Unreleased]
 
 ### Fixed
+- The daemon log now records each limits state change (`limits: ok`, `limits: rate_limited …
+  next attempt after <retryAt>`, `limits: fetch failing (<code>) …`) at the default level, so
+  when a block started and cleared can be read from the log (§23.35).
 - The usage request now identifies itself with `User-Agent: claude-usage/<version>` instead
   of Node's default, so Anthropic can see and budget this client (§23.34).
 - An upstream `HTTP 429` from the usage endpoint is now reported as `error.code:
