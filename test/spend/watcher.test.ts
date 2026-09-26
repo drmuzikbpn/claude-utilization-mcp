@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   DEFAULT_DEBOUNCE_MS,
+  DEFAULT_MIN_FLUSH_INTERVAL_MS,
   DEFAULT_SWEEP_MS,
   TranscriptWatcher,
 } from '../../src/spend/watcher.js';
@@ -29,7 +30,7 @@ describe('TranscriptWatcher debounce', () => {
     vi.useFakeTimers();
     const dir = await makeTempDir();
     const onFlush = vi.fn();
-    const watcher = new TranscriptWatcher({ dir, onFlush });
+    const watcher = new TranscriptWatcher({ dir, onFlush, minFlushIntervalMs: 0 });
     await watcher.start();
     watcher.resume();
 
@@ -45,6 +46,34 @@ describe('TranscriptWatcher debounce', () => {
     // a later burst is a separate flush
     watcher.notify('d.jsonl');
     vi.advanceTimersByTime(DEFAULT_DEBOUNCE_MS);
+    expect(onFlush).toHaveBeenCalledTimes(2);
+    watcher.stop();
+  });
+
+  it('starts at most one flush per DEFAULT_MIN_FLUSH_INTERVAL_MS however busy the tree is', async () => {
+    // §23.38: ~10 live sessions write constantly; one full walk of thousands of transcripts
+    // per 500 ms debounce kept the daemon above a core.
+    vi.useFakeTimers();
+    const dir = await makeTempDir();
+    const onFlush = vi.fn();
+    const watcher = new TranscriptWatcher({ dir, onFlush });
+    await watcher.start();
+    watcher.resume();
+
+    watcher.notify('a.jsonl');
+    vi.advanceTimersByTime(DEFAULT_DEBOUNCE_MS);
+    expect(onFlush).toHaveBeenCalledTimes(1);
+
+    // Writes keep landing; each debounce expiry inside the floor is held, not dropped.
+    for (let t = 0; t < DEFAULT_MIN_FLUSH_INTERVAL_MS - DEFAULT_DEBOUNCE_MS - 1; t += DEFAULT_DEBOUNCE_MS) {
+      watcher.notify('a.jsonl');
+      vi.advanceTimersByTime(DEFAULT_DEBOUNCE_MS);
+    }
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(DEFAULT_MIN_FLUSH_INTERVAL_MS);
+    expect(onFlush).toHaveBeenCalledTimes(2);
+    // Nothing further queued: no extra flush.
+    vi.advanceTimersByTime(DEFAULT_MIN_FLUSH_INTERVAL_MS * 3);
     expect(onFlush).toHaveBeenCalledTimes(2);
     watcher.stop();
   });
@@ -143,6 +172,7 @@ describe('TranscriptWatcher mid-scan queueing', () => {
     const watcher = new TranscriptWatcher({
       dir,
       debounceMs: 10,
+      minFlushIntervalMs: 0,
       onFlush: async () => {
         calls += 1;
         running += 1;

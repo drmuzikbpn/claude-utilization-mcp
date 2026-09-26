@@ -133,7 +133,7 @@ Interface: `getAccessToken(): Promise<string>`; throws `NoCredentialsError`.
   message several times; counting each would double-count (the classic bug).
 - `scanner.ts`: per file, resume from stored byte offset; if offset > file size (truncated /
   rotated) restart from 0 and drop that file's events. Malformed line → skip, `parseErrors++`.
-- `watcher.ts`: `fs.watch(projectsDir, { recursive: true })`, 500 ms debounce → scan; plus a
+- `watcher.ts`: `fs.watch(projectsDir, { recursive: true })`, 500 ms debounce (at most one flush per 5 s, §23.38) → scan; plus a
   5-minute safety sweep (recursive watch is unreliable on some Linux setups).
 - `store.ts`: aggregates keyed by `(day, project, sessionId, model)`; dedup set; answers
   `/v1/spend`. Retention 90 days (aggregates and dedup entries pruned together).
@@ -1418,3 +1418,30 @@ The first live observation exposed two gaps in §23.36.
 **Test-first, per Part III:** `test/limits-observed.test.ts`. Mutation-checked: not
 mirroring, mirroring the rounded percent, no wake-up, and a wake-up left behind by `stop()`
 each fail a named test.
+
+### §23.38 Incremental scans skip unchanged transcripts; flushes have a floor (2026-09-26)
+
+The 0.1.98 daemon ran at 100–450% CPU. In `sample`, V8 major-GC marking and `open`/`stat`
+dominated. There were 6,179 transcripts (4.4 GB) under `~/.claude/projects`, and ~10 live
+sessions were appending to them.
+
+- **Cause.** Each watcher flush ran `scanAll`, and `scanAll` opened, `fstat`ed and closed
+  *every* transcript. `scanFile` allocated a fresh 1 MB buffer for each one, even when its
+  size still equalled its stored offset. Measured on the real tree, an incremental pass with
+  nothing new cost ~1.6 s of CPU (~6 GB of garbage buffers). The 500 ms debounce triggered
+  a pass on nearly every burst of writes.
+- **Skip unchanged files.** The walk has already `stat`ed each file. If `size === offset`,
+  `scanAll` records the offset and reports progress without opening the file. `size < offset`
+  (truncation, §23.8) still goes through `scanFile`, so it is still reported as `restarted`.
+  `ScanAllResult.filesRead` counts the files actually opened.
+- **Right-size the buffer.** `scanFile` allocates `min(CHUNK_SIZE, size - offset)`.
+- **Flush floor.** `TranscriptWatcher` starts at most one flush per
+  `DEFAULT_MIN_FLUSH_INTERVAL_MS` (5 s). A debounce expiry inside the floor is held, never
+  dropped: one flush runs when the floor lapses and covers everything since. `stop()` clears
+  the held timer. Token figures can lag a write by up to ~5.5 s.
+- **Measured** on the same tree: an incremental pass went from ~1.6 s CPU to ~0.17 s, which
+  is now mostly the directory walk. With the floor, the worst case is ~0.17 s every 5 s.
+
+**Test-first, per Part III:** `test/spend/scanner.test.ts` and `test/spend/watcher.test.ts`.
+Mutation-checked: no skip, skipping truncated files too, no floor, and dropping instead of
+holding each fail a named test.

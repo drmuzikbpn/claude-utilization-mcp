@@ -11,6 +11,11 @@ import { watch, type FSWatcher } from 'node:fs';
 
 export const DEFAULT_DEBOUNCE_MS = 500;
 export const DEFAULT_SWEEP_MS = 5 * 60_000;
+/**
+ * §23.38: floor between flush starts. Every flush walks the whole projects tree; with many
+ * live sessions the 500 ms debounce alone let that run near-continuously.
+ */
+export const DEFAULT_MIN_FLUSH_INTERVAL_MS = 5_000;
 
 export interface WatcherOptions {
   dir: string;
@@ -18,6 +23,7 @@ export interface WatcherOptions {
   onFlush: () => void | Promise<void>;
   debounceMs?: number;
   sweepMs?: number;
+  minFlushIntervalMs?: number;
   /** Reported, never thrown: watching is best-effort and the sweep is the backstop. */
   onError?: (error: unknown) => void;
 }
@@ -27,11 +33,14 @@ export class TranscriptWatcher {
   readonly #onFlush: () => void | Promise<void>;
   readonly #debounceMs: number;
   readonly #sweepMs: number;
+  readonly #minFlushIntervalMs: number;
   readonly #onError: (error: unknown) => void;
 
   #watcher: FSWatcher | null = null;
   #debounce: NodeJS.Timeout | null = null;
   #sweep: NodeJS.Timeout | null = null;
+  #held: NodeJS.Timeout | null = null;
+  #lastFlushAt = Number.NEGATIVE_INFINITY;
   #paused = true;
   #pending = 0;
   #stopped = false;
@@ -43,6 +52,7 @@ export class TranscriptWatcher {
     this.#onFlush = options.onFlush;
     this.#debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
     this.#sweepMs = options.sweepMs ?? DEFAULT_SWEEP_MS;
+    this.#minFlushIntervalMs = options.minFlushIntervalMs ?? DEFAULT_MIN_FLUSH_INTERVAL_MS;
     this.#onError = options.onError ?? (() => {});
   }
 
@@ -115,6 +125,8 @@ export class TranscriptWatcher {
     this.#debounce = null;
     if (this.#sweep) clearInterval(this.#sweep);
     this.#sweep = null;
+    if (this.#held) clearTimeout(this.#held);
+    this.#held = null;
     this.#watcher?.close();
     this.#watcher = null;
   }
@@ -130,6 +142,17 @@ export class TranscriptWatcher {
       this.#again = true;
       return;
     }
+    const wait = this.#lastFlushAt + this.#minFlushIntervalMs - Date.now();
+    if (wait > 0) {
+      // Held, not dropped: one flush runs when the floor lapses, covering everything since.
+      this.#held ??= setTimeout(() => {
+        this.#held = null;
+        this.#fire();
+      }, wait);
+      this.#held.unref?.();
+      return;
+    }
+    this.#lastFlushAt = Date.now();
     this.#pending = 0;
     this.#flushing = true;
 
