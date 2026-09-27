@@ -16,6 +16,15 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   up to an hour for the next poll (§23.37).
 
 ### Fixed
+- Session % no longer flips between two values when several Claude Code sessions are open.
+  An idle session's statusline re-sends its last, older numbers, and those used to replace
+  the live reading. A lower reading for the same window, or one from an earlier window, is
+  now ignored (§23.40).
+- After a limit window resets, `/v1/limits` no longer falls back to Anthropic's reading from
+  the window that just ended. That row now reads `percent: null` with `stale: true` until a
+  new reading arrives (§23.40).
+- Every limit row now carries its own `stale`. Snapshot `stale` is `true` when `session` or
+  `weekly_all` is stale. Before, it read `false` as soon as any one row was live (§23.40).
 - `GET /v1/events` no longer drops every client ~30 s after it connects. A buffer that was
   still flushing after a successful write was mistaken for a stalled client. Streams now
   stay open, and clients no longer miss events during the 3 s reconnect (§23.39).

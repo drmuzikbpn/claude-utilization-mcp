@@ -150,7 +150,8 @@ describe('LimitsPoller backoff', () => {
     const stale = h.poller.snapshot();
     expect(stale.stale).toBe(true);
     expect(stale.error).toEqual({ code: 'network', message: 'boom' });
-    expect(stale.limits).toEqual(good.limits);
+    // Same numbers, each row now flagged as possibly behind (§23.40).
+    expect(stale.limits).toEqual(good.limits.map((l) => ({ ...l, stale: true })));
     expect(stale.fetchedAt).toBe(good.fetchedAt);
     h.poller.stop();
   });

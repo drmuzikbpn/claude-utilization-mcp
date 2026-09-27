@@ -35,7 +35,18 @@ function rateLimits(fiveHour: number, sevenDay: number, resetMs = EPOCH + 3 * 3_
   };
 }
 
-function harness(opts: { upstream?: boolean } = {}) {
+/**
+ * The live fixture with its windows moved to reset at `sessionResetMs` / `weeklyResetMs`.
+ * Its own dates are two weeks before EPOCH, so every window in it has already reset (§23.40).
+ */
+function upstreamResettingAt(sessionResetMs: number, weeklyResetMs = EPOCH + 5 * 86_400_000) {
+  const text = JSON.stringify(liveLimitsFixture())
+    .replaceAll('2026-09-13T18:00:00.114379+00:00', new Date(sessionResetMs).toISOString())
+    .replaceAll(/2026-09-16T13:00:00\.\d+\+00:00/g, new Date(weeklyResetMs).toISOString());
+  return JSON.parse(text) as Record<string, unknown>;
+}
+
+function harness(opts: { upstream?: boolean; upstreamBody?: () => Record<string, unknown> } = {}) {
   const timers = new FakeTimers();
   let calls = 0;
   let failing = opts.upstream === false;
@@ -47,7 +58,7 @@ function harness(opts: { upstream?: boolean } = {}) {
     fetchLimitsImpl: async () => {
       calls += 1;
       if (failing) throw new Error('no upstream in this test');
-      return liveLimitsFixture();
+      return (opts.upstreamBody ?? liveLimitsFixture)();
     },
   });
   return {
@@ -108,20 +119,86 @@ describe('LimitsPoller.observe (§23.36)', () => {
   });
 
   it('an observation expires at its own resets_at, even inside the freshness window', async () => {
-    const h = harness();
+    const reset = EPOCH + 5 * 60_000;
+    const h = harness({ upstreamBody: () => upstreamResettingAt(reset) });
     h.poller.start();
     await flush();
     h.poller.stop();
-    const upstreamSession = byId(h.poller, 'session')?.percent;
+    expect(byId(h.poller, 'session')).toMatchObject({ percent: 5, source: 'upstream', stale: false });
 
-    h.poller.observe(rateLimits(77, 50, EPOCH + 5 * 60_000));
+    h.poller.observe(rateLimits(77, 50, reset));
     expect(byId(h.poller, 'session')).toMatchObject({ percent: 77, source: 'statusline' });
 
     h.timers.clock += 5 * 60_000; // exactly the reset, well inside OBSERVATION_TTL_MS
     expect(5 * 60_000).toBeLessThan(OBSERVATION_TTL_MS);
-    expect(byId(h.poller, 'session')).toMatchObject({ percent: upstreamSession, source: 'upstream' });
-    // The 7-day window has not reset, so it is still served from the observation.
-    expect(byId(h.poller, 'weekly_all')).toMatchObject({ percent: 50, source: 'statusline' });
+    // §23.40: the upstream row underneath describes the window that just ended. Its 5% is
+    // not old news, it is wrong — so the row is unknown and stale, not a fallback.
+    expect(byId(h.poller, 'session')).toMatchObject({ percent: null, severity: null, source: 'upstream', stale: true });
+    expect(h.poller.snapshot().legacyWindows['five_hour']?.utilization).toBeNull();
+    // The 7-day window has not reset, so it is still served from the observation…
+    expect(byId(h.poller, 'weekly_all')).toMatchObject({ percent: 50, source: 'statusline', stale: false });
+    // …and that no longer hides the session row going stale (§23.40).
+    expect(h.poller.snapshot().stale).toBe(true);
+  });
+
+  it('an upstream row is served as-is until its own window resets', async () => {
+    const reset = EPOCH + 60 * 60_000;
+    const h = harness({ upstreamBody: () => upstreamResettingAt(reset) });
+    h.poller.start();
+    await flush();
+    h.poller.stop();
+    h.timers.clock += 60 * 60_000 - 1;
+    expect(byId(h.poller, 'session')).toMatchObject({ percent: 5, stale: false });
+    expect(h.poller.snapshot().stale).toBe(false);
+    h.timers.clock += 1;
+    expect(byId(h.poller, 'session')).toMatchObject({ percent: null, stale: true });
+    expect(byId(h.poller, 'weekly_all')).toMatchObject({ percent: 13, stale: false });
+    expect(h.poller.snapshot().stale).toBe(true);
+  });
+
+  it('an idle session re-sending an old reading does not overwrite a newer one (§23.40)', () => {
+    const h = harness({ upstream: false });
+    const window1 = EPOCH + 3 * 3_600_000;
+    const window2 = window1 + 5 * 3_600_000;
+
+    h.poller.observe(rateLimits(10, 52, window1));
+    // An idle session re-renders with its last response's numbers: same window, lower.
+    h.timers.clock += 1_000;
+    h.poller.observe(rateLimits(3, 50, window1));
+    expect(byId(h.poller, 'session')).toMatchObject({ percent: 10, asOf: new Date(EPOCH).toISOString() });
+    expect(byId(h.poller, 'weekly_all')?.percent).toBe(52);
+
+    // A live session's higher reading in the same window is taken, as is an equal one.
+    h.poller.observe(rateLimits(12, 52, window1));
+    expect(byId(h.poller, 'session')?.percent).toBe(12);
+    h.timers.clock += 1_000;
+    h.poller.observe(rateLimits(12, 52, window1));
+    expect(byId(h.poller, 'session')?.asOf).toBe(new Date(EPOCH + 2_000).toISOString());
+
+    // A small jitter in resets_at is still the same window.
+    h.poller.observe(rateLimits(4, 52, window1 + 1_000));
+    expect(byId(h.poller, 'session')?.percent).toBe(12);
+
+    // After the reset: the new window's low reading wins; the old window's is refused.
+    h.timers.clock = window1 - EPOCH;
+    h.poller.observe(rateLimits(1, 53, window2));
+    expect(byId(h.poller, 'session')).toMatchObject({ percent: 1, stale: false });
+    h.poller.observe(rateLimits(26, 53, window1));
+    expect(byId(h.poller, 'session')?.percent).toBe(1);
+    // Nor does an earlier window get in while the held one is still open.
+    h.poller.observe(rateLimits(30, 53, window2 - 5 * 3_600_000 + 60_000));
+    expect(byId(h.poller, 'session')?.percent).toBe(1);
+  });
+
+  it('an old reading is refused even after the held observation has gone quiet', () => {
+    const h = harness({ upstream: false });
+    const window1 = EPOCH + 3 * 3_600_000;
+    h.poller.observe(rateLimits(10, 52, window1));
+    h.timers.clock += OBSERVATION_TTL_MS;
+    expect(byId(h.poller, 'session')).toBeUndefined();
+    // The only session still rendering is an idle one with older numbers.
+    h.poller.observe(rateLimits(3, 50, window1));
+    expect(byId(h.poller, 'session')).toBeUndefined();
   });
 
   it(`an observation expires after OBSERVATION_TTL_MS`, () => {

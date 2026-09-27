@@ -168,7 +168,13 @@ The daemon's cached copy of `GET https://api.anthropic.com/api/oauth/usage`
 Every row also carries `source` — `"upstream"` (the usage endpoint) or `"statusline"` (Claude
 Code's statusline input, §23.36) — and `asOf`, the ISO time of that reading. Rows from the
 statusline have `severity: null`. `fetchedAt` stays the last upstream fetch (`null` if there has
-never been one), and `stale` is `false` whenever a fresh statusline reading is in use.
+never been one).
+
+Every row also carries its own `stale` (§23.40). Statusline rows are `false`. An upstream row
+is `true` after a failed fetch, or once its window's `resetsAt` has passed. In the second case
+its `percent` and `severity` are `null`, because the number described a window that has ended.
+Snapshot `stale` is `true` when a headline row (`session` or `weekly_all`) is stale. With
+neither present, it keeps the meaning below.
 
 Before the first successful poll: `{ "fetchedAt": null, "stale": false, "error": null,
 "limits": [], "legacyWindows": {}, "extraUsage": null, "raw": null }`.
@@ -251,7 +257,9 @@ with `400 bad_request` and the previous reading stands. `200 {"accepted": true}`
 
 An observation is used for 15 min (`OBSERVATION_TTL_MS`) and never past its own `resets_at`.
 For `session` / `weekly_all`, `/v1/limits` serves whichever of the observation and the last
-upstream fetch is newer. While one is fresh, the upstream poll drops to at most hourly.
+upstream fetch is newer. While the held window is open, a reading from an earlier window, or
+a lower one for the same window, is ignored but still answered `accepted: true`. It is an
+idle session re-sending old numbers (§23.40). While one is fresh, the upstream poll drops to at most hourly.
 When an observation lapses, SSE clients get a `limits` event at that moment carrying the
 upstream rows and their `stale` (§23.37); they do not wait for the next poll.
 
@@ -546,7 +554,8 @@ in that payload. Unknown top-level keys (including unreleased windows) are ignor
 `legacyWindows` is a best-effort passthrough of `five_hour` and `seven_day` **only**
 (`{ utilization, resetsAt }` each). While a statusline observation is serving `session` /
 `weekly_all`, the matching `five_hour` / `seven_day` carries that observation's unrounded
-figure instead, so it never lags `limits[]` (§23.37). Check provenance on the `limits[]` row. `seven_day_opus` and friends are not promised.
+figure instead, so it never lags `limits[]` (§23.37). An entry whose `resetsAt` has passed
+has `utilization: null` (§23.40). Check provenance on the `limits[]` row. `seven_day_opus` and friends are not promised.
 `extraUsage` is `{ isEnabled, utilization, spendLimitReached }` from upstream
 `extra_usage`, or `null`. Upstream's dollar-denominated `spend` object is surfaced only
 through `extraUsage` and `raw` — which is why our token endpoint is `/v1/tokens`, not

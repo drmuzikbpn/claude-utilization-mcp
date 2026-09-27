@@ -7,6 +7,7 @@ import {
   LimitsError,
   emptySnapshot,
   type LimitsErrorInfo,
+  type LegacyWindow,
   type LimitsSnapshot,
   type NormalizedLimit,
   type ObserveResult,
@@ -51,6 +52,12 @@ export const OBSERVATION_TTL_MS = 900_000;
 /** §23.36: upstream poll interval while observations are fresh — only for what they lack. */
 export const OBSERVED_UPSTREAM_INTERVAL_MS = 3_600_000;
 
+/**
+ * §23.40: two statusline readings whose `resets_at` differ by less than this describe the
+ * same window. Real windows are hours apart; this only absorbs any jitter in the header.
+ */
+export const SAME_WINDOW_TOLERANCE_MS = 1_800_000;
+
 /** Statusline window → the limit id it feeds, in the order a statusline-only body lists them. */
 const OBSERVED_WINDOWS: ReadonlyArray<{ key: string; id: string; kind: string; group: string }> = [
   { key: 'five_hour', id: 'session', kind: 'session', group: 'session' },
@@ -93,6 +100,13 @@ function parseObservedWindow(value: unknown): Omit<Observation, 'observedAt'> | 
     resetsAt: resetsAtMs === null ? null : new Date(resetsAtMs).toISOString(),
     resetsAtMs,
   };
+}
+
+/** §23.40: has the window a `resetsAt` names already reset? Unknown (`null`) never has. */
+function hasReset(resetsAt: string | null, now: number): boolean {
+  if (resetsAt === null) return false;
+  const at = Date.parse(resetsAt);
+  return !Number.isNaN(at) && at <= now;
 }
 
 /** Where the last good snapshot survives a restart (§23.19). */
@@ -359,19 +373,26 @@ export class LimitsPoller {
   /**
    * The current `/v1/limits` body: the upstream snapshot, with `session` / `weekly_all`
    * replaced by a fresh statusline observation wherever that is newer (§23.36). Every row
-   * carries its `source` and `asOf`.
+   * carries its `source`, `asOf` and `stale` (§23.40).
    */
   snapshot(): LimitsSnapshot {
     const now = this.now();
     const fetchedAt = this.current.fetchedAt;
     const fetchedAtMs = fetchedAt === null ? Number.NEGATIVE_INFINITY : Date.parse(fetchedAt);
-    const limits: NormalizedLimit[] = this.current.limits.map((l) => ({ ...l, source: 'upstream', asOf: fetchedAt }));
-    const legacyWindows = { ...this.current.legacyWindows };
-    let applied = false;
+    // §23.40: an upstream row whose window has already reset describes a window that is over.
+    // Its percent is not "a bit old", it is wrong, so it is served as unknown and stale.
+    const limits: NormalizedLimit[] = this.current.limits.map((l) =>
+      hasReset(l.resetsAt, now)
+        ? { ...l, percent: null, severity: null, source: 'upstream', asOf: fetchedAt, stale: true }
+        : { ...l, source: 'upstream', asOf: fetchedAt, stale: this.current.stale },
+    );
+    const legacyWindows: Record<string, LegacyWindow> = {};
+    for (const [key, win] of Object.entries(this.current.legacyWindows)) {
+      legacyWindows[key] = hasReset(win.resetsAt, now) ? { ...win, utilization: null } : win;
+    }
     for (const w of OBSERVED_WINDOWS) {
       const obs = this.observed.get(w.id);
       if (obs === undefined || !this.isFresh(obs, now) || obs.observedAt < fetchedAtMs) continue;
-      applied = true;
       const at = limits.findIndex((l) => l.id === w.id);
       const base: NormalizedLimit =
         at >= 0
@@ -385,13 +406,18 @@ export class LimitsPoller {
         resetsAt: obs.resetsAt,
         source: 'statusline',
         asOf: new Date(obs.observedAt).toISOString(),
+        stale: false,
       };
       if (at >= 0) limits[at] = row;
       else limits.push(row);
       // §23.37: the legacy key names are the statusline's own, and must never lag `limits[]`.
       legacyWindows[w.key] = { utilization: obs.utilization, resetsAt: obs.resetsAt };
     }
-    return { ...this.current, limits, legacyWindows, stale: applied ? false : this.current.stale };
+    // §23.40: the snapshot is stale when a headline row is — not merely when upstream failed,
+    // and not "fresh" because one other headline row happens to be live.
+    const headline = limits.filter((l) => OBSERVED_WINDOWS.some((w) => w.id === l.id));
+    const stale = headline.length > 0 ? headline.some((l) => l.stale === true) : this.current.stale;
+    return { ...this.current, limits, legacyWindows, stale };
   }
 
   /**
@@ -412,10 +438,29 @@ export class LimitsPoller {
     }
     if (parsed.length === 0) return { accepted: false, reason: 'rate_limits has no five_hour or seven_day window' };
     const observedAt = this.now();
-    for (const [id, win] of parsed) this.observed.set(id, { ...win, observedAt });
+    for (const [id, win] of parsed) {
+      if (this.isOlderReading(this.observed.get(id), win, observedAt)) continue;
+      this.observed.set(id, { ...win, observedAt });
+    }
     this.notifyIfChanged();
     this.scheduleObservationExpiry();
     return { accepted: true };
+  }
+
+  /**
+   * §23.40: every open session posts its statusline, and an idle one re-renders with the
+   * numbers from its last model response — possibly hours old. Arrival order says nothing
+   * about which reading is newer, but the data does: inside one window usage only climbs,
+   * and a later window supersedes an earlier one. So a reading from a window that has
+   * already reset, from an earlier window than the one held, or lower than the one held for
+   * the same window, is an old reading and is ignored.
+   */
+  private isOlderReading(held: Observation | undefined, next: Omit<Observation, 'observedAt'>, now: number): boolean {
+    if (held === undefined || held.resetsAtMs === null || next.resetsAtMs === null) return false;
+    if (held.resetsAtMs <= now) return false;
+    if (next.resetsAtMs < held.resetsAtMs - SAME_WINDOW_TOLERANCE_MS) return true;
+    const sameWindow = Math.abs(next.resetsAtMs - held.resetsAtMs) <= SAME_WINDOW_TOLERANCE_MS;
+    return sameWindow && next.utilization < held.utilization;
   }
 
   private isFresh(obs: Observation, now: number): boolean {
