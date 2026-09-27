@@ -1445,3 +1445,21 @@ sessions were appending to them.
 **Test-first, per Part III:** `test/spend/scanner.test.ts` and `test/spend/watcher.test.ts`.
 Mutation-checked: no skip, skipping truncated files too, no floor, and dropping instead of
 holding each fail a named test.
+
+### §23.39 SSE back-pressure is a `false` write, not a non-empty buffer (2026-09-27)
+
+Every `/v1/events` client, including a fast `curl`, was destroyed 30–36 s after connecting.
+Clients reconnect after `retry: 3000`, which hid it. It surfaced while watching for §23.37's
+lapse event.
+
+- **Cause.** `write()` marked a client backed up when `res.write()` returned `false` *or*
+  `res.writableLength > 0`. On a live socket `writableLength` is non-zero straight after
+  every successful write (it is 0 again a tick later). Node emits `'drain'` only after a
+  `false` write, so `backedUpSince` was set on the first event and never cleared. The sweep
+  then evicted the client once `SLOW_CLIENT_MS` had passed.
+- **Fix.** Only a `false` return from `res.write()` starts `backedUpSince`. A `true` write or
+  `'drain'` clears it. A genuinely stalled client still stops getting `true` from its
+  writes and is still evicted after 30 s, as the existing test checks.
+
+**Test-first, per Part III:** `test/server/events.test.ts`, "keeps a client that is reading
+along". Mutation-checked: restoring the `writableLength` condition fails it.

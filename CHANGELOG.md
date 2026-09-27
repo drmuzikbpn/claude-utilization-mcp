@@ -16,6 +16,9 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   up to an hour for the next poll (§23.37).
 
 ### Fixed
+- `GET /v1/events` no longer drops every client ~30 s after it connects. A buffer that was
+  still flushing after a successful write was mistaken for a stalled client. Streams now
+  stay open, and clients no longer miss events during the 3 s reconnect (§23.39).
 - The daemon no longer burns 1–4 cores on a machine with many transcripts. Incremental
   scans skip unchanged files instead of opening each one and allocating a 1 MB buffer for
   it, and the transcript watcher starts at most one scan every 5 s. On 6,179 transcripts

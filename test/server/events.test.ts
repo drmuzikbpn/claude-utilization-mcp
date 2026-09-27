@@ -445,6 +445,22 @@ describe('GET /v1/events — limits and lifecycle', () => {
     await slow.waitForClose();
   });
 
+  it('keeps a client that is reading along, however long the stream runs', async () => {
+    // A live socket reports writableLength > 0 straight after a successful write, and no
+    // 'drain' follows a write that returned true. Treating that as back-pressure evicted
+    // every healthy client 30 s after its first event (§23.39).
+    const { server, port } = await start();
+    const client = await connect(port);
+    await client.waitFor('snapshot');
+
+    for (let i = 0; i < 4; i += 1) {
+      bus.publish('session', { type: 'update', session: { id: `sess-${String(i)}` } });
+      await client.waitFor('session', i + 1);
+      await timers.advance(20_000);
+    }
+    expect(server.events.clientCount).toBe(1);
+  });
+
   it('unsubscribes from the bus when a client disconnects', async () => {
     const { port } = await start();
     const baseline = liveListeners();
