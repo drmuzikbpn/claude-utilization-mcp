@@ -162,8 +162,10 @@ export function createEventsEndpoint(opts: EventsOptions): EventsEndpoint {
   function write(client: Client, text: string): void {
     const res = client.res;
     if (res.writableEnded || res.destroyed) return;
-    const flushed = res.write(text);
-    if (!flushed || res.writableLength > 0) {
+    // Only a `false` return is back-pressure. A live socket still reports writableLength > 0
+    // right after a successful write, and no 'drain' follows one, so counting that evicted
+    // every healthy client after SLOW_CLIENT_MS (§23.39).
+    if (!res.write(text)) {
       if (client.backedUpSince === null) client.backedUpSince = now();
     } else {
       client.backedUpSince = null;
