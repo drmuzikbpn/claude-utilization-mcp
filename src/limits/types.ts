@@ -57,6 +57,11 @@ export interface NormalizedLimit {
    */
   source?: LimitSource;
   asOf?: string | null;
+  /**
+   * §23.40: this row's number may no longer be current — its upstream poll failed, or its
+   * window has reset since it was read (then `percent` is `null`). Statusline rows are never stale.
+   */
+  stale?: boolean;
 }
 
 export type LimitSource = 'upstream' | 'statusline';

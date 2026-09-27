@@ -1383,7 +1383,8 @@ numbers at no upstream cost.
 - **Staleness.** An observation is used for `OBSERVATION_TTL_MS` (15 min) and never at or past
   its own `resets_at`. Claude Code keeps serving the last header values while its requests
   are refused, so the reset is the only honest expiry. Snapshot `stale` is `false` whenever
-  an observation is applied; otherwise it keeps its upstream meaning. The upstream `error`
+  an observation is applied; otherwise it keeps its upstream meaning. (§23.40 replaced this
+  with per-row `stale` and a headline-based snapshot `stale`.) The upstream `error`
   (e.g. `rate_limited` + `retryAt`) is still reported.
 - **Upstream polling.** While any observation is fresh, the poll interval is at least
   `OBSERVED_UPSTREAM_INTERVAL_MS` (1 h), and only for what observations lack. Otherwise the
@@ -1463,3 +1464,33 @@ lapse event.
 
 **Test-first, per Part III:** `test/server/events.test.ts`, "keeps a client that is reading
 along". Mutation-checked: restoring the `writableLength` condition fails it.
+
+### §23.40 Old readings, reset windows and per-row `stale` (2026-09-27)
+
+Three defects seen in the wild once §23.36 was live:
+
+- **Idle sessions overwrote live readings.** `session` flipped between 3% and 10% within
+  seconds. It was one account, not two: every open session posts its statusline, and an idle
+  session re-renders with the numbers from its last model response, possibly hours old.
+  Arrival order decided the winner. **Fix:** `observe()` compares readings by their data, per
+  limit id, while the held window is still open. A reading from an earlier window is
+  ignored, and so is a lower one for the same window. Usage only climbs inside a window.
+  Windows count as the same when their `resets_at` values are within
+  `SAME_WINDOW_TOLERANCE_MS` (30 min). An equal reading is taken and refreshes `asOf`. The
+  rule holds even after the held observation's 15 min TTL runs out, so a lone idle session
+  cannot bring an old number back.
+- **A reset window fell back to a dead upstream number.** At 05:00:04Z the session
+  observation expired at its `resets_at`, and `session` fell back to the 23:40 upstream row,
+  26%, from the window that had just ended. **Fix:** an upstream row whose `resetsAt` has
+  passed is served with `percent: null`, `severity: null` and `stale: true`. A
+  `legacyWindows` entry whose `resetsAt` has passed gets `utilization: null`.
+- **`stale` hid it.** Snapshot `stale` was `false` whenever *any* observation applied, and
+  `weekly_all`'s was still live. **Fix:** every row carries `stale`. Statusline rows are
+  `false`. Upstream rows are `true` after a failed poll or once their window has reset.
+  Snapshot `stale` is `true` when any headline row (`session`, `weekly_all`) is stale, and
+  keeps its upstream meaning when neither is present. A stale `weekly_scoped:*` row does not
+  set it; clients read that row's own flag.
+
+**Test-first, per Part III:** `test/limits-observed.test.ts`. Mutation-checked: accepting a
+lower same-window reading, accepting an earlier window, not nulling reset rows, not nulling
+reset `legacyWindows`, and the old snapshot `stale` rule each fail a named test.

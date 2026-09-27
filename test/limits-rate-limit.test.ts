@@ -134,7 +134,9 @@ describe('LimitsPoller on upstream 429', () => {
     await h.timers.advance(1);
     expect(h.calls()).toBe(3);
     expect(h.poller.snapshot().error).toBeNull();
-    expect(h.poller.snapshot().stale).toBe(false);
+    // Every window in the fixture reset before EPOCH, so the rows stay stale (§23.40);
+    // what the poll clears is the failure itself.
+    expect(h.poller.snapshot().fetchedAt).toBe(new Date(EPOCH + h.timers.clock).toISOString());
     h.poller.stop();
   });
 
