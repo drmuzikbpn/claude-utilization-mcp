@@ -16,6 +16,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   up to an hour for the next poll (§23.37).
 
 ### Fixed
+- The hook's usage warning names the day when a reset is a day or more away
+  (`resets Thu 02:00`). A weekly reset three days out used to read as `resets 02:00` (§23.41).
 - Session % no longer flips between two values when several Claude Code sessions are open.
   An idle session's statusline re-sends its last, older numbers, and those used to replace
   the live reading. A lower reading for the same window, or one from an earlier window, is

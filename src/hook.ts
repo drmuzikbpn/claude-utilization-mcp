@@ -167,13 +167,21 @@ export function pickHeadline(
   return best;
 }
 
-/** `resets 14:35`, or `resets: unknown` when upstream gave us no timestamp (§23.3). */
-export function formatResetsAt(resetsAt: string | null): string {
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/**
+ * `resets 14:35`, `resets Thu 02:00` when the reset is a day or more away (§23.41), or
+ * `resets: unknown` when upstream gave us no timestamp (§23.3).
+ */
+export function formatResetsAt(resetsAt: string | null, now?: number): string {
   if (resetsAt === null) return 'resets: unknown';
   const ms = Date.parse(resetsAt);
   if (Number.isNaN(ms)) return 'resets: unknown';
   const d = new Date(ms);
-  return `resets ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  // A weekly reset three days out read as "resets 02:00", i.e. tonight.
+  if (now !== undefined && ms - now >= 86_400_000) return `resets ${WEEKDAYS[d.getDay()] ?? ''} ${time}`;
+  return `resets ${time}`;
 }
 
 /** `resets in 41m` / `resets in 2h 05m`, or `resets: unknown`. */
@@ -212,7 +220,7 @@ export function formatNudge(summary: SummaryBody, now: number): string | null {
     const short = SHORT_LABELS[id] ?? id;
     parts.push(
       id === headline.limit.id
-        ? `${LABELS[id] ?? id} ${pct(limit)} (${formatResetsAt(limit.resetsAt)})`
+        ? `${LABELS[id] ?? id} ${pct(limit)} (${formatResetsAt(limit.resetsAt, now)})`
         : `${short} ${pct(limit)}`,
     );
   }
