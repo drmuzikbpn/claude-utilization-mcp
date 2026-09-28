@@ -16,6 +16,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   up to an hour for the next poll (§23.37).
 
 ### Fixed
+- `claude-usage status | head` (or any reader that stops early) no longer prints an `EPIPE`
+  stack trace; the CLI exits 0 quietly (§23.43).
 - A daemon restart, such as each auto-update, no longer briefly serves hours-old limit
   numbers until a session next renders its statusline. Fresh statusline readings are saved
   on shutdown and restored on start, and the restart no longer calls Anthropic for them (§23.42).
