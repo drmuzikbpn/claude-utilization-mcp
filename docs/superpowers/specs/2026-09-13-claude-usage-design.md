@@ -1526,3 +1526,12 @@ dashboard sees that as a sudden drop on every auto-update.
 **Test-first, per Part III:** `test/limits-observed.test.ts`. Mutation-checked: not
 restoring, not writing on `stop()`, ignoring the interval rule in `start()`, and not
 scheduling the wake-up each fail a named test.
+
+### §23.43 A closed stdout pipe is not a crash (2026-09-28)
+
+`claude-usage status | head -1` printed an unhandled `EPIPE` stack trace, because `head`
+closed the pipe while the CLI was still writing. `main()` now installs
+`exitQuietlyOnEpipe(process.stdout)`, which exits 0 on `EPIPE` and rethrows any other stdout
+error. This also covers `mcp` whose client has gone and a hook whose reader closed early, which must exit 0 regardless.
+
+**Test-first, per Part III:** `test/cli.test.ts`, "stdout closed early".

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { writeFileSync } from 'node:fs';
-import { run } from '../src/cli.js';
+import { EventEmitter } from 'node:events';
+import { exitQuietlyOnEpipe, run } from '../src/cli.js';
 import { daemonFilePath } from '../src/clients/http.js';
 import { getVersion } from '../src/version.js';
 import { startFakeDaemon, tempConfigDir, type FakeDaemon } from './helpers/fake-daemon.js';
@@ -206,5 +207,25 @@ describe('config subcommand', () => {
     const r = await cli(['config'], tempConfigDir());
     expect(r.code).toBe(0);
     expect((JSON.parse(r.out) as { port: number }).port).toBe(47291);
+  });
+});
+
+describe('stdout closed early (§23.43)', () => {
+  const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(code), { code });
+
+  it('exits 0 quietly on EPIPE, as `claude-usage status | head -1` causes', () => {
+    const stream = new EventEmitter();
+    const exits: number[] = [];
+    exitQuietlyOnEpipe(stream, (code) => exits.push(code));
+    stream.emit('error', errno('EPIPE'));
+    expect(exits).toEqual([0]);
+  });
+
+  it('still throws any other stdout error', () => {
+    const stream = new EventEmitter();
+    const exits: number[] = [];
+    exitQuietlyOnEpipe(stream, (code) => exits.push(code));
+    expect(() => stream.emit('error', errno('EIO'))).toThrow('EIO');
+    expect(exits).toEqual([]);
   });
 });

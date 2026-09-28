@@ -467,7 +467,25 @@ export async function run(argv: readonly string[], io: CliIO = {}): Promise<numb
   }
 }
 
+/**
+ * §23.43: `claude-usage status | head -1` closes the pipe early, and Node raises that as an
+ * unhandled EPIPE with a stack trace. A reader that has gone away is not an error: exit 0.
+ */
+export function exitQuietlyOnEpipe(
+  stream: { on(event: 'error', cb: (err: NodeJS.ErrnoException) => void): unknown },
+  exit: (code: number) => void,
+): void {
+  stream.on('error', (err) => {
+    if (err.code === 'EPIPE') {
+      exit(0);
+      return;
+    }
+    throw err;
+  });
+}
+
 export async function main(argv: string[]): Promise<void> {
+  exitQuietlyOnEpipe(process.stdout, (code) => process.exit(code));
   const code = await run(argv);
   if (code !== 0) process.exitCode = code;
 }
