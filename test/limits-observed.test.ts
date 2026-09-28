@@ -46,8 +46,11 @@ function upstreamResettingAt(sessionResetMs: number, weeklyResetMs = EPOCH + 5 *
   return JSON.parse(text) as Record<string, unknown>;
 }
 
-function harness(opts: { upstream?: boolean; upstreamBody?: () => Record<string, unknown> } = {}) {
+function harness(
+  opts: { upstream?: boolean; upstreamBody?: () => Record<string, unknown>; configDir?: string; startAt?: number } = {},
+) {
   const timers = new FakeTimers();
+  timers.clock = opts.startAt ?? 0;
   let calls = 0;
   let failing = opts.upstream === false;
   const poller = new LimitsPoller({
@@ -60,6 +63,7 @@ function harness(opts: { upstream?: boolean; upstreamBody?: () => Record<string,
       if (failing) throw new Error('no upstream in this test');
       return (opts.upstreamBody ?? liveLimitsFixture)();
     },
+    ...(opts.configDir === undefined ? {} : { configDir: opts.configDir }),
   });
   return {
     poller,
@@ -313,6 +317,48 @@ describe('LimitsPoller.observe (§23.36)', () => {
     h.poller.observe(rateLimits(42, 63));
     h.poller.stop();
     expect(h.timers.pendingCount).toBe(0);
+  });
+
+  it('fresh observations survive a restart, and the new process does not poll upstream for them (§23.42)', async () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'cu-observed-'));
+    const before = harness({ configDir });
+    before.poller.start();
+    await flush();
+    before.poller.observe(rateLimits(21, 86));
+    before.poller.stop(); // what an auto-update's SIGTERM runs
+
+    // Five minutes later: past the base interval, well inside OBSERVATION_TTL_MS.
+    const after = harness({ configDir, startAt: 5 * 60_000 });
+    expect(byId(after.poller, 'session')).toMatchObject({ percent: 21, source: 'statusline', stale: false });
+    expect(after.poller.snapshot().legacyWindows['seven_day']?.utilization).toBe(86);
+    expect(after.poller.snapshot().stale).toBe(false);
+    after.poller.start();
+    await flush();
+    expect(after.calls()).toBe(0);
+    // Its lapse is still pushed on time.
+    let fired = 0;
+    after.poller.onChange(() => {
+      fired += 1;
+    });
+    await after.timers.advance(OBSERVATION_TTL_MS - 5 * 60_000);
+    expect(fired).toBe(1);
+    after.poller.stop();
+
+    // A restart after the TTL has nothing to restore.
+    const late = harness({ configDir, startAt: OBSERVATION_TTL_MS });
+    expect(byId(late.poller, 'session')?.source).toBe('upstream');
+  });
+
+  it('an old reading is still refused after a restart (§23.40, §23.42)', async () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'cu-observed-'));
+    const before = harness({ configDir, upstream: false });
+    before.poller.start();
+    before.poller.observe(rateLimits(21, 86));
+    before.poller.stop();
+    const after = harness({ configDir, upstream: false, startAt: 1_000 });
+    after.poller.observe(rateLimits(3, 80));
+    expect(byId(after.poller, 'session')?.percent).toBe(21);
+    expect(byId(after.poller, 'weekly_all')?.percent).toBe(86);
   });
 
   it('polls upstream at most hourly while observations are fresh, adaptive again after', async () => {

@@ -178,6 +178,32 @@ export function readCachedRateLimitedUntil(configDir: string): number | null {
   }
 }
 
+/**
+ * §23.42: statusline observations a previous process held, keyed by limit id. Validated
+ * exactly as a live `observe()` body; freshness is the caller's to judge.
+ */
+export function readCachedObservations(configDir: string): Map<string, Observation> {
+  const out = new Map<string, Observation>();
+  try {
+    const parsed = JSON.parse(readFileSync(limitsCachePath(configDir), 'utf8')) as unknown;
+    if (typeof parsed !== 'object' || parsed === null) return out;
+    const list = (parsed as Record<string, unknown>)['observed'];
+    if (!Array.isArray(list)) return out;
+    for (const entry of list as unknown[]) {
+      if (typeof entry !== 'object' || entry === null) continue;
+      const rec = entry as Record<string, unknown>;
+      const id = rec['id'];
+      const observedAt = typeof rec['observedAt'] === 'string' ? Date.parse(rec['observedAt']) : NaN;
+      if (!OBSERVED_WINDOWS.some((w) => w.id === id) || Number.isNaN(observedAt)) continue;
+      const win = parseObservedWindow(rec);
+      if (win !== null) out.set(id as string, { ...win, observedAt });
+    }
+  } catch {
+    // no cache, or not ours to read: start with none
+  }
+  return out;
+}
+
 /** The `error` a caller sees while upstream is rate-limiting us (§23.32). */
 export function rateLimitedInfo(retryAt: number | null): LimitsErrorInfo {
   const base = 'Anthropic is rate-limiting the usage endpoint (HTTP 429)';
@@ -332,7 +358,7 @@ export class LimitsPoller {
   private adaptiveIntervalMs: number;
   private successStreak = 0;
   /** §23.36: the latest statusline observation per limit id. In memory only. */
-  private readonly observed = new Map<string, Observation>();
+  private observed = new Map<string, Observation>();
   /** Epoch ms before which upstream asked not to be called again (§23.32). */
   private rateLimitedUntil: number | null = null;
   private readonly configDir: string | null;
@@ -359,6 +385,9 @@ export class LimitsPoller {
       this.current = restored;
       this.lastSignature = snapshotSignature(restored);
     }
+    // §23.42: an auto-update restart must not drop live numbers back to an hours-old fetch
+    // until some session next renders its statusline.
+    if (this.configDir !== null) this.observed = readCachedObservations(this.configDir);
     // §23.32: a restart (routine, with auto-update) must not re-poll inside a 429 window a
     // previous process was given — say so from the first request instead.
     const until = this.configDir === null ? null : readCachedRateLimitedUntil(this.configDir);
@@ -559,8 +588,13 @@ export class LimitsPoller {
     // the interval has nothing to gain from calling upstream now.
     const fetchedAt = this.current.fetchedAt === null ? NaN : Date.parse(this.current.fetchedAt);
     const age = this.now() - fetchedAt;
-    if (age >= 0 && age < this.adaptiveIntervalMs) {
-      this.scheduleIn(this.adaptiveIntervalMs - age);
+    // §23.42: observations restored from a previous process count, as they do between polls.
+    const interval = this.hasFreshObservation()
+      ? Math.max(this.adaptiveIntervalMs, OBSERVED_UPSTREAM_INTERVAL_MS)
+      : this.adaptiveIntervalMs;
+    this.scheduleObservationExpiry();
+    if (age >= 0 && age < interval) {
+      this.scheduleIn(interval - age);
       return;
     }
     void this.tick();
@@ -576,6 +610,8 @@ export class LimitsPoller {
       this.timers.clearTimeout(this.expiryHandle);
       this.expiryHandle = null;
     }
+    // §23.42: hand fresh observations to the next process (an auto-update restarts us).
+    if (this.hasFreshObservation()) this.writeCache();
   }
 
   /** Forced refetch for `POST /v1/refresh`; one per `refreshMinIntervalMs`. */
@@ -706,11 +742,27 @@ export class LimitsPoller {
         limits: this.current.limits,
         legacyWindows: this.current.legacyWindows,
         extraUsage: this.current.extraUsage,
+        ...this.observationsForCache(),
         ...(this.rateLimitedUntil === null ? {} : { rateLimitedUntil: new Date(this.rateLimitedUntil).toISOString() }),
       });
     } catch {
       // best effort
     }
+  }
+
+  /** §23.42: fresh observations, in `observe()`'s own shape; nothing when there are none. */
+  private observationsForCache(): { observed?: unknown[] } {
+    const now = this.now();
+    const fresh = [...this.observed].filter(([, obs]) => this.isFresh(obs, now));
+    if (fresh.length === 0) return {};
+    return {
+      observed: fresh.map(([id, obs]) => ({
+        id,
+        used_percentage: obs.utilization,
+        resets_at: obs.resetsAt,
+        observedAt: new Date(obs.observedAt).toISOString(),
+      })),
+    };
   }
 
   /**
