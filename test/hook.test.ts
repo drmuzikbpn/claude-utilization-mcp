@@ -84,6 +84,20 @@ describe('formatResetsAt / formatResetsIn', () => {
     expect(formatResetsAt('garbage')).toBe('resets: unknown');
   });
 
+  it('names the weekday when the reset is a day or more away (§23.41)', () => {
+    const soon = '2026-09-13T20:35:00Z';
+    const local = (iso: string) => {
+      const d = new Date(iso);
+      return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    };
+    expect(formatResetsAt(soon, NOW)).toBe(`resets ${local(soon)}`);
+    const later = new Date(NOW + 86_400_000 * 3).toISOString();
+    const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(later).getDay()];
+    expect(formatResetsAt(later, NOW)).toBe(`resets ${day} ${local(later)}`);
+    // Without a clock, the old form.
+    expect(formatResetsAt(later)).toBe(`resets ${local(later)}`);
+  });
+
   it('renders a countdown in minutes and hours', () => {
     expect(formatResetsIn('2026-09-13T14:41:00Z', NOW)).toBe('resets in 41m');
     expect(formatResetsIn('2026-09-13T16:05:00Z', NOW)).toBe('resets in 2h 05m');

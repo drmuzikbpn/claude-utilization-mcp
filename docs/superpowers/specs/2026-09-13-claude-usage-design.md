@@ -1494,3 +1494,12 @@ Three defects seen in the wild once §23.36 was live:
 **Test-first, per Part III:** `test/limits-observed.test.ts`. Mutation-checked: accepting a
 lower same-window reading, accepting an earlier window, not nulling reset rows, not nulling
 reset `legacyWindows`, and the old snapshot `stale` rule each fail a named test.
+
+### §23.41 The hook names the day of a far-off reset (2026-09-28)
+
+The warn nudge read `7d window 85% (resets 02:00)` for a weekly reset three days away, which
+reads as "tonight". `formatResetsAt` now takes the clock and renders `resets Thu 02:00` when
+the reset is 24 h or more away. Sooner resets keep `resets 14:35`.
+
+**Test-first, per Part III:** `test/hook.test.ts`. Mutation-checked: dropping the weekday
+branch fails it.
