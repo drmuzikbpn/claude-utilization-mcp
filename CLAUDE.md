@@ -8,6 +8,10 @@ Tailscale. **Spec is authoritative:** `docs/superpowers/specs/2026-09-13-claude-
 ## Commands
 - `npm test` · `npm run typecheck` · `npm run lint` · `npm run build` (dist/, ESM, Node ≥ 20)
 - lefthook pre-commit runs lint + typecheck.
+- **`main` is protected: changes land through a pull request** (ruleset "daemon: main via pull
+  request"; required checks `test (ubuntu-latest)` + `test (macos-latest)`). Never push to
+  `main` directly, even though admin rights would bypass it. Branch, `gh pr create`, then
+  `gh pr checks --watch && gh pr merge --squash`. Each merge to `main` auto-releases.
 
 ## Invariants (violations are silent)
 - Never print, log or serialize credential values (`accessToken`, `refreshToken`, bearer token).
