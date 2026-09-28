@@ -16,6 +16,9 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   up to an hour for the next poll (§23.37).
 
 ### Fixed
+- A daemon restart, such as each auto-update, no longer briefly serves hours-old limit
+  numbers until a session next renders its statusline. Fresh statusline readings are saved
+  on shutdown and restored on start, and the restart no longer calls Anthropic for them (§23.42).
 - The hook's usage warning names the day when a reset is a day or more away
   (`resets Thu 02:00`). A weekly reset three days out used to read as `resets 02:00` (§23.41).
 - Session % no longer flips between two values when several Claude Code sessions are open.

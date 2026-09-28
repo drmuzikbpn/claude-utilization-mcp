@@ -1368,7 +1368,8 @@ numbers at no upstream cost.
 - **Ingest.** `POST /v1/limits/observed`, bearer-gated like every mutating route (no loopback
   exemption). Body: the `rate_limits` object verbatim. `LimitsPoller.observe` validates it
   field by field and all-or-nothing, so garbage never overwrites a good reading. It stamps
-  `observedAt` with the daemon's clock. Observations are in memory only.
+  `observedAt` with the daemon's clock. Observations are in memory only. (§23.42 carries
+  the fresh ones across a restart.)
 - **Client.** `claude-usage observe` reads statusline JSON on stdin, POSTs `rate_limits` with
   the config's token (400 ms timeout), prints nothing, and always exits 0. It skips a payload
   byte-identical to the last one it sent within `OBSERVE_DEDUPE_MS` (60 s), recording a send
@@ -1503,3 +1504,25 @@ the reset is 24 h or more away. Sooner resets keep `resets 14:35`.
 
 **Test-first, per Part III:** `test/hook.test.ts`. Mutation-checked: dropping the weekday
 branch fails it.
+
+### §23.42 Observations survive a restart (2026-09-28)
+
+The auto-update to 0.1.103 restarted the daemon at 00:15:46Z. Observations were in memory
+only, so for about two minutes `/v1/limits` served the restored 21:10Z upstream cache:
+session 1% and weekly 81%, both correctly `stale`. The live numbers were 21% and 86%. A
+dashboard sees that as a sudden drop on every auto-update.
+
+- **Persist.** `stop()` writes the fresh observations to `limits-cache.json` (0600, via
+  `writeJsonFile`) under `observed`, in `observe()`'s own body shape plus `id` and
+  `observedAt`. The daemon's SIGTERM path already calls `stop()`. The key is omitted when
+  nothing is fresh.
+- **Restore.** The constructor reads them back through the same field-by-field validator.
+  §23.36's TTL and `resets_at` expiry still apply, measured from the original `observedAt`.
+  §23.40's old-reading rule therefore also holds across a restart.
+- **Polling.** `start()` applies §23.36's hourly upstream interval when restored
+  observations are fresh, so a restart no longer spends an upstream call on numbers it
+  already has. It also schedules §23.37's lapse wake-up for them.
+
+**Test-first, per Part III:** `test/limits-observed.test.ts`. Mutation-checked: not
+restoring, not writing on `stop()`, ignoring the interval rule in `start()`, and not
+scheduling the wake-up each fail a named test.
