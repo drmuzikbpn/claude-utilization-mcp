@@ -293,3 +293,82 @@ describe('a tailnet that is off on purpose (§23.21)', () => {
     expect(net.calls.ip).toBeLessThan(15);
   });
 });
+
+/** A resolver that also answers the §23.44 LAN questions. */
+class FakeLanNetwork extends FakeNetwork {
+  lan: string | null = null;
+  local: string | null = null;
+  lanCalls = 0;
+  async lanIPv4(): Promise<string | null> {
+    this.lanCalls += 1;
+    return this.lan;
+  }
+  async localHostName(): Promise<string | null> {
+    return this.local;
+  }
+}
+
+async function until(cond: () => boolean, tries = 100, ms = 10): Promise<void> {
+  for (let i = 0; i < tries && !cond(); i += 1) await new Promise((r) => setTimeout(r, ms));
+}
+
+describe('the lan keyword (§23.44, §23.46)', () => {
+  it('binds the LAN address and accepts the .local Host name', async () => {
+    const net = new FakeLanNetwork();
+    net.lan = '127.0.0.1'; // stands in for the LAN address: bindable in a test
+    net.local = 'studio.local';
+    const h = await start(['lan'], net);
+
+    expect(h.addresses).toEqual(['127.0.0.1']);
+    expect(h.localHostName).toBe('studio.local');
+    expect((await rawRequest({ port: h.port, path: '/health', headers: { host: `studio.local:${h.port}` } })).status).toBe(200);
+    // Tailscale is never consulted for a LAN-only config.
+    expect(net.calls).toEqual({ ip: 0, dns: 0 });
+  });
+
+  it('does not accept the .local name when lan is not configured', async () => {
+    const net = new FakeLanNetwork();
+    net.local = 'studio.local';
+    const h = await start(['127.0.0.1'], net, { lanWatchMs: 10 });
+    expect(h.localHostName).toBeNull();
+    expect((await rawRequest({ port: h.port, path: '/health', headers: { host: 'studio.local' } })).status).toBe(421);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(net.lanCalls).toBe(0);
+  });
+
+  it('keeps looking for a LAN address that is not bindable yet', async () => {
+    const net = new FakeLanNetwork();
+    net.lan = UNROUTABLE;
+    const lines: string[] = [];
+    const h = await start(['127.0.0.1', 'lan'], net, { tailnetRetryMs: 10, lanWatchMs: 60_000, log: (l) => lines.push(l) });
+    expect(h.addresses).toEqual(['127.0.0.1']);
+    const before = net.lanCalls;
+    await until(() => net.lanCalls > before + 1);
+    expect(net.lanCalls).toBeGreaterThan(before + 1);
+    expect(lines.filter((l) => l.includes('could not bind'))).toHaveLength(1);
+  });
+
+  it('notices a moved LAN address on the interface watch and rebinds, with no SIGHUP', async () => {
+    const net = new FakeLanNetwork();
+    net.lan = '127.0.0.1';
+    const lines: string[] = [];
+    const h = await start(['lan'], net, { lanWatchMs: 10, log: (l) => lines.push(l) });
+    expect(h.addresses).toEqual(['127.0.0.1']);
+
+    // Wi-Fi changed. `::1` may or may not be bindable here; either way a reload must run.
+    net.lan = '::1';
+    await until(() => /(now also listening on|could not bind) ::1/.test(lines.join('\n')));
+    expect(lines.join('\n')).toMatch(/(now also listening on|could not bind) ::1/);
+    if (h.addresses.includes('::1')) expect(h.addresses).not.toContain('127.0.0.1');
+  });
+
+  it('stops watching interfaces on stop()', async () => {
+    const net = new FakeLanNetwork();
+    net.lan = '127.0.0.1';
+    const h = await start(['lan'], net, { lanWatchMs: 10 });
+    await h.stop();
+    const after = net.lanCalls;
+    await new Promise((r) => setTimeout(r, 60));
+    expect(net.lanCalls).toBe(after);
+  });
+});

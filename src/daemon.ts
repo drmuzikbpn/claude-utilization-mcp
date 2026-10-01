@@ -4,7 +4,8 @@ import { EventBus } from './events/bus.js';
 import { LimitsPoller, effectivePollIntervalMs } from './limits/poller.js';
 import { ensureConfigDir, expandHome, loadConfig, resolveConfigDir, writeJsonFile, type Config } from './config.js';
 import { daemonFilePath } from './clients/http.js';
-import { resolveBindAddresses, TAILSCALE_KEYWORD } from './net/bind.js';
+import { bindWants, LAN_KEYWORD, resolveBindAddresses, TAILSCALE_KEYWORD } from './net/bind.js';
+import { resolveLanIPv4, resolveLocalHostName } from './net/lan.js';
 import { resolveMagicDnsName, resolveTailscaleIPv4 } from './net/tailscale.js';
 import { isLoopbackAddress } from './server/middleware.js';
 import { startBusPublishers } from './server/events.js';
@@ -15,12 +16,16 @@ import { createUpdater, defaultRestart, type UpdaterHandle } from './update/inde
 import { getVersion } from './version.js';
 
 /**
- * The two tailnet questions the daemon asks at startup and again on `SIGHUP` (§16).
- * Injected in tests so nothing ever shells out to `tailscale`.
+ * The network questions the daemon asks at startup and again on `SIGHUP` (§16, §23.44).
+ * Injected in tests so nothing ever shells out to `tailscale` or `scutil`. The two LAN
+ * questions are optional so a tailnet-only fake need not answer them; they are only asked
+ * when `bind` contains `lan`, and fall back to the real lookups.
  */
 export interface NetworkResolver {
   tailscaleIPv4(): Promise<string | null>;
   magicDnsName(): Promise<string | null>;
+  lanIPv4?(): Promise<string | null>;
+  localHostName?(): Promise<string | null>;
 }
 
 /**
@@ -35,11 +40,19 @@ export const TAILNET_RETRY_MS = 60_000;
  * a deliberately-offline machine from costing a subprocess a minute for ever.
  */
 export const TAILNET_RETRY_MAX_MS = 600_000;
+/**
+ * How often the interface table is re-read while `bind` contains `lan` (§23.44). A Wi-Fi
+ * change moves the LAN address; this is how the daemon follows it with nobody sending SIGHUP.
+ * `os.networkInterfaces()` only — no subprocess — so the steady-state cost is negligible.
+ */
+export const LAN_WATCH_MS = 30_000;
 
 export function defaultNetworkResolver(): NetworkResolver {
   return {
     tailscaleIPv4: () => resolveTailscaleIPv4(),
     magicDnsName: () => resolveMagicDnsName(),
+    lanIPv4: () => Promise.resolve(resolveLanIPv4()),
+    localHostName: () => resolveLocalHostName(),
   };
 }
 
@@ -51,6 +64,8 @@ export interface DaemonOptions {
   tailnetRetryMs?: number;
   /** Ceiling for the retry backoff; defaults to `TAILNET_RETRY_MAX_MS`. */
   tailnetRetryMaxMs?: number;
+  /** Interface-table re-read interval while `bind` contains `lan` (§23.44); `LAN_WATCH_MS`. */
+  lanWatchMs?: number;
   /**
    * The token store. Pass it explicitly (tests, and the orchestrator once W1 lands);
    * omit to let `createTokensSource` try the real `src/spend` module.
@@ -88,7 +103,9 @@ export interface DaemonHandle {
   readonly addresses: readonly string[];
   /** The MagicDNS name currently accepted in `Host`, or `null`. */
   readonly magicDnsName: string | null;
-  /** `SIGHUP`: re-resolve the tailnet address and MagicDNS name, re-bind what changed (§16). */
+  /** The `.local` name currently accepted in `Host` while `bind` has `lan` (§23.46), or `null`. */
+  readonly localHostName: string | null;
+  /** `SIGHUP`: re-resolve the keyword addresses and Host names, re-bind what changed (§16). */
   reload(): Promise<void>;
   stop(): Promise<void>;
 }
@@ -162,23 +179,42 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   // --- §16: which addresses, and under which Host names ----------------------
   const network = opts.network ?? defaultNetworkResolver();
   // The MagicDNS name only matters when we are actually reachable over the tailnet, so a
-  // loopback-only daemon never shells out to `tailscale` at all.
-  const wantsTailnet = config.bind.some((entry) => entry.trim().toLowerCase() === TAILSCALE_KEYWORD);
+  // loopback-only daemon never shells out to `tailscale` at all. Likewise the `.local` name
+  // and the interface watch only exist when `bind` asks for `lan` (§23.44).
+  const wantsTailnet = bindWants(config.bind, TAILSCALE_KEYWORD);
+  const wantsLan = bindWants(config.bind, LAN_KEYWORD);
+  const wantedKeywords = [...(wantsTailnet ? [TAILSCALE_KEYWORD] : []), ...(wantsLan ? [LAN_KEYWORD] : [])];
+  const lanIPv4 = network.lanIPv4?.bind(network) ?? (() => Promise.resolve(resolveLanIPv4()));
+  const localHostNameOf = network.localHostName?.bind(network) ?? (() => resolveLocalHostName());
   /**
-   * The tailnet address the resolver last handed back, recorded as it goes past. Asking
-   * "is a tailnet address listening?" needs both halves — whether one was found at all, and
-   * whether the bind for it took — and only this callback sees the first.
+   * The address each keyword's resolver last handed back, recorded as it goes past. Asking
+   * "is the keyword's address listening?" needs both halves — whether one was found at all,
+   * and whether the bind for it took — and only this callback sees the first (§23.21).
    */
-  let tailnetAddress: string | null = null;
-  /** A tailnet address was found *and* we are listening on it. */
-  const tailnetBound = (): boolean => tailnetAddress !== null && boundHosts.includes(tailnetAddress);
+  const keywordAddress = new Map<string, string | null>();
+  /** Every wanted keyword resolved to an address *and* we are listening on it. */
+  const keywordsBound = (): boolean =>
+    wantedKeywords.every((k) => {
+      const a = keywordAddress.get(k) ?? null;
+      return a !== null && boundHosts.includes(a);
+    });
   const resolveTailscale = async (): Promise<string | null> => {
-    tailnetAddress = await network.tailscaleIPv4();
-    return tailnetAddress;
+    const a = await network.tailscaleIPv4();
+    keywordAddress.set(TAILSCALE_KEYWORD, a);
+    return a;
   };
-  const addresses = await resolveBindAddresses(config.bind, { resolveTailscale, log });
+  const resolveLan = async (): Promise<string | null> => {
+    const a = await lanIPv4();
+    keywordAddress.set(LAN_KEYWORD, a);
+    return a;
+  };
+  const resolvers = { resolveTailscale, resolveLan, log };
+  const addresses = await resolveBindAddresses(config.bind, resolvers);
   let magicDnsName = wantsTailnet ? await network.magicDnsName() : null;
   if (magicDnsName !== null) debug(`net: MagicDNS name ${magicDnsName}`);
+  let localHostName = wantsLan ? await localHostNameOf() : null;
+  if (localHostName !== null) debug(`net: local name ${localHostName}`);
+  const hostNames = (): string[] => [magicDnsName, localHostName].filter((n): n is string => n !== null);
 
   // --- §20: the auto-updater ------------------------------------------------
   // Built before the server so `/health.update` reads live state from the first
@@ -215,7 +251,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     version,
     bus,
     sessions,
-    extraHostNames: magicDnsName === null ? [] : [magicDnsName],
+    extraHostNames: hostNames(),
     // §19: SSE snapshot carries the live sessions + pause rules.
     ...(sessions ? { snapshots: { sessions: () => sessions.registry.list(), rules: () => sessions.rules.list() } } : {}),
   });
@@ -299,15 +335,21 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   let stopped = false;
 
   /**
-   * `SIGHUP` (§16): the tailnet address and MagicDNS name can appear, change or vanish
-   * while the daemon runs. Re-resolve both, bind whatever is newly available, drop what is
-   * gone — and never let any of it be fatal. `config.json` itself is not re-read.
+   * `SIGHUP` (§16): the keyword addresses and Host names can appear, change or vanish while
+   * the daemon runs. Re-resolve them, bind whatever is newly available, drop what is gone —
+   * and never let any of it be fatal. `config.json` itself is not re-read. Runs are
+   * serialised: SIGHUP, the §23.21 retry and the §23.44 interface watch can all ask at once.
    */
-  async function reload(): Promise<void> {
+  let reloading: Promise<void> = Promise.resolve();
+  function reload(): Promise<void> {
+    reloading = reloading.then(reloadOnce, reloadOnce);
+    return reloading;
+  }
+  async function reloadOnce(): Promise<void> {
     if (stopped) return;
     let next: string[];
     try {
-      next = await resolveBindAddresses(config.bind, { resolveTailscale, log });
+      next = await resolveBindAddresses(config.bind, resolvers);
     } catch (err) {
       log(`reload: keeping the current addresses — ${(err as Error).message}`);
       return;
@@ -333,38 +375,47 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     }
 
     const magic = wantsTailnet ? await network.magicDnsName() : null;
+    const local = wantsLan ? await localHostNameOf() : null;
     if (magic !== magicDnsName) {
-      magicDnsName = magic;
-      server.setExtraHostNames(magic === null ? [] : [magic]);
       log(magic === null ? 'net: MagicDNS name is no longer available' : `net: MagicDNS name is now ${magic}`);
+    }
+    if (local !== localHostName) {
+      log(local === null ? 'net: local name is no longer available' : `net: local name is now ${local}`);
+    }
+    if (magic !== magicDnsName || local !== localHostName) {
+      magicDnsName = magic;
+      localHostName = local;
+      server.setExtraHostNames(hostNames());
     }
   }
 
   /**
-   * Retry the tailnet bind until it takes (§23.21).
+   * Retry the keyword binds until they take (§23.21, generalised by §23.44).
    *
-   * The tailnet address is resolved once at startup, and on a machine where Tailscale
+   * Keyword addresses are resolved once at startup, and on a machine where Tailscale
    * starts *after* the daemon — or is down at boot — that resolve fails and nothing ever
    * tries again: a test machine logged `could not bind 100.101.102.103 — EADDRNOTAVAIL` and
    * then served loopback and LAN only, with no tailnet listener, indefinitely. `SIGHUP`
    * fixes it, but only if a human knows to send one, and the whole point of the tailnet
-   * address is to be reachable when nobody is at the machine.
+   * address is to be reachable when nobody is at the machine. A laptop that boots before
+   * joining Wi-Fi has the same problem with `lan`.
    *
    * So: while a wanted address is missing, re-resolve on a timer. Once everything is bound
-   * the timer stops and `SIGHUP` takes over again, so the steady-state cost is zero.
+   * the timer stops and `SIGHUP` (plus the LAN watch) takes over, so the steady-state cost
+   * is zero.
    */
   let tailnetRetry: ReturnType<typeof setTimeout> | null = null;
   let tailnetRetryMs = opts.tailnetRetryMs ?? TAILNET_RETRY_MS;
   const tailnetRetryMaxMs = Math.max(tailnetRetryMs, opts.tailnetRetryMaxMs ?? TAILNET_RETRY_MAX_MS);
   function scheduleTailnetRetry(): void {
-    if (stopped || !wantsTailnet || tailnetBound() || tailnetRetry !== null) return;
+    if (stopped || wantedKeywords.length === 0 || keywordsBound() || tailnetRetry !== null) return;
     tailnetRetry = setTimeout(() => {
       tailnetRetry = null;
       void (async () => {
         if (stopped) return;
         await reload().catch(() => undefined);
-        if (tailnetBound()) {
-          log('net: tailnet address is now available');
+        if (keywordsBound()) {
+          log(`net: ${wantedKeywords.join(' and ')} address now available`);
           tailnetRetryMs = opts.tailnetRetryMs ?? TAILNET_RETRY_MS;
           return;
         }
@@ -375,12 +426,36 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     tailnetRetry.unref();
   }
 
+  /**
+   * §23.44: follow the LAN address across network changes. Each tick re-reads the interface
+   * table; a different answer than the one bound triggers `reload()`, after which the retry
+   * covers the case where the new address cannot be bound yet.
+   */
+  let lanWatch: ReturnType<typeof setInterval> | null = null;
+  if (wantsLan) {
+    lanWatch = setInterval(() => {
+      void (async () => {
+        if (stopped) return;
+        const current = await lanIPv4().catch(() => null);
+        if (current === (keywordAddress.get(LAN_KEYWORD) ?? null)) return;
+        log(`net: LAN address changed to ${current ?? 'none'} — rebinding`);
+        await reload().catch(() => undefined);
+        scheduleTailnetRetry();
+      })();
+    }, opts.lanWatchMs ?? LAN_WATCH_MS);
+    lanWatch.unref();
+  }
+
   async function stop(): Promise<void> {
     if (stopped) return;
     stopped = true;
     if (tailnetRetry !== null) {
       clearTimeout(tailnetRetry);
       tailnetRetry = null;
+    }
+    if (lanWatch !== null) {
+      clearInterval(lanWatch);
+      lanWatch = null;
     }
     // §18.3: SIGCONT every hard-frozen pid before anything else shuts down.
     sessions?.stop();
@@ -397,9 +472,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   }
   stopEverything = stop;
 
-  // Tailscale may not be up yet — keep trying rather than serving loopback for ever (§23.21).
-  if (wantsTailnet && !tailnetBound()) {
-    log('net: no tailnet address yet — will keep looking');
+  // Tailscale or Wi-Fi may not be up yet — keep trying rather than serving loopback for ever (§23.21).
+  if (wantedKeywords.length > 0 && !keywordsBound()) {
+    log(`net: no ${wantedKeywords.join('/')} address bound yet — will keep looking`);
     scheduleTailnetRetry();
   }
 
@@ -417,6 +492,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     },
     get magicDnsName() {
       return magicDnsName;
+    },
+    get localHostName() {
+      return localHostName;
     },
     reload,
     stop,
