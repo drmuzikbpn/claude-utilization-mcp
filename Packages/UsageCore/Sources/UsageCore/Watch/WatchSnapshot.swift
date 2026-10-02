@@ -87,6 +87,10 @@ public struct WatchSnapshot: Codable, Sendable, Equatable {
         public var pause: PauseMode?
         public var freezes: Int
         public var canHardPause: Bool
+        /// When the session started; the watch shows it as "since 14:02".
+        public var startedAt: Date?
+        /// The last tool the session ran, e.g. `Bash`.
+        public var lastTool: String?
 
         public init(
             id: String,
@@ -96,7 +100,9 @@ public struct WatchSnapshot: Codable, Sendable, Equatable {
             ratePerMin: Double,
             pause: PauseMode?,
             freezes: Int,
-            canHardPause: Bool
+            canHardPause: Bool,
+            startedAt: Date? = nil,
+            lastTool: String? = nil
         ) {
             self.id = id
             self.label = label
@@ -106,6 +112,8 @@ public struct WatchSnapshot: Codable, Sendable, Equatable {
             self.pause = pause
             self.freezes = freezes
             self.canHardPause = canHardPause
+            self.startedAt = startedAt
+            self.lastTool = lastTool
         }
     }
 
@@ -250,7 +258,9 @@ public extension WatchSnapshot {
                         ratePerMin: burn?.ratePerMinute(DeviceReducer.burnKey(deviceId: p.deviceId, session: s.sessionId), now: now) ?? 0,
                         pause: s.pause?.mode,
                         freezes: s.pause?.freezes ?? 0,
-                        canHardPause: s.canHardPause
+                        canHardPause: s.canHardPause,
+                        startedAt: s.startedAt,
+                        lastTool: s.lastTool?.name
                     )
                 },
                 pause: p.pause?.mode
