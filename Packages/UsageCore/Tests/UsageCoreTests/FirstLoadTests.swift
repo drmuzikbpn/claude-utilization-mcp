@@ -83,6 +83,36 @@ struct FirstLoadTests {
             == .failed(DaemonError.network.userMessage))
     }
 
+    @Test func aRejectedTokenFailsEvenWithAHealthyCheck() {
+        var state = arrived()
+        state.needsRepair = true
+        #expect(FirstLoad.phase(state: state, check: healthy, settled: true, elapsed: 1)
+            == .failed("Token rejected. Re-pair this device."))
+    }
+
+    @Test func unreachableBeatsALoadedSummary() {
+        #expect(FirstLoad.phase(state: arrived(), check: unreachable, settled: false, elapsed: 1)
+            == .failed(DaemonError.network.userMessage))
+    }
+
+    @Test func aMissingDeviceKeepsWaitingUntilTheTimeout() {
+        #expect(FirstLoad.phase(state: nil, check: nil, settled: true, elapsed: 1) == .loading)
+        #expect(FirstLoad.phase(state: nil, check: healthy, settled: true, elapsed: 1) == .loading)
+    }
+
+    @Test func settledWithACheckButNoSummaryStopsWaiting() {
+        var state = arrived()
+        state.summaryLoaded = false
+        #expect(FirstLoad.phase(state: state, check: healthy, settled: false, elapsed: 1) == .loading)
+        #expect(FirstLoad.phase(state: state, check: healthy, settled: true, elapsed: 1) == .failed(FirstLoad.slow("studio")))
+    }
+
+    @Test func theTimeoutIsInjectable() {
+        #expect(FirstLoad.phase(state: arrived(), check: nil, settled: false, elapsed: 20, timeout: 600) == .loading)
+        #expect(FirstLoad.phase(state: arrived(), check: nil, settled: false, elapsed: 3, timeout: 2)
+            == .failed(FirstLoad.slow("studio")))
+    }
+
     @Test func slowCopySaysDevice() {
         #expect(FirstLoad.slow("studio").contains("studio"))
         #expect(!FirstLoad.slow("studio").contains("Mac"))

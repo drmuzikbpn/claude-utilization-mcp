@@ -16,7 +16,13 @@ public enum FirstLoad {
 
     /// `settled` is true once the store's bootstrap pass (one REST refresh, then the setup check)
     /// has finished; after that, anything still missing is not on its way.
-    public static func phase(state: DeviceState?, check: SetupCheck?, settled: Bool, elapsed: TimeInterval) -> Phase {
+    public static func phase(
+        state: DeviceState?,
+        check: SetupCheck?,
+        settled: Bool,
+        elapsed: TimeInterval,
+        timeout: TimeInterval = timeout
+    ) -> Phase {
         guard let state else {
             return elapsed >= timeout ? .failed(DaemonError.network.userMessage) : .loading
         }
