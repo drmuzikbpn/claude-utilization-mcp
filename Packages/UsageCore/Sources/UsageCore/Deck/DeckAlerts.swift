@@ -5,14 +5,23 @@ public enum DeckAlerts {
     /// A device's first state after launch (or a background wake) is not news: a session that was
     /// already frozen must not announce itself every time the app starts. Frozen alerts therefore
     /// pass only for devices that had already arrived in `previous`. Limit alerts always pass
-    /// here — `AlertLedger` makes them once per window — and unreachable ones already need a
-    /// previous health.
-    public static func admissible(_ alerts: [Alert], previous: TeamState?) -> [Alert] {
+    /// here — `AlertLedger` makes them once per window.
+    ///
+    /// Unreachable alerts need `listenedFor`: how long this iPhone has been streaming without a
+    /// break, nil when it is not (a background wake). A heartbeat is old after the app was
+    /// suspended because nobody was listening, which says nothing about the device.
+    public static func admissible(_ alerts: [Alert], previous: TeamState?, listenedFor: TimeInterval?) -> [Alert] {
         alerts.filter { alert in
-            guard alert.kind == .frozen else { return true }
-            let parts = alert.key.split(separator: "|", omittingEmptySubsequences: false)
-            guard parts.count >= 2 else { return false }
-            return previous?.device(String(parts[1]))?.hasSnapshot == true
+            switch alert.kind {
+            case .unreachable:
+                return (listenedFor ?? 0) >= Aging.dead
+            case .frozen:
+                let parts = alert.key.split(separator: "|", omittingEmptySubsequences: false)
+                guard parts.count >= 2 else { return false }
+                return previous?.device(String(parts[1]))?.hasSnapshot == true
+            default:
+                return true
+            }
         }
     }
 }

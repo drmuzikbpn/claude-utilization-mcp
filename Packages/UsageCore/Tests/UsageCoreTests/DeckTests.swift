@@ -258,17 +258,33 @@ struct DeckAlertsTests {
         let next = TeamState(devices: [device("d1", user: alan, sessions: [session("s1", pause: hard)])])
         let evaluator = AlertEvaluator()
 
-        let onLaunch = DeckAlerts.admissible(evaluator.evaluate(previous: nil, next: next), previous: nil)
+        let onLaunch = DeckAlerts.admissible(evaluator.evaluate(previous: nil, next: next), previous: nil, listenedFor: nil)
         #expect(onLaunch.isEmpty)
 
         let before = TeamState(devices: [device("d1", user: alan, sessions: [session("s1")])])
-        let live = DeckAlerts.admissible(evaluator.evaluate(previous: before, next: next), previous: before)
+        let live = DeckAlerts.admissible(evaluator.evaluate(previous: before, next: next), previous: before, listenedFor: 600)
         #expect(live.map(\.kind) == [.frozen])
+    }
+
+    /// Back from the background the last heartbeat is minutes old, but only because this iPhone
+    /// stopped listening. "Has not checked in" is news only after two minutes of listening.
+    @Test func unreachableNeedsTwoMinutesOfActuallyListening() {
+        var was = device("d1", user: alan)
+        was.health = .fresh
+        var now = was
+        now.health = .dead
+        let before = TeamState(devices: [was])
+        let raised = AlertEvaluator().evaluate(previous: before, next: TeamState(devices: [now]))
+        #expect(raised.map(\.kind) == [.unreachable])
+
+        #expect(DeckAlerts.admissible(raised, previous: before, listenedFor: 3).isEmpty)
+        #expect(DeckAlerts.admissible(raised, previous: before, listenedFor: nil).isEmpty)
+        #expect(DeckAlerts.admissible(raised, previous: before, listenedFor: Aging.dead).map(\.kind) == [.unreachable])
     }
 
     @Test func limitAlertsPassOnFirstSight() {
         let next = TeamState(devices: [device("d1", user: alan, limits: [limit("session", 97)], limitsFetchedAt: t0)])
-        let alerts = DeckAlerts.admissible(AlertEvaluator().evaluate(previous: nil, next: next), previous: nil)
+        let alerts = DeckAlerts.admissible(AlertEvaluator().evaluate(previous: nil, next: next), previous: nil, listenedFor: nil)
         #expect(alerts.map(\.kind) == [.critical])
     }
 }

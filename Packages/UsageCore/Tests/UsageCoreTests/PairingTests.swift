@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import UsageCore
 
@@ -180,6 +181,76 @@ struct PairingClientTests {
         await #expect(throws: DaemonError(code: "pinning")) {
             try await PairingClient(session: StubURLProtocol.session()).redeem(invite(addrs: [host]))
         }
+    }
+}
+
+/// The first request to a LAN address is what makes iOS ask for Local Network access, and it
+/// fails while the question is on screen. The code was never spent, so redeem tries again.
+struct PairingPatienceTests {
+    let host = uniqueHost("patient")
+
+    func invite() -> PairingInvite {
+        PairingInvite(name: "studio", addrs: [host], port: 47292, fingerprint: PairingLinkTests.fp, code: PairingLinkTests.code)
+    }
+
+    /// Unreachable for the first `failures` requests, then the daemon answers.
+    func answerAfter(_ failures: Int) {
+        let host = host
+        StubURLProtocol.register(host: host) { _ in
+            StubURLProtocol.recorded(host: host).count <= failures
+                ? .fail(.notConnectedToInternet)
+                : .respond(.init(body: Fixtures.data("pair-response.json")))
+        }
+    }
+
+    func redeem(_ patience: PairingPatience) async throws -> DeviceConfig {
+        try await PairingClient(session: StubURLProtocol.session()).redeem(invite(), patience: patience)
+    }
+
+    @Test func triesAgainWhileNoAddressAnswers() async throws {
+        answerAfter(2)
+        let config = try await redeem(PairingPatience(window: 30, pause: .zero))
+        #expect(config.token == "fixture-not-a-real-token")
+        #expect(StubURLProtocol.recorded(host: host).count == 3)
+    }
+
+    @Test func withoutPatienceTheFirstFailureIsFinal() async {
+        answerAfter(1)
+        await #expect(throws: DaemonError.network) { try await redeem(.none) }
+        #expect(StubURLProtocol.recorded(host: host).count == 1)
+    }
+
+    @Test func neverRepeatsACodeTheDaemonRefused() async {
+        let status = Fixtures.errorStatus("invalid_code", file: "pair-errors.json")
+        let body = Fixtures.errorBody("invalid_code", file: "pair-errors.json")
+        StubURLProtocol.register(host: host) { _ in .respond(.init(status: status, body: body)) }
+        await #expect { try await redeem(PairingPatience(window: 30, pause: .zero)) } throws: { error in
+            (error as? DaemonError)?.userMessage == "run `claude-usage pair` again"
+        }
+        #expect(StubURLProtocol.recorded(host: host).count == 1)
+    }
+
+    @Test func givesUpOnceTheWindowIsSpent() async {
+        answerAfter(.max)
+        await #expect(throws: DaemonError.network) {
+            try await redeem(PairingPatience(window: 0.05, pause: .milliseconds(20)))
+        }
+        #expect(StubURLProtocol.recorded(host: host).count > 1)
+    }
+
+    /// However long the permission question stays up, the answer gets a fresh window.
+    @Test func aWaitForTheAppToComeBackRestartsTheWindow() async throws {
+        answerAfter(2)
+        let waits = Mutex(2)
+        let patience = PairingPatience(window: 0, pause: .zero) {
+            waits.withLock { left in
+                left -= 1
+                return left >= 0
+            }
+        }
+        let config = try await redeem(patience)
+        #expect(config.token == "fixture-not-a-real-token")
+        #expect(StubURLProtocol.recorded(host: host).count == 3)
     }
 }
 
