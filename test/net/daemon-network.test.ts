@@ -301,8 +301,11 @@ class FakeLanNetwork extends FakeNetwork {
   lan: string | null = null;
   local: string | null = null;
   lanCalls = 0;
+  /** When set, every lookup runs this first — lets a test hold a reload mid-resolve. */
+  beforeLan: (() => Promise<void>) | null = null;
   async lanIPv4(): Promise<string | null> {
     this.lanCalls += 1;
+    if (this.beforeLan !== null) await this.beforeLan();
     return this.lan;
   }
   async localHostName(): Promise<string | null> {
@@ -452,5 +455,59 @@ describe('pairing end to end (§23.47)', () => {
     });
     expect(redeemed.status).toBe(200);
     expect(JSON.parse(redeemed.body)).toMatchObject({ token: 'test-bearer-token', fp: h.fingerprint });
+  });
+});
+
+describe('reload racing stop() (review fix)', () => {
+  it('a reload whose resolve finishes after stop() opens nothing and does not hang shutdown', async () => {
+    const net = new FakeLanNetwork();
+    net.lan = '127.0.0.1';
+    const h = await start(['lan'], net, {
+      lanWatchMs: 60_000,
+      config: { ...defaultConfig(), bind: ['lan'], auth: { token: 'test-bearer-token' }, tls: { port: null, loopback: true } },
+    });
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered: () => void = () => undefined;
+    const inResolve = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    net.beforeLan = async () => {
+      entered();
+      await gate;
+    };
+    net.lan = '::1';
+    const reloading = h.reload();
+    await inResolve; // the reload is now mid-resolve
+    const stopping = h.stop();
+    release();
+    await reloading;
+    await stopping;
+    expect(h.server.listeners).toEqual([]);
+    expect(h.server.servers).toHaveLength(0);
+  });
+});
+
+describe('a failed HTTPS bind keeps the keyword retry going (review fix)', () => {
+  it('retries until the TLS listener is up', async () => {
+    const taken = createNetServer();
+    const port = await new Promise<number>((resolve) => {
+      taken.listen(0, '127.0.0.1', () => resolve((taken.address() as { port: number }).port));
+    });
+    const net = new FakeLanNetwork();
+    net.lan = '127.0.0.1';
+    const h = await start(['lan'], net, {
+      tailnetRetryMs: 10,
+      tailnetRetryMaxMs: 10,
+      lanWatchMs: 60_000,
+      config: { ...defaultConfig(), bind: ['lan'], auth: { token: 'test-bearer-token' }, tls: { port, loopback: true } },
+    });
+    expect(h.tlsPort).toBeNull();
+    // The port frees up; the retry, not a SIGHUP, must notice.
+    await new Promise<void>((resolve) => taken.close(() => resolve()));
+    await until(() => h.tlsPort !== null);
+    expect(h.tlsPort).toBe(port);
   });
 });

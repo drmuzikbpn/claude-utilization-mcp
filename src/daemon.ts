@@ -209,11 +209,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
    * and whether the bind for it took — and only this callback sees the first (§23.21).
    */
   const keywordAddress = new Map<string, string | null>();
-  /** Every wanted keyword resolved to an address *and* we are listening on it. */
+  /** Hosts with an HTTPS listener (§23.45). Declared here, ahead of every closure that reads it. */
+  const tlsHosts = new Set<string>();
+  /**
+   * Every wanted keyword resolved to an address *and* we are listening on it — over HTTPS too
+   * when that address should have it, so a failed TLS bind keeps the retry going (§23.45).
+   */
   const keywordsBound = (): boolean =>
     wantedKeywords.every((k) => {
       const a = keywordAddress.get(k) ?? null;
-      return a !== null && boundHosts.includes(a);
+      if (a === null || !boundHosts.includes(a)) return false;
+      return tlsIdentity === null || !wantsTls(a, tlsLoopback) || tlsHosts.has(a);
     });
   const resolveTailscale = async (): Promise<string | null> => {
     const a = await network.tailscaleIPv4();
@@ -348,8 +354,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
 
   /** §23.45: the HTTPS port asked for; once one TLS listener is up, the rest share its port. */
   const requestedTlsPort = effectiveTlsPort(config, port);
-  /** Hosts with an HTTPS listener. Best-effort, like every secondary HTTP bind. */
-  const tlsHosts = new Set<string>();
+  /** Adds `host` to `tlsHosts`. Best-effort, like every secondary HTTP bind. */
   async function bindTls(host: string): Promise<void> {
     if (tlsIdentity === null || !wantsTls(host, tlsLoopback) || tlsHosts.has(host)) return;
     const target = server.tlsPort ?? requestedTlsPort;
@@ -428,8 +433,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
       log(`reload: keeping the current addresses — ${(err as Error).message}`);
       return;
     }
+    // stop() may have run while we were resolving: open nothing after it (review fix).
+    if (stopped) return;
 
     for (const host of next) {
+      if (stopped) return;
       if (boundHosts.includes(host)) continue;
       try {
         await server.bind(host, bound);
@@ -450,11 +458,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     }
 
     // HTTPS follows HTTP: new hosts get one, and an earlier failure gets another try.
-    for (const host of boundHosts) await bindTls(host);
-    if (server.tlsPort !== recordedTlsPort && !stopped) writeDaemonFile();
+    for (const host of [...boundHosts]) {
+      if (stopped) return;
+      await bindTls(host);
+    }
+    if (stopped) return;
+    if (server.tlsPort !== recordedTlsPort) writeDaemonFile();
 
     const magic = wantsTailnet ? await network.magicDnsName() : null;
     const local = wantsLan ? await localHostNameOf() : null;
+    if (stopped) return;
     if (magic !== magicDnsName) {
       log(magic === null ? 'net: MagicDNS name is no longer available' : `net: MagicDNS name is now ${magic}`);
     }
@@ -541,6 +554,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     updater?.stop();
     stopPublishers();
     poller.stop();
+    // A reload in flight must finish (it re-checks `stopped` after every await) before the
+    // listeners close, or it could re-open one behind close() and hold the process up.
+    await reloading.catch(() => undefined);
     await server.close();
     try {
       rmSync(daemonFilePath(configDir), { force: true });

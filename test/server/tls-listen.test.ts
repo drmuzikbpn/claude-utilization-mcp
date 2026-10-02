@@ -67,3 +67,14 @@ describe('HTTPS listeners (§23.45)', () => {
     await expect(rawRequest({ port: tlsPort, tls: true, path: '/health' })).rejects.toThrow();
   });
 });
+
+describe('after close() (review fix)', () => {
+  it('bind() refuses once the server is closed', async () => {
+    const server = make();
+    await server.listen(0, '127.0.0.1');
+    await server.close();
+    await expect(server.bind('127.0.0.1', 0)).rejects.toThrow(/closed/);
+    await expect(server.bind('127.0.0.1', 0, { tls: true })).rejects.toThrow(/closed/);
+    expect(server.listeners).toEqual([]);
+  });
+});

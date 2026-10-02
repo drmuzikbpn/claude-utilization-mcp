@@ -166,6 +166,8 @@ export function createServer(opts: ServerOptions): UsageServer {
   let extraHostNames: string[] = [...(opts.extraHostNames ?? [])];
   let policy: HostPolicy = buildHostPolicy(bound, extraHostNames);
   let listenPort: number | null = null;
+  /** Set by close(): no listener may be opened after it, e.g. by a reload still in flight. */
+  let closed = false;
   const listenerList = (): ListenerInfo[] =>
     [...listeners.values()].map((l) => ({ addr: l.host, port: l.addresses[0]?.port ?? 0, tls: l.tls }));
   const tlsPortNow = (): number | null => [...listeners.values()].find((l) => l.tls)?.addresses[0]?.port ?? null;
@@ -393,6 +395,7 @@ export function createServer(opts: ServerOptions): UsageServer {
    * one that went away, without disturbing loopback.
    */
   async function bindOne(host: string, port: number, tls = false): Promise<number> {
+    if (closed) throw new Error('server is closed — not binding');
     const key = listenerKey(host, tls);
     const existing = listeners.get(key);
     if (existing !== undefined) return existing.addresses[0]?.port ?? port;
@@ -422,6 +425,11 @@ export function createServer(opts: ServerOptions): UsageServer {
     const info = server.address() as AddressInfo | null;
     const addresses: BoundAddress[] = [{ address: host, port: actual, tls }];
     if (info !== null && info.address !== host) addresses.push({ address: info.address, port: actual, tls });
+    if (closed) {
+      // close() ran while this listener was coming up: it must not outlive the server.
+      await closeServer(server);
+      throw new Error('server is closed — not binding');
+    }
     listeners.set(key, { server, host, tls, addresses });
     if (!tls) listenPort = actual;
     rebuildPolicy();
@@ -493,6 +501,7 @@ export function createServer(opts: ServerOptions): UsageServer {
       rebuildPolicy();
     },
     async close() {
+      closed = true;
       events.close();
       const entries = [...listeners.values()];
       listeners.clear();
