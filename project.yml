@@ -76,6 +76,7 @@ targets:
     platform: watchOS
     sources:
       - path: Watch
+      - path: SharedUI
     dependencies:
       - package: UsageCore
       - target: UsageComplications
@@ -93,6 +94,8 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         WKApplication: true
         WKCompanionAppBundleIdentifier: com.evenseal.usagedeck
+        UIAppFonts:
+          - BarlowCondensed-SemiBold.ttf
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.evenseal.usagedeck.watchkitapp
@@ -103,6 +106,8 @@ targets:
     platform: iOS
     sources:
       - path: Widgets
+      - path: WidgetShared
+      - path: SharedUI
     dependencies:
       - package: UsageCore
       - sdk: WidgetKit.framework
@@ -118,6 +123,8 @@ targets:
         CFBundleDisplayName: Usage Deck
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UIAppFonts:
+          - BarlowCondensed-SemiBold.ttf
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
@@ -130,6 +137,8 @@ targets:
     platform: watchOS
     sources:
       - path: Complications
+      - path: WidgetShared
+      - path: SharedUI
     dependencies:
       - package: UsageCore
       - sdk: WidgetKit.framework
@@ -145,6 +154,8 @@ targets:
         CFBundleDisplayName: Usage Deck
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UIAppFonts:
+          - BarlowCondensed-SemiBold.ttf
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
