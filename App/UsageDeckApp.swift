@@ -29,6 +29,16 @@ enum AppGraph {
     }
 
     static func boot() {
+        if let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            DiagLog.shared.attach(file: folder.appending(path: "diagnostics.log"))
+        }
+        let info = Bundle.main.infoDictionary
+        DiagLog.shared.log(
+            .app,
+            "launched \(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?")), "
+                + "iOS \(ProcessInfo.processInfo.operatingSystemVersionString), \(store.records.count) paired"
+        )
         notifier.install()
         notifier.onRepair = { store.beginPairing(replacing: $0) }
         bridge.attach(store)

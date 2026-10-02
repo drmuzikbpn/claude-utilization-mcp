@@ -37,7 +37,13 @@ public final class Endpoints: Sendable {
     }
 
     public func succeeded(_ url: URL) {
-        state.withLock { $0.preferred = url }
+        let changed = state.withLock { s in
+            defer { s.preferred = url }
+            return s.preferred != url
+        }
+        if changed {
+            DiagLog.shared.log(.network, "\(url.host() ?? "?") answers")
+        }
     }
 
     /// Replaces the candidate list (pairing refresh from `/health.install.listeners`),
@@ -69,6 +75,7 @@ public final class Endpoints: Sendable {
                     throw CancellationError()
                 }
                 let mapped = DaemonError.from(transport: error)
+                DiagLog.shared.log(.network, "\(base.host() ?? "?") failed: \(DiagLog.describe(error)) → \(mapped.code)")
                 switch mapped.code {
                 case "network": sawNetwork = true
                 case "pinning": sawPinning = true

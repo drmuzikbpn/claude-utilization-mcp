@@ -48,17 +48,24 @@ public struct PairingClient: Sendable {
         patience: PairingPatience = .none
     ) async throws -> DeviceConfig {
         var spent: TimeInterval = 0
+        var attempt = 1
+        DiagLog.shared.log(.pairing, "redeeming for \(invite.name), \(invite.addrs.count) address(es)")
         while true {
             let began = Date()
             do {
-                return try await redeemOnce(invite, id: id)
+                let config = try await redeemOnce(invite, id: id)
+                DiagLog.shared.log(.pairing, "redeemed on attempt \(attempt)")
+                return config
             } catch let error as DaemonError where error.isTransport {
                 spent += Date().timeIntervalSince(began)
                 if await patience.ready() {
+                    DiagLog.shared.log(.pairing, "attempt \(attempt) was interrupted (app left the foreground); trying again")
                     spent = 0
                 } else if spent >= patience.window {
+                    DiagLog.shared.log(.pairing, "gave up after \(attempt) attempt(s): no address answered")
                     throw error
                 }
+                attempt += 1
                 try await Task.sleep(for: patience.pause)
                 spent += Double(patience.pause.components.seconds) + Double(patience.pause.components.attoseconds) / 1e18
             }

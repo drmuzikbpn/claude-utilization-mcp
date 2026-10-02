@@ -80,6 +80,13 @@ fixture both sides must hash identically.
   and fails that request. `redeem(patience:)` retries only when no address answered (the code is
   unspent), waits while the app is inactive (the alert is up) and gives the answer a fresh 12 s
   window. A daemon refusal is never retried.
+- "Device unreachable" is raised only after 2 minutes of unbroken foreground listening
+  (`DeckAlerts.admissible(listenedFor:)`): a heartbeat that is old because the app was suspended
+  says nothing about the device. Never from a background wake.
+- `DiagLog` (UsageCore `Diagnostics/`) is the on-device debug log behind Settings › Send debug
+  log: 800 lines, repeats counted, file in Application Support. Lines may name devices and
+  addresses; never a token, pairing code or fingerprint, and errors only through
+  `DiagLog.describe` (codes, never messages).
 - Devices are reached through the ordered `addrs` candidate list (`Endpoints`): last-good first,
   then pairing order; only transport failures move on, an HTTP error from a daemon that answered
   is final. Bonjour is cut.

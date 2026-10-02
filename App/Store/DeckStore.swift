@@ -75,6 +75,8 @@ final class DeckStore {
     /// How many times the app has left the foreground; a pairing attempt that spans one was
     /// interrupted (a system alert, usually) and does not count against its retry window.
     @ObservationIgnored private var resigns = 0
+    /// Since when the streams have been up without a break; nil while the app is not listening.
+    @ObservationIgnored private var listeningSince: Date?
     @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private var chipTask: Task<Void, Never>?
     @ObservationIgnored private var toastTask: Task<Void, Never>?
@@ -169,6 +171,11 @@ final class DeckStore {
         if !active {
             resigns += 1
         }
+        listeningSince = active ? Date() : nil
+        DiagLog.shared.log(.app, active ? "foreground" : "left the foreground")
+        if !active {
+            DiagLog.shared.flush()
+        }
         let all = Array(clients.values)
         if active {
             for client in all {
@@ -223,7 +230,9 @@ final class DeckStore {
     /// The `BGAppRefreshTask` body. Always rewrites the widgets' snapshot: a background wake is
     /// exactly when they are most likely to be behind.
     func backgroundRefresh() async {
+        DiagLog.shared.log(.app, "background refresh")
         await refreshAll()
+        DiagLog.shared.flush()
         guard !Task.isCancelled else { return }
         writeWidgets(snapshot)
     }
@@ -344,6 +353,7 @@ final class DeckStore {
         let previous = team
         if next != previous {
             team = next
+            logHealthChanges(previous: previous, next: next, at: at)
             raiseAlerts(previous: previous, next: next, at: at)
         }
         publish(at: at)
@@ -378,15 +388,41 @@ final class DeckStore {
         for key in evaluator.cleared(next) {
             ledger.forget(key)
         }
-        let raised = ledger.admit(DeckAlerts.admissible(evaluator.evaluate(previous: previous, next: next), previous: previous))
-            + repairLedger.review(next, now: at)
+        let found = evaluator.evaluate(previous: previous, next: next)
+        let listenedFor = listeningSince.map { at.timeIntervalSince($0) }
+        let admitted = DeckAlerts.admissible(found, previous: previous, listenedFor: listenedFor)
+        for alert in found where !admitted.contains(alert) {
+            DiagLog.shared.log(
+                .alerts,
+                "\(alert.kind.rawValue) held back (listening for \(listenedFor.map { "\(Int($0)) s" } ?? "nothing"))"
+            )
+        }
+        let raised = ledger.admit(admitted) + repairLedger.review(next, now: at)
         guard !raised.isEmpty else { return }
+        for alert in raised {
+            DiagLog.shared.log(.alerts, "\(alert.kind.rawValue) raised: \(alert.body)")
+        }
         let quiet = settings.isQuiet(at: at)
         for alert in raised {
             notifier.post(alert, quiet: quiet)
         }
         if let limit = raised.last(where: { $0.kind == .warn || $0.kind == .critical }) {
             showChip(limit.body)
+        }
+    }
+
+    /// One diary line per device whose health or pairing state has just changed.
+    private func logHealthChanges(previous: TeamState, next: TeamState, at: Date) {
+        for device in next.devices {
+            let was = previous.device(device.id)
+            guard was?.health != device.health || was?.repairReason != device.repairReason else { continue }
+            let age = device.lastHeartbeatAt.map { "\(Int(at.timeIntervalSince($0))) s ago" } ?? "never"
+            let repair = device.repairReason.map { ", needs re-pair (\($0))" } ?? ""
+            DiagLog.shared.log(
+                .device,
+                "\(device.displayName) \(was.map { "\($0.health)" } ?? "new") → \(device.health), last heard \(age)\(repair)"
+                    + (isForeground ? "" : ", app in background")
+            )
         }
     }
 
@@ -590,7 +626,9 @@ final class DeckStore {
                 startBootstrap(attempt)
                 armConnectTimer()
             }
+            DiagLog.shared.log(.pairing, "paired \(record.name)\(reuse == nil ? "" : " (replacing its old record)")")
         } catch {
+            DiagLog.shared.log(.pairing, "failed: \(DiagLog.describe(DaemonError.from(transport: error)))")
             pairingError = DaemonError.from(transport: error).userMessage
             showPairing = true
         }
