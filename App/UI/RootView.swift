@@ -48,7 +48,9 @@ struct RootView: View {
         .sensoryFeedback(.error, trigger: store.toastSerial)
         // A limit crossing into warn or critical is felt as well as seen.
         .sensoryFeedback(trigger: store.worstStatus) { old, new in
-            (new ?? .ok) > (old ?? .ok) ? .warning : nil
+            // Not on the first reading after launch: only a change you could have missed.
+            guard let old, let new, new > old else { return nil }
+            return .warning
         }
         .tint(DeckColor.accent)
         .preferredColorScheme(.dark)

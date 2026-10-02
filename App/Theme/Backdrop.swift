@@ -64,14 +64,15 @@ extension View {
 
 struct ZoomSource: ViewModifier {
     @Environment(\.deckZoom) private var namespace
-    var id: String
+    /// Nil registers nothing (a row that is not its project's zoom source).
+    var id: String?
 
     static func id(deviceId: String, key: String) -> String {
         "\(deviceId)|\(key)"
     }
 
     func body(content: Content) -> some View {
-        if let namespace {
+        if let namespace, let id {
             content.matchedTransitionSource(id: id, in: namespace)
         } else {
             content

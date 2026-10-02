@@ -35,10 +35,11 @@ struct WideDockView: View {
                                     rank: index
                                 )
                             }
-                            // The project screen zooms out of its first (busiest) row.
+                            // The project screen zooms out of its first (busiest) row: row key → zoom id.
                             let zoomRows = Dictionary(
                                 rows.map { (ZoomSource.id(deviceId: $0.project.deviceId, key: $0.project.key), $0.key) }
                             ) { first, _ in first }
+                                .reduce(into: [String: String]()) { $0[$1.value] = $1.key }
                             LazyVStack(spacing: 6) {
                                 ForEach(rows, id: \.key) { item in
                                     SessionRow(
@@ -52,9 +53,7 @@ struct WideDockView: View {
                                     )
                                     .padding(.vertical, 4)
                                     .deckCard(radius: 14)
-                                    .modifier(zoomRows[ZoomSource.id(deviceId: item.project.deviceId, key: item.project.key)] == item.key
-                                        ? ZoomSource(id: ZoomSource.id(deviceId: item.project.deviceId, key: item.project.key))
-                                        : ZoomSource(id: item.key))
+                                    .modifier(ZoomSource(id: zoomRows[item.key]))
                                     .liftOnReorder(item.rank)
                                 }
                             }

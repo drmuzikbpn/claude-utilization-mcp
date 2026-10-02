@@ -20,7 +20,7 @@ struct RingGauge: View {
     var body: some View {
         let color = Theme.color(ring.status)
         let fullColor = renderingMode == .fullColor
-        let fraction = lively ? (swept ?? 0) : ring.fraction
+        let fraction = swept ?? (lively ? 0 : ring.fraction)
         ZStack {
             Circle()
                 .stroke(Theme.line, lineWidth: lineWidth)
@@ -47,15 +47,18 @@ struct RingGauge: View {
             }
         }
         .padding(lineWidth / 2)
-        .keyframeAnimator(initialValue: 1.0, trigger: lively ? ring.status : nil) { content, scale in
-            content.scaleEffect(scale)
+        // Keyed on the status alone: toggling `lively` (Always-On on the watch) must not pulse.
+        .keyframeAnimator(initialValue: 1.0, trigger: ring.status) { content, scale in
+            content.scaleEffect(lively ? scale : 1)
         } keyframes: { _ in
             SpringKeyframe(1.08, duration: 0.16)
             SpringKeyframe(1, duration: 0.5, spring: .bouncy)
         }
         .onAppear {
-            guard lively, swept == nil else { return }
-            withAnimation(reduceMotion ? nil : .smooth(duration: 0.9)) { swept = ring.fraction }
+            // Always settle `swept`, so a ring that first appears flat (dimmed) and turns lively
+            // later keeps its arc instead of dropping to empty.
+            guard swept == nil else { return }
+            withAnimation(lively && !reduceMotion ? .smooth(duration: 0.9) : nil) { swept = ring.fraction }
         }
         .onChange(of: ring.fraction) { _, new in
             withAnimation(.smooth(duration: 0.6)) { swept = new }
