@@ -8,16 +8,19 @@ struct GlanceView: View {
     let entry: GlanceEntry
 
     var body: some View {
-        content
+        GlanceContent(face: entry.face, family: family)
             .widgetURL(Glance.openURL)
             .containerBackground(Theme.ground, for: .widget)
     }
+}
 
-    private var face: GlanceFace {
-        entry.face
-    }
+/// The face for an explicit family; split from `GlanceView` so the render tests can draw each
+/// family outside WidgetKit.
+struct GlanceContent: View {
+    let face: GlanceFace
+    let family: WidgetFamily
 
-    @ViewBuilder private var content: some View {
+    var body: some View {
         if face.state != .account {
             EmptyGlance(state: face.state, family: family)
         } else {
@@ -119,11 +122,19 @@ private struct WindowBar: View {
                 .font(Theme.data(12))
                 .foregroundStyle(Theme.muted)
                 .frame(width: 18, alignment: .leading)
-            Gauge(value: ring.fraction) {
-                Text(title)
+            // A drawn bar rather than `.accessoryLinearCapacity`, which repeats its label above
+            // the track and leaves no room for the second window.
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Theme.line)
+                    Capsule()
+                        .fill(Theme.color(ring.status))
+                        .frame(width: max(proxy.size.height, proxy.size.width * ring.fraction))
+                        .opacity(ring.fraction > 0 ? 1 : 0)
+                        .widgetAccentable()
+                }
             }
-            .gaugeStyle(.accessoryLinearCapacity)
-            .tint(Theme.color(ring.status))
+            .frame(height: 5)
             Text(ring.label)
                 .font(Theme.numeral(17))
                 .foregroundStyle(Theme.color(ring.status))
@@ -208,8 +219,8 @@ private struct SmallGlance: View {
 
         private func window(_ ring: RingFace, _ title: String, _ countdown: String, _ resetAt: String) -> some View {
             HStack(spacing: 8) {
-                RingGauge(ring: ring, lineWidth: 7, numeralSize: 28)
-                    .frame(width: 76, height: 76)
+                RingGauge(ring: ring, lineWidth: 8, numeralSize: 34)
+                    .frame(width: 96, height: 96)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(Theme.data(12))
