@@ -13,6 +13,7 @@ import { startBusPublishers } from './server/events.js';
 import { createSessionsSubsystem, type SessionsSubsystem } from './sessions/index.js';
 import { createServer, type UsageServer } from './server/index.js';
 import { orderPairingAddrs } from './server/pairing.js';
+import { defaultInstallPaths, type InstallPaths } from './server/install-state.js';
 import type { TokensSource } from './server/types.js';
 import { createUpdater, defaultRestart, type UpdaterHandle } from './update/index.js';
 import { getVersion } from './version.js';
@@ -94,6 +95,8 @@ export interface DaemonOptions {
   sessions?: boolean;
   /** W5: tailnet resolution seam (§16). */
   network?: NetworkResolver;
+  /** §23.48: where `/health.install` looks; defaults to the real `~/.claude` paths. */
+  install?: InstallPaths;
   /** W8: the auto-updater. Pass one to inject fakes; `null` leaves `/health.update` disabled. */
   updater?: UpdaterHandle | null;
 }
@@ -285,6 +288,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     bus,
     sessions,
     extraHostNames: hostNames(),
+    install: opts.install ?? defaultInstallPaths(),
     tls: tlsIdentity === null ? null : { key: tlsIdentity.key, cert: tlsIdentity.cert },
     // §23.47: what `POST /v1/pair/code` offers. Read per request, so it follows rebinds.
     pairing: {

@@ -9,6 +9,7 @@ import type { Config, Thresholds } from '../config.js';
 import { computeStatus, type StatusReport } from '../limits/status.js';
 import { stripRaw, type LimitsSnapshot, type LimitsSnapshotLite } from '../limits/types.js';
 import type { OauthAccount } from './identity.js';
+import type { InstallFiles } from './install-state.js';
 import { emptyScanStats, zeroTotals, type TokenTotals, type TokensSource } from './types.js';
 
 /**
@@ -27,6 +28,13 @@ export interface SnapshotDeps {
   version: string;
   startedAt: number;
   now(): number;
+  /** §23.48: `/health.install`; absent ⇒ the key is omitted. */
+  install?: () => InstallBody;
+}
+
+/** `/health.install` (§23.48). */
+export interface InstallBody extends InstallFiles {
+  listeners: Array<{ addr: string; port: number; tls: boolean }>;
 }
 
 /** `/health.update`, also the payload of the SSE `update` event (§15, §19, §20). */
@@ -88,6 +96,7 @@ export function healthBody(d: SnapshotDeps): Record<string, unknown> {
       spendReady: tokens?.ready ?? false,
       ...(stats.scan === undefined ? {} : { scan: stats.scan }),
     },
+    ...(d.install === undefined ? {} : { install: d.install() }),
   };
 }
 

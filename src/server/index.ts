@@ -17,6 +17,7 @@ import {
 import { sendError, sendJson } from './errors.js';
 import { createUserReader, defaultClaudeJsonPath } from './identity.js';
 import { buildHostPolicy, checkRequest, isLoopbackRequest, isTlsRequest, normalizeAddress, PAIR_REDEEM_PATH, type HostPolicy } from './middleware.js';
+import { createInstallReader, type InstallPaths } from './install-state.js';
 import { buildPairingLink, createPairingCodes, type PairingCodes } from './pairing.js';
 import { parseTokensQuery } from './query.js';
 import { healthBody, limitsBody, summaryBody, type SnapshotDeps, type UpdateStateProvider } from './snapshot.js';
@@ -74,6 +75,8 @@ export interface ServerOptions {
   pairing?: { info(): { addrs: string[]; port: number | null; fp: string | null } };
   /** Injected in tests; one is created when omitted. */
   pairingCodes?: PairingCodes;
+  /** §23.48: where to look for our hooks/statusLine/MCP entry; absent ⇒ no `/health.install`. */
+  install?: InstallPaths;
 }
 
 export interface BoundAddress {
@@ -163,6 +166,8 @@ export function createServer(opts: ServerOptions): UsageServer {
   let extraHostNames: string[] = [...(opts.extraHostNames ?? [])];
   let policy: HostPolicy = buildHostPolicy(bound, extraHostNames);
   let listenPort: number | null = null;
+  const listenerList = (): ListenerInfo[] =>
+    [...listeners.values()].map((l) => ({ addr: l.host, port: l.addresses[0]?.port ?? 0, tls: l.tls }));
   const tlsPortNow = (): number | null => [...listeners.values()].find((l) => l.tls)?.addresses[0]?.port ?? null;
 
   /** `addresses` is handed out live, so it is refilled in place rather than replaced. */
@@ -186,6 +191,10 @@ export function createServer(opts: ServerOptions): UsageServer {
     startedAt,
     now,
   };
+  if (opts.install !== undefined) {
+    const readInstall = createInstallReader(opts.install, now);
+    snapshotDeps.install = () => ({ ...readInstall(), listeners: listenerList() });
+  }
 
   const bus = opts.bus ?? new EventBus();
   const events = createEventsEndpoint({
@@ -440,7 +449,7 @@ export function createServer(opts: ServerOptions): UsageServer {
       return tlsPortNow();
     },
     get listeners() {
-      return [...listeners.values()].map((l) => ({ addr: l.host, port: l.addresses[0]?.port ?? 0, tls: l.tls }));
+      return listenerList();
     },
     bus,
     events,
