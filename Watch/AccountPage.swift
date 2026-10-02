@@ -6,7 +6,11 @@ import UsageCore
 /// keeps the rings and percents only.
 struct AccountPage: View {
     @Environment(PhoneLink.self) private var link
-    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+    @Environment(\.isLuminanceReduced) private var systemLuminanceReduced
+    private var isLuminanceReduced: Bool {
+        AlwaysOn.dimmed(systemLuminanceReduced)
+    }
+
     let account: WatchSnapshot.Account
     let snapshot: WatchSnapshot
 

@@ -110,9 +110,13 @@ struct EscalationCountdown: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            Text("\(prefix) \(Format.countdown(escalation.fireAt, now: context.date))")
-                .font(Theme.data(11))
-                .foregroundStyle(Theme.frozen)
+            Text(
+                escalation.fireAt > context.date
+                    ? "\(prefix) \(Format.countdown(escalation.fireAt, now: context.date))"
+                    : "freeze due on the iPhone's next wake"
+            )
+            .font(Theme.data(11))
+            .foregroundStyle(Theme.frozen)
         }
     }
 }
