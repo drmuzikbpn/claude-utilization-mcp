@@ -9,7 +9,10 @@ export interface InstallFlags {
   service: boolean;
   hook: boolean;
   mcp: boolean;
+  /** The visible status line (§7.3). Implies the feed. */
   statusline: boolean;
+  /** The silent limits feed (§23.54): default on, `--no-statusline` turns it off. */
+  feed: boolean;
   /** Add `"tailscale"` to `config.bind` (§16). */
   tailscale: boolean;
   /** Add `"lan"` to `config.bind` (§23.44). Interactive install asks, default yes. */
@@ -27,7 +30,7 @@ export class InstallError extends Error {
   }
 }
 
-/** Defaults: service yes, hook yes, MCP yes, status line no (§8). */
+/** Defaults: service yes, hook yes, MCP yes, limits feed yes, visible status line no (§8, §23.54). */
 export function defaultFlags(): InstallFlags {
   return {
     yes: false,
@@ -35,6 +38,7 @@ export function defaultFlags(): InstallFlags {
     hook: true,
     mcp: true,
     statusline: false,
+    feed: true,
     tailscale: false,
     lan: false,
     linger: false,
@@ -61,6 +65,11 @@ export function parseInstallArgs(argv: readonly string[]): InstallFlags {
         break;
       case '--statusline':
         flags.statusline = true;
+        flags.feed = true;
+        break;
+      case '--no-statusline':
+        flags.statusline = false;
+        flags.feed = false;
         break;
       case '--tailscale':
         flags.tailscale = true;
@@ -85,6 +94,26 @@ export interface PlanContext {
   claudeJsonFile: string;
   binPath: string;
   versionDir: string;
+  /** What `statusLine` holds today (§23.48); install looks before it plans. Absent = none. */
+  statusline?: 'ours' | 'includes-ours' | 'other' | 'none';
+}
+
+/** What the limits feed reads, said before anything is written (§23.54). */
+const FEED_PRIVACY =
+  "reads only the rate-limit percentages Claude Code already computes and hands them to this machine's daemon — no prompts, no paths, nothing leaves this machine";
+
+function limitsDetail(flags: InstallFlags, ctx: PlanContext): string {
+  switch (ctx.statusline ?? 'none') {
+    case 'ours':
+    case 'includes-ours':
+      return `${ctx.settingsFile} — statusLine already forwards to claude-usage; nothing to change`;
+    case 'other':
+      return `${ctx.settingsFile} — you have your own statusLine, which is left alone; install prints one line to add to it\n      ${FEED_PRIVACY}`;
+    case 'none':
+      return flags.statusline
+        ? `${ctx.settingsFile} — statusLine shows "5h 42% · 7d 61%"\n      ${FEED_PRIVACY}`
+        : `${ctx.settingsFile} — statusLine (you have none), prints nothing\n      ${FEED_PRIVACY}`;
+  }
 }
 
 export interface PlanItem {
@@ -113,12 +142,7 @@ export function buildPlan(flags: InstallFlags, ctx: PlanContext): PlanItem[] {
       enabled: flags.hook,
     },
     { key: 'mcp', label: 'MCP server', detail: `${ctx.claudeJsonFile} — mcpServers["claude-usage"]`, enabled: flags.mcp },
-    {
-      key: 'statusline',
-      label: 'status line',
-      detail: `${ctx.settingsFile} — statusLine (only when you do not already have one)`,
-      enabled: flags.statusline,
-    },
+    { key: 'statusline', label: 'live limits', detail: limitsDetail(flags, ctx), enabled: flags.feed || flags.statusline },
   ];
 }
 

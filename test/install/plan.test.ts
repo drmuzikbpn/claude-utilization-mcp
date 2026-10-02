@@ -22,10 +22,16 @@ const ctx: PlanContext = {
 };
 
 describe('parseInstallArgs', () => {
-  it('defaults to service/hook/mcp on and statusline off (§8)', () => {
+  it('defaults to service/hook/mcp and the limits feed on, the visible status line off (§23.54)', () => {
     expect(parseInstallArgs([])).toEqual(defaultFlags());
     const d = parseInstallArgs([]);
-    expect([d.service, d.hook, d.mcp, d.statusline]).toEqual([true, true, true, false]);
+    expect([d.service, d.hook, d.mcp, d.feed, d.statusline]).toEqual([true, true, true, true, false]);
+  });
+
+  it('--no-statusline leaves statusLine alone entirely', () => {
+    const f = parseInstallArgs(['--no-statusline']);
+    expect([f.feed, f.statusline]).toEqual([false, false]);
+    expect(planToIntegrations(buildPlan(f, ctx)).statusline).toBe(false);
   });
 
   it('honours every flag', () => {
@@ -36,6 +42,7 @@ describe('parseInstallArgs', () => {
       hook: false,
       mcp: false,
       statusline: true,
+      feed: true,
       tailscale: true,
       lan: true,
       linger: true,
@@ -57,7 +64,10 @@ describe('plan rendering', () => {
     expect(text).toContain('[x] background service');
     expect(text).toContain('[x] Claude Code hooks');
     expect(text).toContain('[x] MCP server');
-    expect(text).toContain('[ ] status line');
+    expect(text).toContain('[x] live limits');
+    // Says what it reads and that it draws nothing, before anything is written.
+    expect(text).toContain('only the rate-limit percentages');
+    expect(text).toContain('prints nothing');
     expect(text).toContain(ctx.unitPath);
     expect(text).toContain('SessionStart, SessionEnd, UserPromptSubmit, PreToolUse');
   });
@@ -79,7 +89,7 @@ describe('confirmPlan', () => {
       prompt: scripted.prompt,
     });
     expect(scripted.questions).toEqual([]);
-    expect(planToIntegrations(items)).toEqual({ service: true, hook: true, mcp: true, statusline: false });
+    expect(planToIntegrations(items)).toEqual({ service: true, hook: true, mcp: true, statusline: true });
   });
 
   it('asks once per item and returns the answers', async () => {
