@@ -35,6 +35,8 @@ export interface InstallIO {
   sleep?: (ms: number) => Promise<void>;
   randomToken?: () => string;
   uid?: number;
+  /** `claude-usage pair`, offered at the end of an interactive install (§23.48). */
+  pair?: () => Promise<number>;
 }
 
 export interface ResolvedContext {

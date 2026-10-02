@@ -12,6 +12,8 @@ export interface InstallFlags {
   statusline: boolean;
   /** Add `"tailscale"` to `config.bind` (§16). */
   tailscale: boolean;
+  /** Add `"lan"` to `config.bind` (§23.44). Interactive install asks, default yes. */
+  lan: boolean;
   /** `loginctl enable-linger` on systemd (§23.9). */
   linger: boolean;
   unknown: string[];
@@ -34,6 +36,7 @@ export function defaultFlags(): InstallFlags {
     mcp: true,
     statusline: false,
     tailscale: false,
+    lan: false,
     linger: false,
     unknown: [],
   };
@@ -61,6 +64,9 @@ export function parseInstallArgs(argv: readonly string[]): InstallFlags {
         break;
       case '--tailscale':
         flags.tailscale = true;
+        break;
+      case '--lan':
+        flags.lan = true;
         break;
       case '--linger':
         flags.linger = true;

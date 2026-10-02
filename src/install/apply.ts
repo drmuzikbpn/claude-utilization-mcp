@@ -20,6 +20,8 @@ import {
   type PlanContext,
 } from './plan.js';
 import { preflight, renderPreflight } from './preflight.js';
+import { readlinePrompter } from './plan.js';
+import { isLoopbackAddress } from '../server/middleware.js';
 import { applySettings } from './settings-merge.js';
 import { installVersion } from './versions.js';
 import { ensureRuntimeDeps } from './deps.js';
@@ -74,11 +76,19 @@ export async function runInstall(argv: readonly string[], io: InstallIO): Promis
     throw err;
   }
   const chosen = planToIntegrations(confirmed);
+  const interactive = !flags.yes;
+  const ask = io.prompt ?? (interactive ? readlinePrompter() : undefined);
+
+  // §23.44: LAN reachability for the iPhone app. Interactive default yes; `--yes` alone
+  // never widens reachability — a scripted install gets it only with `--lan`.
+  let lan = flags.lan;
+  if (!lan && interactive && ask !== undefined) lan = await ask('LAN access for the iPhone app?', true);
 
   // 3. Config: mint the bearer token if there is none, record the choices, 0600.
   const { config, minted } = loadConfigWithToken(ctx.configDir, io.randomToken);
   config.integrations = { ...config.integrations, ...chosen };
   if (flags.tailscale && !config.bind.includes('tailscale')) config.bind = [...config.bind, 'tailscale'];
+  if (lan && !config.bind.includes('lan')) config.bind = [...config.bind, 'lan'];
   persistConfig(config, ctx.configDir);
   io.stdout(`\nconfig: ${ctx.configDir}/config.json (0600)${minted ? ' — bearer token generated' : ''}\n`);
 
@@ -172,6 +182,15 @@ export async function runInstall(argv: readonly string[], io: InstallIO): Promis
 
   io.stdout(`\n${await renderStatusTable(ctx, chosen, healthy, config.port)}`);
   for (const note of notes) io.stdout(`\nnote: ${note}\n`);
+
+  // §23.48: offer the pairing page — only when there is something a phone could reach.
+  const reachable = config.bind.some((entry) => !isLoopbackAddress(entry));
+  if (healthy && reachable && interactive && ask !== undefined) {
+    if (await ask('Open the pairing page now?', true)) {
+      const pair = io.pair ?? (async () => (await import('./pair.js')).runPair({ stdout: io.stdout, stderr: io.stderr, configDir: ctx.configDir }));
+      await pair();
+    }
+  }
   return 0;
 }
 
