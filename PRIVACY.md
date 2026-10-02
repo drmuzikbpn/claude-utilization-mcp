@@ -11,6 +11,10 @@ Usage Deck collects nothing.
   not shared with the watch, widgets or any other app).
 - **What reaches your watch and widgets:** usage percentages, reset times, project and session
   names and token counts — the same numbers the iPhone shows. Never the access token.
+- **Debug log:** the app keeps a short record of pairing, connection and alert events on your
+  iPhone to help with troubleshooting. It names your paired devices and their addresses, and
+  never holds access tokens or pairing codes. It leaves the iPhone only when you choose
+  Settings › Send debug log, to whoever you send it to; you can clear it there too.
 - **Camera:** used only to scan a pairing QR code when you choose to; no image is stored.
 - **Local network:** used only to reach the devices you pair.
 

@@ -105,6 +105,26 @@ struct SettingsScreen: View {
             }
             .listRowBackground(DeckColor.surface)
 
+            Section {
+                ShareLink(
+                    item: DiagLog.shared.text,
+                    subject: Text("Usage Deck debug log"),
+                    preview: SharePreview("Usage Deck debug log")
+                ) {
+                    Label("Send debug log", systemImage: "square.and.arrow.up")
+                }
+                .foregroundStyle(DeckColor.accent)
+                Button("Clear debug log", role: .destructive) { DiagLog.shared.clear() }
+            } header: {
+                Text("Troubleshooting")
+            } footer: {
+                Text(
+                    "A short record of pairing, connection and alert events, kept on this iPhone until you send it. "
+                        + "It names your devices and their addresses; it never holds access tokens or pairing codes."
+                )
+            }
+            .listRowBackground(DeckColor.surface)
+
             Section("About") {
                 HStack {
                     Text("Version")
