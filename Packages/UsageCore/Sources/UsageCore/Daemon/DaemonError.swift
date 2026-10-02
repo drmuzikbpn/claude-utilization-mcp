@@ -1,0 +1,91 @@
+import Foundation
+
+/// Every failure talking to a daemon. What the user sees is always [userMessage]: the
+/// envelope's `hint`, else its `message`, else a per-code default.
+public struct DaemonError: Error, Sendable, Equatable {
+    public var code: String
+    /// 0 when no HTTP response arrived (network failure, TLS pin mismatch).
+    public var httpStatus: Int
+    public var message: String?
+    public var hint: String?
+
+    public init(code: String, httpStatus: Int = 0, message: String? = nil, hint: String? = nil) {
+        self.code = code
+        self.httpStatus = httpStatus
+        self.message = message
+        self.hint = hint
+    }
+
+    public static let defaults: [String: String] = [
+        "unauthorized": "Token rejected. Re-pair this device.",
+        "network": "Device unreachable.",
+        "pinning": "This device's certificate changed. Re-pair it.",
+        "not_found": "Session no longer exists.",
+        "conflict": "That session can't be hard-paused (no trusted pid).",
+        "gone": "Session ended; pause cleared.",
+        "rate_limited": "Too many attempts. Wait a minute and try again.",
+        "forbidden": "The device refused the request.",
+    ]
+
+    public var userMessage: String {
+        hint ?? message ?? Self.defaults[code] ?? "Daemon error (\(code))"
+    }
+
+    public static let network = DaemonError(code: "network")
+
+    /// True when re-pairing, not retrying, is the fix.
+    public var needsRepair: Bool {
+        code == "unauthorized" || code == "pinning"
+    }
+
+    static func code(forStatus status: Int) -> String {
+        switch status {
+        case 401: "unauthorized"
+        case 403: "forbidden"
+        case 404: "not_found"
+        case 409: "conflict"
+        case 410: "gone"
+        case 429: "rate_limited"
+        default: "http_\(status)"
+        }
+    }
+
+    /// Builds the error for a non-2xx response, preferring the daemon's error envelope.
+    public static func from(status: Int, body: Data?) -> DaemonError {
+        if let body, !body.isEmpty,
+           let envelope = try? JSONDecoder().decode(ErrorEnvelopeDTO.self, from: body) {
+            return DaemonError(
+                code: envelope.error.code,
+                httpStatus: status,
+                message: envelope.error.message,
+                hint: envelope.error.hint
+            )
+        }
+        return DaemonError(code: code(forStatus: status), httpStatus: status)
+    }
+
+    /// Maps a transport failure. Callers must rule out their own task's cancellation first
+    /// (`Task.isCancelled`): after that, a `cancelled` URL error can only be PinnedTrust
+    /// refusing the server's certificate, which is a pin mismatch, not an outage.
+    public static func from(transport error: any Error) -> DaemonError {
+        if let daemon = error as? DaemonError {
+            return daemon
+        }
+        guard let url = error as? URLError else {
+            return .network
+        }
+        switch url.code {
+        case .cancelled, .serverCertificateUntrusted, .serverCertificateHasBadDate,
+             .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid:
+            return DaemonError(code: "pinning")
+        default:
+            // The URL error's own text ("Could not connect to the server.") says less than ours.
+            return .network
+        }
+    }
+
+    /// True for failures where the next candidate address is worth trying.
+    public var isTransport: Bool {
+        code == "network"
+    }
+}

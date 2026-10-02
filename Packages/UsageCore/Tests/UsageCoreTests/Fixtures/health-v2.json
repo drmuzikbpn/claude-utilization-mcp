@@ -1,0 +1,15 @@
+{ "ok": true, "name": "studio", "version": "0.1.120+abc1234", "uptimeMs": 60000, "pid": 4242,
+  "user": { "emailAddress": "alan@example.test", "accountUuid": "11111111-2222-4333-8444-555555555555",
+            "organizationUuid": "99999999-8888-4777-8666-555555555555", "displayName": "Alan" },
+  "update": { "channel": "stable", "current": "0.1.120+abc1234", "available": null, "state": "idle", "deferredReason": null },
+  "stats": { "filesTracked": 12, "eventsIndexed": 3400, "parseErrors": 0, "lastScanAt": "2026-10-01T18:00:00.000Z", "spendReady": true },
+  "install": {
+    "hooks": true,
+    "statusline": "includes-ours",
+    "mcp": null,
+    "listeners": [
+      { "addr": "127.0.0.1", "port": 47291, "tls": false },
+      { "addr": "192.168.1.20", "port": 47291, "tls": false },
+      { "addr": "192.168.1.20", "port": 47292, "tls": true }
+    ]
+  } }

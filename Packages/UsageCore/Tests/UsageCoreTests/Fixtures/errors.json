@@ -1,0 +1,62 @@
+{
+  "unauthorized": {
+    "status": 401,
+    "body": {
+      "error": {
+        "code": "unauthorized",
+        "message": "a valid Authorization: Bearer token is required",
+        "hint": "mutating requests need the token even from loopback"
+      }
+    }
+  },
+  "untrusted_pid": {
+    "status": 409,
+    "body": {
+      "error": {
+        "code": "conflict",
+        "message": "session c70bd853-62b1-4f42-8c14-2b7dcfe6578c was discovered from its transcript and has no trusted pid",
+        "hint": "hard freeze needs a session registered by the SessionStart hook — use mode \"soft\""
+      }
+    }
+  },
+  "foreign_uid": {
+    "status": 409,
+    "body": {
+      "error": {
+        "code": "conflict",
+        "message": "process 4242 is not owned by this user",
+        "hint": "claude-usage only freezes processes it owns"
+      }
+    }
+  },
+  "dead_session": {
+    "status": 410,
+    "body": {
+      "error": {
+        "code": "gone",
+        "message": "session 8ad4e017-5b22-4c90-9f3d-7e6b1a0c3350 has exited",
+        "hint": "no rule was created"
+      }
+    }
+  },
+  "unknown_rule": {
+    "status": 404,
+    "body": {
+      "error": {
+        "code": "not_found",
+        "message": "unknown rule r_notarealruleid00",
+        "hint": "list the live rules with GET /v1/pause/rules"
+      }
+    }
+  },
+  "unknown_session": {
+    "status": 404,
+    "body": {
+      "error": {
+        "code": "not_found",
+        "message": "unknown session 00000000-0000-4000-8000-000000000000",
+        "hint": "the SessionStart hook registers sessions"
+      }
+    }
+  }
+}
