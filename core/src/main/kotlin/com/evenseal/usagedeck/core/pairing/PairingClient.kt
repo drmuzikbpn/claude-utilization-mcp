@@ -5,7 +5,9 @@ import com.evenseal.usagedeck.core.daemon.DaemonJson
 import com.evenseal.usagedeck.core.daemon.Endpoints
 import com.evenseal.usagedeck.core.daemon.PinnedTls
 import com.evenseal.usagedeck.core.daemon.daemonExceptionOf
+import com.evenseal.usagedeck.core.daemon.neverSent
 import com.evenseal.usagedeck.core.model.MachineConfig
+import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +19,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 
 /**
  * Redeems a [PairingInvite] for the daemon's bearer: `POST /v1/pair {"code"}` over HTTPS pinned
@@ -28,12 +31,17 @@ class PairingClient(client: OkHttpClient) {
         .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .callTimeout(CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        // The code is single use: OkHttp must never silently resend it, not even to another IP
+        // of the same name (a `.local` name often resolves to several).
+        .retryOnConnectionFailure(false)
         .build()
 
     /**
      * The paired machine, addressed by whichever address answered. Throws [DaemonException]:
      * `unauthorized` (code invalid or expired), `rate_limited`, `pinning` (wrong certificate, or a
-     * reply naming another key), `bad_response`, or `network` when no address answered.
+     * reply naming another key), `bad_response`, `network` when no address answered, or
+     * `reply_lost` when a daemon may have taken the code but its reply never arrived: the code is
+     * moved on to the next address only when it provably never left the phone ([neverSent]).
      */
     suspend fun redeem(invite: PairingInvite, id: String = UUID.randomUUID().toString()): MachineConfig =
         withContext(Dispatchers.IO) {
@@ -43,21 +51,11 @@ class PairingClient(client: OkHttpClient) {
             val reply = Endpoints(invite.addrs).first { addr ->
                 val url = HttpUrl.Builder().scheme("https").host(addr).port(invite.port).encodedPath("/v1/pair").build()
                 val request = Request.Builder().url(url).header("Accept", "application/json").post(body).build()
-                pinned.newCall(request).execute().use { response ->
-                    val text = runCatching { response.body?.string() }.getOrNull()
-                    if (!response.isSuccessful) throw daemonExceptionOf(response.code, text)
-                    val dto = runCatching { DaemonJson.decodeFromString(PairResponseDto.serializer(), text.orEmpty()) }
-                        .getOrNull()
-                    if (dto == null || dto.token.isBlank()) {
-                        throw DaemonException(
-                            "bad_response",
-                            response.code,
-                            null,
-                            null
-                        )
-                    }
-                    winner = addr
-                    dto
+                try {
+                    pinned.newCall(request).execute().use { response -> replyOf(response) }.also { winner = addr }
+                } catch (e: IOException) {
+                    if (neverSent(e)) throw e
+                    throw DaemonException("reply_lost", 0, null, null)
                 }
             }
             // Belt and braces: the TLS pin already proved the key, so a reply naming another is a bug.
@@ -74,6 +72,17 @@ class PairingClient(client: OkHttpClient) {
                 addrs = invite.addrs
             )
         }
+
+    private fun replyOf(response: Response): PairResponseDto {
+        if (!response.isSuccessful) {
+            throw daemonExceptionOf(response.code, runCatching { response.body?.string() }.getOrNull())
+        }
+        // Not inside runCatching: a reply cut off here means the code is spent (reply_lost).
+        val text = response.body?.string().orEmpty()
+        val dto = runCatching { DaemonJson.decodeFromString(PairResponseDto.serializer(), text) }.getOrNull()
+        if (dto == null || dto.token.isBlank()) throw DaemonException("bad_response", response.code, null, null)
+        return dto
+    }
 
     @Serializable
     private data class PairRequestDto(val code: String)

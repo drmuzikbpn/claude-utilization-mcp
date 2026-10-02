@@ -10,6 +10,7 @@ import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
 import org.junit.After
@@ -179,5 +180,29 @@ class PairingClientTest {
         server.enqueue(ok())
         val machine = PairingClient(client).redeem(invite(), "id-1")
         assertFalse(machine.toString().contains("the-bearer"))
+    }
+
+    @Test
+    fun `a code that reached a daemon whose reply was lost is never sent to another address`() {
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))
+        server.enqueue(ok())
+
+        val e = redeemFails(invite(listOf("live.test", "live2.test")))
+
+        assertEquals("reply_lost", e.code)
+        assertTrue(e.userMessage().contains("claude-usage pair"))
+        assertEquals(1, server.requestCount)
+        assertFalse("live2.test" in lookups)
+    }
+
+    @Test
+    fun `a reply cut off mid-body is reported as lost, not retried`() {
+        server.enqueue(ok().setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY))
+        server.enqueue(ok())
+
+        val e = redeemFails(invite(listOf("live.test", "live2.test")))
+
+        assertEquals("reply_lost", e.code)
+        assertEquals(1, server.requestCount)
     }
 }

@@ -1,6 +1,24 @@
 package com.evenseal.usagedeck.core.daemon
 
 import java.io.IOException
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import javax.net.ssl.SSLHandshakeException
+
+/**
+ * Whether [e] proves the request never reached a daemon: the name did not resolve, the connect
+ * failed or timed out, or TLS (including the pin) refused the server before a byte of the request
+ * was written. Anything else — a reset, a read timeout, a truncated reply — is ambiguous: the
+ * daemon may have acted on it, so a non-idempotent request must not be sent again elsewhere.
+ */
+fun neverSent(e: IOException): Boolean = e is ConnectException ||
+    e is UnknownHostException ||
+    e is NoRouteToHostException ||
+    e is SSLHandshakeException ||
+    PinnedTls.isPinMismatch(e) ||
+    (e is SocketTimeoutException && e.message.orEmpty().contains("connect", ignoreCase = true))
 
 /**
  * The candidate addresses for one daemon, with a memory of which one answered last.

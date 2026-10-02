@@ -2,13 +2,7 @@ package com.evenseal.usagedeck.core.daemon
 
 import com.evenseal.usagedeck.core.model.MachineConfig
 import com.evenseal.usagedeck.core.model.PauseMode
-import java.io.IOException
-import java.net.ConnectException
-import java.net.NoRouteToHostException
-import java.net.SocketTimeoutException
-import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
-import javax.net.ssl.SSLHandshakeException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
@@ -85,13 +79,6 @@ class OkHttpDaemonApi(
             }
         }
     }
-
-    private fun neverSent(e: IOException): Boolean = e is ConnectException ||
-        e is UnknownHostException ||
-        e is NoRouteToHostException ||
-        e is SSLHandshakeException ||
-        PinnedTls.isPinMismatch(e) ||
-        (e is SocketTimeoutException && e.message.orEmpty().contains("connect", ignoreCase = true))
 
     override suspend fun health(): HealthDto = call(Call("/health")) { _, body -> DaemonJson.decodeFromString(body) }
 

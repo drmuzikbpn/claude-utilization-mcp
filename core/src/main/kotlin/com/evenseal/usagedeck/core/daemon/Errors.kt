@@ -21,7 +21,10 @@ class DaemonException(
             "gone" to "Session ended; pause cleared.",
             "pinning" to "This machine's certificate changed. Re-pair it with `claude-usage pair`.",
             "rate_limited" to "Too many attempts. Wait a minute and try again.",
-            "bad_response" to "The machine sent a reply Usage Deck can't read."
+            "bad_response" to "The machine sent a reply Usage Deck can't read.",
+            "reply_lost" to "The Mac may have accepted the pairing code, but its reply was lost. " +
+                "Run `claude-usage pair` again.",
+            "internal" to "Pairing failed unexpectedly. Run `claude-usage pair` again."
         )
     }
 }
