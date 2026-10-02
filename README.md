@@ -40,9 +40,9 @@ at once.
 
 | Module | What it is | Tests |
 | --- | --- | --- |
-| `core` | Pure Kotlin/JVM: model, daemon client, SSE, team merge, pause state machine, alerts, update check | 127 |
-| `app` | Android: kiosk, wifi, pairing, Compose UI, foreground service, installer | 107 unit + 42 instrumented |
-| `fakedaemon` | Ktor server implementing the daemon contract with scripted scenarios | 5 |
+| `core` | Pure Kotlin/JVM: model, daemon client, SSE, pinned TLS + pairing redeem, team merge, pause state machine, alerts, update check | 193 |
+| `app` | Android: kiosk, wifi, pairing, Compose UI, foreground service, installer | 155 unit + 42 instrumented |
+| `fakedaemon` | Ktor server implementing the daemon contract with scripted scenarios | 19 |
 
 ## Build and run
 
@@ -75,16 +75,25 @@ Pair the emulator against `10.0.2.2` on the port the script printed, with token 
 
 ## Pairing a Mac
 
-On any Mac running the `claude-usage` daemon (from `main` of this repo, reachable over Tailscale):
+On any Mac running the `claude-usage` daemon (from `main` of this repo, reachable on the LAN or
+over Tailscale):
 
 ```bash
-claude-usage configure pairing
+claude-usage pair
 ```
 
 That prints a QR code. On the deck, open **Projects → Pairing → Scan QR** and hold the phone up
-to the Mac's screen. The QR is a live bearer token: scan it off the Mac's own display, never a
-photo or a shared screen, and run `claude-usage configure rotate-token` if it is ever exposed.
-Repeat for each Mac; the deck merges them into one view. The full walkthrough, including
+to the Mac's screen. The QR carries no token: it holds the daemon's addresses, its HTTPS port,
+the SHA-256 pin of its certificate and a one-time code that expires after five minutes. The deck
+redeems the code over HTTPS pinned to that certificate (`POST /v1/pair`, daemon §23.47), and from
+then on talks to that Mac over pinned HTTPS only, falling back across its LAN, `.local` and
+tailnet addresses.
+
+Daemons without `claude-usage pair` still work with the legacy path, `claude-usage configure
+pairing`, whose QR **is** a live bearer token for plain HTTP: scan it off the Mac's own display,
+never a photo or a shared screen, and run `claude-usage configure rotate-token` if it is ever
+exposed. Re-pairing a Mac with `claude-usage pair` replaces its legacy row in place, keeping the
+row's identity, so its pause escalations and history carry over; the name is the daemon's current one. Repeat for each Mac; the deck merges them into one view. The full walkthrough, including
 Tailscale and what "Token rejected" means, is in
 [docs/teammate-onboarding.md](docs/teammate-onboarding.md).
 

@@ -15,8 +15,11 @@ the self-update path, and the CI that signs releases.
 ## What we already assume
 
 - The daemon is reachable only on localhost, the LAN and the Tailscale tailnet, never the open
-  internet; the deck talks to it over the tailnet.
-- A pairing QR is a live bearer token. Anyone who scans it can pause your sessions. Rotate it with
-  `claude-usage configure rotate-token` if it was ever exposed.
+  internet. A deck paired with `claude-usage pair` talks to it over HTTPS pinned to the SHA-256 of
+  the daemon certificate's public key, on the LAN or the tailnet.
+- A `claude-usage pair` QR holds a one-time code that expires after five minutes; the deck never
+  logs or stores it. A legacy `claude-usage configure pairing` QR is a live bearer token: anyone
+  who scans it can pause your sessions. Rotate it with `claude-usage configure rotate-token` if it
+  was ever exposed.
 - Releases are signed with a key that lives only in CI secrets and 1Password; the committed
   `app/signing/usage-deck.lineage` contains certificates and proofs only.

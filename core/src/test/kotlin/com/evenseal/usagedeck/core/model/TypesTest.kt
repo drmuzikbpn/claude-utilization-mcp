@@ -34,4 +34,27 @@ class TypesTest {
     fun `machine config builds http base url`() {
         assertEquals("http://100.68.1.2:47291", MachineConfig("m", "n", "100.68.1.2", 47291, "t").baseUrl)
     }
+
+    @Test
+    fun `a pinned machine config builds an https base url and lists its addresses, redeemed one first`() {
+        val config = MachineConfig(
+            "m",
+            "n",
+            "100.68.1.2",
+            47292,
+            "t",
+            fp = "a".repeat(64),
+            addrs = listOf("192.168.1.20", "mbp.local", "100.68.1.2")
+        )
+        assertEquals("https://100.68.1.2:47292", config.baseUrl)
+        assertEquals("https://mbp.local:47292", config.baseUrlFor("mbp.local"))
+        assertEquals(listOf("100.68.1.2", "192.168.1.20", "mbp.local"), config.candidates)
+        assertEquals(listOf("100.68.1.2"), MachineConfig("m", "n", "100.68.1.2", 47291, "t").candidates)
+    }
+
+    @Test
+    fun `machine config never prints its token`() {
+        val config = MachineConfig("m", "n", "100.68.1.2", 47291, "secret-token")
+        assertFalse(config.toString().contains("secret-token"))
+    }
 }
