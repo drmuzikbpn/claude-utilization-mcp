@@ -40,6 +40,32 @@ public extension WatchSnapshot {
         escalations.first { $0.scope == target.scope && (target.deviceId == nil || $0.deviceId == target.deviceId) }
     }
 
+    /// The pause standing on `target` as this snapshot reports it. `.all` has no single mode:
+    /// any `all` rule on a live device reads as `.soft`.
+    func pauseMode(for target: PauseTarget) -> PauseMode? {
+        switch target {
+        case .all:
+            return allPaused ? .soft : nil
+        case let .project(deviceId, projectKey):
+            return projects.first { $0.deviceId == deviceId && $0.key == projectKey }?.pause
+        case let .session(deviceId, sessionId):
+            return projects.lazy
+                .filter { $0.deviceId == deviceId }
+                .compactMap { $0.sessions.first { $0.id == sessionId } }
+                .first?.pause
+        }
+    }
+
+    /// Whether this snapshot already shows `expected` on `target`, so an optimistic flip can
+    /// give way to the real state. `.all` compares paused against not paused only.
+    func reflects(_ expected: PauseMode?, on target: PauseTarget) -> Bool {
+        let actual = pauseMode(for: target)
+        if case .all = target {
+            return (actual == nil) == (expected == nil)
+        }
+        return actual == expected
+    }
+
     /// The escalation that fires first, for the Actions page countdown.
     var nextEscalation: Escalation? {
         escalations.min { $0.fireAt < $1.fireAt }
