@@ -29,6 +29,9 @@ function digest(value: string): Buffer {
   return createHash('sha256').update(value, 'utf8').digest();
 }
 
+/** Compared against when no code is live; random, so no input can match it. */
+const NO_CODE = randomBytes(32);
+
 export function createPairingCodes(opts: { now?: () => number; random?: (n: number) => Buffer } = {}): PairingCodes {
   const now = opts.now ?? Date.now;
   const random = opts.random ?? randomBytes;
@@ -56,8 +59,12 @@ export function createPairingCodes(opts: { now?: () => number; random?: (n: numb
       const t = now();
       const recent = recentFailures(source, t);
       if (recent.length >= PAIR_FAILURE_LIMIT) return 'rate_limited';
-      const live = current !== null && t < current.expiresAt ? current : null;
-      if (live !== null && typeof code === 'string' && timingSafeEqual(digest(code), live.digest)) {
+      // Always compare, against a throwaway digest when there is nothing to match, so the
+      // time taken says nothing about whether a code is live or what was sent.
+      const live = current !== null && t < current.expiresAt;
+      const expected = current?.digest ?? NO_CODE;
+      const matches = timingSafeEqual(digest(typeof code === 'string' ? code : ''), expected);
+      if (matches && live && typeof code === 'string') {
         current = null; // burned
         return 'ok';
       }
@@ -91,13 +98,15 @@ export function orderPairingAddrs(
   known: { lan: string | null; tailnet: string | null; localHostName: string | null },
 ): string[] {
   const isLoopback = (h: string): boolean => h === '::1' || h.startsWith('127.');
+  // 0.0.0.0 / :: mean "every local address" and are never dialable — as in buildHostPolicy.
+  const hosts = tlsHosts.filter((h) => h !== '0.0.0.0' && h !== '::');
   const out: string[] = [];
-  if (known.lan !== null && tlsHosts.includes(known.lan)) {
+  if (known.lan !== null && hosts.includes(known.lan)) {
     out.push(known.lan);
     if (known.localHostName !== null) out.push(known.localHostName);
   }
-  if (known.tailnet !== null && tlsHosts.includes(known.tailnet) && !out.includes(known.tailnet)) out.push(known.tailnet);
-  for (const h of tlsHosts) if (!out.includes(h) && !isLoopback(h)) out.push(h);
-  for (const h of tlsHosts) if (!out.includes(h)) out.push(h);
+  if (known.tailnet !== null && hosts.includes(known.tailnet) && !out.includes(known.tailnet)) out.push(known.tailnet);
+  for (const h of hosts) if (!out.includes(h) && !isLoopback(h)) out.push(h);
+  for (const h of hosts) if (!out.includes(h)) out.push(h);
   return out;
 }

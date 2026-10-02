@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync } from 'node:fs';
+import { IncomingMessage, ServerResponse } from 'node:http';
+import { Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadOrCreateTlsIdentity } from '../../src/net/tls.js';
@@ -95,6 +97,12 @@ describe('pairing link (§23.47)', () => {
     ).toEqual(['192.168.1.20', 'studio.local', '100.101.102.103', '10.9.9.9', '127.0.0.1']);
   });
 
+  it('never offers a wildcard bind address (same rule as the Host policy)', () => {
+    expect(orderPairingAddrs(['0.0.0.0', '::', '192.168.1.20'], { lan: null, tailnet: null, localHostName: null })).toEqual([
+      '192.168.1.20',
+    ]);
+  });
+
   it('offers the .local name only when the LAN address has TLS', () => {
     expect(orderPairingAddrs(['100.101.102.103'], { lan: '192.168.1.20', tailnet: '100.101.102.103', localHostName: 'studio.local' })).toEqual([
       '100.101.102.103',
@@ -150,7 +158,40 @@ function redeem(tlsPort: number, code: unknown): ReturnType<typeof rawRequest> {
   });
 }
 
+/** Drive `handle()` directly so the peer address can be anything — a socket test cannot. */
+function viaHandle(server: UsageServer, port: number, remoteAddress: string, path: string, method = 'POST'): Promise<{ status: number; body: string }> {
+  const socket = new Socket();
+  Object.defineProperty(socket, 'remoteAddress', { value: remoteAddress });
+  const req = new IncomingMessage(socket);
+  req.method = method;
+  req.url = path;
+  req.headers = { host: `127.0.0.1:${port}`, authorization: `Bearer ${TOKEN}` };
+  req.push(null);
+  const res = new ServerResponse(req);
+  return new Promise((resolve) => {
+    let status = 0;
+    res.writeHead = ((code: number) => {
+      status = code;
+      return res;
+    }) as typeof res.writeHead;
+    res.end = ((body?: string) => {
+      resolve({ status, body: body ?? '' });
+      return res;
+    }) as typeof res.end;
+    server.handle(req, res);
+  });
+}
+
 describe('POST /v1/pair/code (§23.47)', () => {
+  it('is 403 off-loopback even with the bearer', async () => {
+    const { server, port } = await make();
+    const res = await viaHandle(server, port, '192.168.1.5', '/v1/pair/code');
+    expect(res.status).toBe(403);
+    expect(json(res.body)['error']).toMatchObject({ code: 'forbidden' });
+    // The same request from loopback is fine, so it is the address that was refused.
+    expect((await viaHandle(server, port, '127.0.0.1', '/v1/pair/code')).status).toBe(200);
+  });
+
   it('needs the bearer even from loopback', async () => {
     const { port } = await make();
     expect((await rawRequest({ port, method: 'POST', path: '/v1/pair/code' })).status).toBe(401);
