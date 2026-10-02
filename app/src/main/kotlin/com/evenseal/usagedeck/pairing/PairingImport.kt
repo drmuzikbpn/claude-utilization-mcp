@@ -47,5 +47,13 @@ class PairingImport(private val dirs: List<File>, private val store: MachineStor
 
     companion object {
         const val FILE_NAME = "pairing-import.json"
+
+        private const val LOGGABLE_LENGTH = 64
+
+        /**
+         * [text] from a pairing (a machine name, a rejection reason, a daemon hint) made safe for
+         * logcat: control characters dropped so it cannot forge log lines, and length capped.
+         */
+        fun loggable(text: String): String = text.filterNot(Char::isISOControl).take(LOGGABLE_LENGTH)
     }
 }

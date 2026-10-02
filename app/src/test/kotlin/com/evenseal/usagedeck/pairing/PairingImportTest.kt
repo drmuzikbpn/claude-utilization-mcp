@@ -83,4 +83,10 @@ class PairingImportTest {
         drop("usagedeck://pair?v=2&name=mbp")
         assertTrue(import.consume() is PairingImport.Result.Rejected)
     }
+
+    @Test
+    fun `names from a pairing are made safe to log`() {
+        assertEquals("mbpforged line", PairingImport.loggable("mbp\nforged\u0007 line"))
+        assertEquals(64, PairingImport.loggable("x".repeat(500)).length)
+    }
 }
