@@ -122,6 +122,7 @@ public struct DeviceReducer: Sendable {
         state.limits = summary.toLimits()
         state.limitsFetchedAt = ISODate.parse(summary.fetchedAt)
         state.today = summary.today.toModel()
+        state.summaryLoaded = true
         burn.record(Self.burnKey(device: state.id), at: now, cumulative: state.today.total)
     }
 
@@ -172,6 +173,7 @@ public struct DeviceReducer: Sendable {
         state.rules = s.rules.map { $0.toModel() }
         state.update = s.update?.toModel()
         state.rev = s.rev
+        state.summaryLoaded = true
         state.transport = .sse
         burn.record(Self.burnKey(device: state.id), at: now, cumulative: state.today.total)
         recordSessionBurn(now: now)

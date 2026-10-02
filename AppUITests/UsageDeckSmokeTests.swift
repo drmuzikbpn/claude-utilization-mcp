@@ -56,6 +56,35 @@ final class UsageDeckSmokeTests: XCTestCase {
         snap("pairing")
     }
 
+    /// `-UsageDeckDemoConnecting`: the overlay a fresh pairing shows, landing on a populated
+    /// device screen once studio's first load is in.
+    @MainActor
+    func testConnectingOverlayLandsOnAPopulatedDevice() {
+        relaunch(["-UsageDeckDemoConnecting"])
+        XCTAssertTrue(element(labelled: "BEGINSWITH 'Connecting to studio'").waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Skip"].exists)
+        snap("connecting")
+        XCTAssertTrue(element(labelled: "== 'Connected to studio'").waitForExistence(timeout: 10))
+        snap("connected")
+        // The setup checklist came from the first load, not the "Checking…" placeholder.
+        XCTAssertTrue(element(labelled: "== 'Reachable: OK'").waitForExistence(timeout: 10))
+        XCTAssertTrue(element(labelled: "== 'Usage limits: OK'").exists)
+        XCTAssertTrue(app.staticTexts["0.1.140+demo"].exists)
+        XCTAssertFalse(element(labelled: "BEGINSWITH 'Connect'").exists)
+        snap("connected-device")
+    }
+
+    /// `-UsageDeckDemoConnectingHold` never lands by itself, so only Skip can close it.
+    @MainActor
+    func testConnectingOverlaySkipOpensTheDevice() {
+        relaunch(["-UsageDeckDemoConnectingHold"])
+        XCTAssertTrue(app.buttons["Skip"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["Setup"].exists)
+        app.buttons["Skip"].tap()
+        XCTAssertTrue(app.staticTexts["Setup"].waitForExistence(timeout: 5))
+        XCTAssertFalse(element(labelled: "BEGINSWITH 'Connecting to studio'").exists)
+    }
+
     @MainActor
     func testWideDockInLandscape() {
         XCUIDevice.shared.orientation = .landscapeLeft
@@ -72,6 +101,18 @@ final class UsageDeckSmokeTests: XCTestCase {
         XCTAssertGreaterThan(caption.frame.minX, app.buttons["Pause all"].frame.maxX, "sessions pane is right of the rail")
         XCTAssertGreaterThan(rateHeader.frame.maxX, window.width * 0.75, "sessions pane reaches the right edge")
         snap("wide-dock")
+    }
+
+    @MainActor
+    private func relaunch(_ extra: [String]) {
+        app.terminate()
+        app.launchArguments = ["-UsageDeckDemo"] + extra
+        app.launch()
+    }
+
+    @MainActor
+    private func element(labelled predicate: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label \(predicate)")).firstMatch
     }
 
     @MainActor
