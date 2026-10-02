@@ -93,7 +93,7 @@ fun DeckNav(graph: DeckGraph, navController: NavHostController = rememberNavCont
                 Dest.MACHINE,
                 arguments = listOf(navArgument("id") { type = NavType.StringType })
             ) { entry ->
-                MachineRoute(graph, vm, Dest.decode(entry.arguments?.getString("id")), back)
+                MachineRoute(graph, vm, Dest.decode(entry.arguments?.getString("id")), back) { open(Route.Pairing) }
             }
             composable(
                 Dest.PROJECT,

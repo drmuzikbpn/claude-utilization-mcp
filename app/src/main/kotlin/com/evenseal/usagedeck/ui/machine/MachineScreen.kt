@@ -27,13 +27,20 @@ import com.evenseal.usagedeck.core.model.MachineState
 import com.evenseal.usagedeck.core.model.UpdateState
 import com.evenseal.usagedeck.ui.DeckViewModel
 import com.evenseal.usagedeck.ui.components.Format
+import com.evenseal.usagedeck.ui.components.RepairCard
 import com.evenseal.usagedeck.ui.theme.DeckColors
 import com.evenseal.usagedeck.ui.theme.DeckType
 import java.time.Instant
 
 /** Spec §6.3: who this machine is, whether we can reach it, and how to stop trying. */
 @Composable
-fun MachineScreen(vm: DeckViewModel, machineId: String, onUnpair: (String) -> Unit, onBack: () -> Unit) {
+fun MachineScreen(
+    vm: DeckViewModel,
+    machineId: String,
+    onUnpair: (String) -> Unit,
+    onBack: () -> Unit,
+    onRepair: () -> Unit = {}
+) {
     val team by vm.team.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
     val machine = team.machine(machineId)
@@ -69,6 +76,8 @@ fun MachineScreen(vm: DeckViewModel, machineId: String, onUnpair: (String) -> Un
             )
             return@Column
         }
+
+        RepairCard(machine = machine, onRepair = { onRepair() })
 
         Field("user", machine.user?.emailAddress ?: machine.user?.displayName ?: "unknown")
         Field("address", "${machine.config.addr}:${machine.config.port}")

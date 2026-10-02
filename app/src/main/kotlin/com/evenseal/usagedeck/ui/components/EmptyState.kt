@@ -37,13 +37,20 @@ sealed interface HomeEmpty {
     /** Data is flowing; there is simply nothing running. */
     data class NoSessions(val machineNames: List<String>) : HomeEmpty
 
+    /** Every paired machine has rejected this deck; the repair cards above say what to do. */
+    object AllNeedRepair : HomeEmpty
+
     companion object {
-        fun of(team: TeamState): HomeEmpty? = when {
-            team.machines.isEmpty() -> NoMachines
-            team.machines.none { it.hasSnapshot } -> Connecting(team.machines)
-            team.liveSessionCount == 0 ->
-                NoSessions(team.machines.map { it.name ?: it.config.name })
-            else -> null
+        fun of(team: TeamState): HomeEmpty? {
+            val working = team.machines.filter { it.needsRepair == null }
+            return when {
+                team.machines.isEmpty() -> NoMachines
+                working.isEmpty() -> AllNeedRepair
+                working.none { it.hasSnapshot } -> Connecting(working)
+                team.liveSessionCount == 0 ->
+                    NoSessions(working.map { it.name ?: it.config.name })
+                else -> null
+            }
         }
     }
 }
@@ -169,7 +176,7 @@ fun HomeEmptyBody(empty: HomeEmpty, now: Instant, onPair: () -> Unit, modifier: 
                 title = "No machines paired",
                 body =
                 "On a Mac running the claude-usage daemon, run\n" +
-                    "claude-usage configure pairing\nand scan the QR code it prints.",
+                    "claude-usage pair\nand scan the QR code it prints.",
                 action = "Pair a machine" to onPair,
                 modifier = modifier
             )
@@ -183,6 +190,12 @@ fun HomeEmptyBody(empty: HomeEmpty, now: Instant, onPair: () -> Unit, modifier: 
                         empty.machines.forEach { MachineWaitRow(machine = it, now = now) }
                     }
                 }
+            )
+        HomeEmpty.AllNeedRepair ->
+            EmptyState(
+                title = "Pairing lost",
+                body = "No paired machine accepts this deck any more. Re-pair from the card above.",
+                modifier = modifier
             )
         is HomeEmpty.NoSessions ->
             EmptyState(

@@ -78,12 +78,19 @@ internal fun SettingsRoute(graph: DeckGraph, onBack: () -> Unit, onWifi: () -> U
 }
 
 @Composable
-internal fun MachineRoute(graph: DeckGraph, vm: DeckViewModel, machineId: String, onBack: () -> Unit) {
+internal fun MachineRoute(
+    graph: DeckGraph,
+    vm: DeckViewModel,
+    machineId: String,
+    onBack: () -> Unit,
+    onRepair: () -> Unit
+) {
     MachineScreen(
         vm = vm,
         machineId = machineId,
         onUnpair = { id -> graph.machineStore.remove(id) },
-        onBack = onBack
+        onBack = onBack,
+        onRepair = onRepair
     )
 }
 
