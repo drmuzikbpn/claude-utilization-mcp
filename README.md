@@ -355,6 +355,7 @@ the app), is the same command. Each run makes a new code and voids the previous 
 | the phone says the code is invalid or expired | it was already used or more than 5 minutes passed: run `claude-usage pair` again |
 | the phone cannot reach the Mac | same Wi-Fi? Guest networks and some office Wi-Fi block devices from seeing each other; use Tailscale instead |
 | the QR code was visible on a call or screen share | run `claude-usage pair` again; that voids the old code |
+| the app says **"<Mac> no longer accepts this iPhone / deck"** | the Mac's token was rotated (`configure rotate-token`) or its certificate changed: run `claude-usage pair` on that Mac and tap **Re-pair** on the card. The phone keeps that Mac's settings and history |
 
 ### How pairing stays safe
 
@@ -409,7 +410,7 @@ prefer `claude-usage pair` on any deck that supports it:
 ### Security model in five bullets
 
 - A 32-byte random bearer token is minted at install and stored in `config.json` (`0600`).
-  `claude-usage configure rotate-token` replaces it; every paired device must re-pair.
+  `claude-usage configure rotate-token` replaces it and restarts the daemon, so the old token stops working at once; every paired device shows a **Re-pair** card until you pair it again with `claude-usage pair`.
 - The one exception to "mutating requests need the token" is `POST /v1/pair`. It accepts
   only a one-time pairing code that `claude-usage pair` minted, only over HTTPS, and stops
   answering a sender after 5 failures in a minute.
