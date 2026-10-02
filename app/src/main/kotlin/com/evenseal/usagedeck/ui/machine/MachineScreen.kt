@@ -39,7 +39,7 @@ fun MachineScreen(
     machineId: String,
     onUnpair: (String) -> Unit,
     onBack: () -> Unit,
-    onRepair: () -> Unit = {}
+    onRepair: (String) -> Unit = {}
 ) {
     val team by vm.team.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
@@ -77,7 +77,7 @@ fun MachineScreen(
             return@Column
         }
 
-        RepairCard(machine = machine, onRepair = { onRepair() })
+        RepairCard(machine = machine, onRepair = onRepair)
 
         Field("user", machine.user?.emailAddress ?: machine.user?.displayName ?: "unknown")
         Field("address", "${machine.config.addr}:${machine.config.port}")

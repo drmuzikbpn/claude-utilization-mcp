@@ -43,10 +43,11 @@ class InvitePairing(
     /** True while any redeem is in flight; the pairing screen keeps Scan disabled meanwhile. */
     val redeeming: StateFlow<Boolean> = _redeeming.asStateFlow()
 
-    suspend fun pair(invite: PairingInvite): MachineConfig {
+    /** [replacing]: the id of the row a Re-pair card asked to replace (see [MachineStore.replace]). */
+    suspend fun pair(invite: PairingInvite, replacing: String? = null): MachineConfig {
         val job = synchronized(lock) {
             running.getOrPut(invite.code) {
-                work.async(start = CoroutineStart.LAZY) { redeemAndStore(invite) }.also { job ->
+                work.async(start = CoroutineStart.LAZY) { redeemAndStore(invite, replacing) }.also { job ->
                     job.invokeOnCompletion {
                         synchronized(lock) {
                             running.remove(invite.code)
@@ -61,8 +62,9 @@ class InvitePairing(
         return job.await()
     }
 
-    private suspend fun redeemAndStore(invite: PairingInvite): MachineConfig = try {
-        store.pair(redeem(invite))
+    private suspend fun redeemAndStore(invite: PairingInvite, replacing: String?): MachineConfig = try {
+        val config = redeem(invite)
+        if (replacing != null) store.replace(replacing, config) else store.pair(config)
     } catch (e: CancellationException) {
         throw e
     } catch (e: DaemonException) {

@@ -7,11 +7,18 @@ import com.evenseal.usagedeck.core.pairing.PairingInvite
  * preferred path; the v1 JSON from `claude-usage configure pairing` still works as a fallback.
  */
 sealed interface ScannedPairing {
+    /** The machine name the QR carries, before anything is redeemed. */
+    val name: String
+
     /** v1: a live bearer for plain HTTP, ready to store as is. */
-    data class Legacy(val payload: PairingPayload) : ScannedPairing
+    data class Legacy(val payload: PairingPayload) : ScannedPairing {
+        override val name: String get() = payload.name
+    }
 
     /** v2: a one-time code that must be redeemed over pinned HTTPS ([InvitePairing]). */
-    data class Invite(val invite: PairingInvite) : ScannedPairing
+    data class Invite(val invite: PairingInvite) : ScannedPairing {
+        override val name: String get() = invite.name
+    }
 
     companion object {
         /** Every failure carries a message the pairing screen shows verbatim. */

@@ -42,6 +42,8 @@ Tick each line, or write down what happened instead.
 - [ ] Rotating a paired Mac's token (`claude-usage configure rotate-token`) shows the amber "<name>
       no longer accepts this deck" card within about 30 s, the Mac's sessions disappear and its
       pause buttons are disabled; **Re-pair** → scan `claude-usage pair` restores it in the same row.
+- [ ] Re-pair from that card but scan a *different* Mac's QR: the deck asks "Replace <old> with
+      <new>?"; Keep both adds the new Mac and leaves the lost card in place.
 - [ ] A QR from a daemon with a rotated token reports "Token rejected, re-run pairing on the Mac"
       and does not leave a broken machine behind.
 - [ ] A machine that is merely asleep is saved and shown unreachable rather than rejected.

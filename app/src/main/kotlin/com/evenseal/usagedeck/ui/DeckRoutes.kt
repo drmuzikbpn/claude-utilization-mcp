@@ -16,6 +16,7 @@ import com.evenseal.usagedeck.ui.components.usersWithData
 import com.evenseal.usagedeck.ui.machine.MachineScreen
 import com.evenseal.usagedeck.ui.pairing.PairingScreen
 import com.evenseal.usagedeck.ui.pairing.PairingStatus
+import com.evenseal.usagedeck.ui.pairing.ReplaceTarget
 import com.evenseal.usagedeck.ui.settings.SettingsScreen
 import com.evenseal.usagedeck.ui.wifi.WifiScreen
 import com.evenseal.usagedeck.wifi.CaptivePortalActivity
@@ -83,7 +84,7 @@ internal fun MachineRoute(
     vm: DeckViewModel,
     machineId: String,
     onBack: () -> Unit,
-    onRepair: () -> Unit
+    onRepair: (String) -> Unit
 ) {
     MachineScreen(
         vm = vm,
@@ -95,15 +96,32 @@ internal fun MachineRoute(
 }
 
 @Composable
-internal fun PairingRoute(graph: DeckGraph, onBack: () -> Unit) {
+internal fun PairingRoute(graph: DeckGraph, onBack: () -> Unit, replacing: String? = null) {
     val scope = rememberCoroutineScope()
     val redeeming by graph.invitePairing.redeeming.collectAsStateWithLifecycle()
+    val team by graph.team.collectAsStateWithLifecycle()
+    // The row a Re-pair card sent us to replace, by every name it goes by.
+    val target = replacing?.let { id ->
+        val stored = graph.machineStore.machines.value.firstOrNull { it.id == id } ?: return@let null
+        ReplaceTarget(id, listOfNotNull(stored.name, team.machine(id)?.name).distinct())
+    }
     PairingScreen(
         redeeming = redeeming,
-        onScanned = { scanned, report ->
+        replacing = target,
+        onScanned = { scanned, replace, report ->
+            val replaceId = target?.id?.takeIf { replace }
             when (scanned) {
                 is ScannedPairing.Legacy -> {
-                    val config = graph.machineStore.pair(scanned.payload.toConfig())
+                    val fresh = scanned.payload.toConfig()
+                    val config =
+                        if (replaceId != null) {
+                            graph.machineStore.replace(
+                                replaceId,
+                                fresh
+                            )
+                        } else {
+                            graph.machineStore.pair(fresh)
+                        }
                     report(PairingStatus("Saved ${config.name}. Checking the daemon…", busy = true))
                     scope.launch {
                         report(PairingStatus(probe(graph, config)))
@@ -114,7 +132,7 @@ internal fun PairingRoute(graph: DeckGraph, onBack: () -> Unit) {
                     // The graph's scope, not the screen's: the code is single use, so a redeem
                     // that has started must finish and store its token even if the screen closes.
                     graph.scope.launch {
-                        val outcome = redeem(graph, scanned.invite)
+                        val outcome = redeem(graph, scanned.invite, replaceId)
                         withContext(Dispatchers.Main) { report(PairingStatus(outcome)) }
                     }
                 }
@@ -125,8 +143,8 @@ internal fun PairingRoute(graph: DeckGraph, onBack: () -> Unit) {
 }
 
 /** Daemon §23.47: the code buys the bearer over pinned HTTPS; errors are the daemon's own hints. */
-private suspend fun redeem(graph: DeckGraph, invite: PairingInvite): String = try {
-    "Paired ${graph.invitePairing.pair(invite).name}."
+private suspend fun redeem(graph: DeckGraph, invite: PairingInvite, replacing: String?): String = try {
+    "Paired ${graph.invitePairing.pair(invite, replacing).name}."
 } catch (e: DaemonException) {
     e.userMessage()
 }

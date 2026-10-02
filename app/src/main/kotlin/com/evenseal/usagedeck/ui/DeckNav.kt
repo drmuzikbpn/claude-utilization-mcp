@@ -34,6 +34,9 @@ sealed interface Route {
     object Settings : Route
 
     object Pairing : Route
+
+    /** Pairing started from a machine's Re-pair card: the result replaces machine [id]'s row. */
+    data class Repair(val id: String) : Route
 }
 
 internal object Dest {
@@ -44,6 +47,7 @@ internal object Dest {
     const val PAIRING = "pairing"
     const val PROJECT = "project/{machineId}/{key}"
     const val MACHINE = "machine/{id}"
+    const val REPAIR = "repair/{id}"
 
     fun path(route: Route): String = when (route) {
         Route.Home -> HOME
@@ -53,6 +57,7 @@ internal object Dest {
         Route.Pairing -> PAIRING
         is Route.Project -> "project/${route.machineId.encode()}/${route.key.encode()}"
         is Route.Machine -> "machine/${route.id.encode()}"
+        is Route.Repair -> "repair/${route.id.encode()}"
     }
 
     /** Project keys are filesystem paths, so they must not be read as extra path segments. */
@@ -90,10 +95,16 @@ fun DeckNav(graph: DeckGraph, navController: NavHostController = rememberNavCont
             composable(Dest.SETTINGS) { SettingsRoute(graph, back, onWifi = { open(Route.Wifi) }) }
             composable(Dest.PAIRING) { PairingRoute(graph, back) }
             composable(
+                Dest.REPAIR,
+                arguments = listOf(navArgument("id") { type = NavType.StringType })
+            ) { entry ->
+                PairingRoute(graph, back, replacing = Dest.decode(entry.arguments?.getString("id")))
+            }
+            composable(
                 Dest.MACHINE,
                 arguments = listOf(navArgument("id") { type = NavType.StringType })
             ) { entry ->
-                MachineRoute(graph, vm, Dest.decode(entry.arguments?.getString("id")), back) { open(Route.Pairing) }
+                MachineRoute(graph, vm, Dest.decode(entry.arguments?.getString("id")), back) { open(Route.Repair(it)) }
             }
             composable(
                 Dest.PROJECT,

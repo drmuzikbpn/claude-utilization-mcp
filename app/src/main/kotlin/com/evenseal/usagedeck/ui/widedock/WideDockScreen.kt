@@ -110,7 +110,7 @@ fun WideDockScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
 
             Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 team.needsRepair.forEach { machine ->
-                    RepairCard(machine = machine, onRepair = { onOpen(Route.Pairing) })
+                    RepairCard(machine = machine, onRepair = { id -> onOpen(Route.Repair(id)) })
                 }
                 if (empty != null) {
                     HomeEmptyBody(

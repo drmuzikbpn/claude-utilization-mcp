@@ -81,9 +81,13 @@ hook is missing.
 - Every error shown to the user comes from the daemon envelope: `hint` → `message` → per-code default.
 - A 401 `unauthorized` or a pin mismatch (`pinning`) from **any** request or the stream is a lost
   pairing, never a network blip: `MachineClient` sets `MachineState.needsRepair`, stops SSE and
-  polling, drops the machine's sessions, keeps it DEAD (so pause controls are off) and probes
-  `/health` once a minute. Home and the machine screen show an amber `RepairCard` ("<name> no
-  longer accepts this deck" → Re-pair); re-pairing replaces the same row. Pause/resume go through
+  polling, drops the machine's sessions, keeps it DEAD (so pause controls are off) and probes a
+  bearer-gated GET (`/v1/pause/rules`) once a minute. Every write of daemon data goes through
+  `updateLive`, which drops it once the flag is set; `stop()` is final (no probe or stream after
+  it). Home and the machine screen show an amber `RepairCard` ("<name> no longer accepts this
+  deck" → Re-pair → `Route.Repair(id)`); that pairing calls `MachineStore.replace(id, …)`, so the
+  same row is replaced even when both the certificate and the address changed, after a "Replace
+  <old> with <new>?" confirmation if the QR names a different machine. Pause/resume go through
   `MachineClient.api` so their 401s count too. Before this a rotated token looked "connected":
   an open stream kept heartbeating, sessions stayed listed, and an account's health is the best of
   its machines.

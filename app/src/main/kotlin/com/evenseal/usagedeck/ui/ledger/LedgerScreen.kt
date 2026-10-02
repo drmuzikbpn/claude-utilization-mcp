@@ -86,7 +86,12 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
         val empty = HomeEmpty.of(team)
 
         // A machine that rejected this deck is the first thing to see, above the quotas.
-        team.needsRepair.forEach { machine -> RepairCard(machine = machine, onRepair = { onOpen(Route.Pairing) }) }
+        team.needsRepair.forEach { machine ->
+            RepairCard(
+                machine = machine,
+                onRepair = { id -> onOpen(Route.Repair(id)) }
+            )
+        }
 
         var renaming by remember { mutableStateOf<UserView?>(null) }
         renaming?.let { user ->
