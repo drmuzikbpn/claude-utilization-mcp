@@ -14,9 +14,13 @@ struct LiftOnReorder: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .background(DeckColor.surface2.opacity(lifted ? 1 : 0))
+            .background(
+                DeckColor.surface2.opacity(lifted ? 1 : 0),
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
             .scaleEffect(lifted ? Reorder.liftScale : 1)
-            .shadow(color: .black.opacity(lifted ? 0.45 : 0), radius: lifted ? 10 : 0, y: lifted ? 4 : 0)
+            .shadow(color: .black.opacity(lifted ? 0.5 : 0), radius: lifted ? 14 : 0, y: lifted ? 6 : 0)
+            .shadow(color: DeckColor.accent.opacity(lifted ? 0.35 : 0), radius: lifted ? 10 : 0)
             .opacity(dimmed ? Reorder.blinkFloor : 1)
             .zIndex(lifted ? 1 : 0)
             .onChange(of: rank, initial: true) { old, new in

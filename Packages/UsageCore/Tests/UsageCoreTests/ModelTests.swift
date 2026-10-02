@@ -27,6 +27,15 @@ struct BurnHistoryTests {
         #expect(abs(h.ratePerMinute("s", now: t0.addingTimeInterval(60)) - 3000) < 0.01)
     }
 
+    @Test func theRateLooksBackFiveMinutesSoAQuietMinuteStillReadsBusy() {
+        let h = BurnHistory()
+        h.record("s", at: t0, cumulative: 0)
+        h.record("s", at: t0.addingTimeInterval(200), cumulative: 20000)
+        h.record("s", at: t0.addingTimeInterval(270), cumulative: 20000)
+        #expect(abs(h.ratePerMinute("s", now: t0.addingTimeInterval(270)) - 20000 / 4.5) < 0.01)
+        #expect(h.ratePerMinute("s", now: t0.addingTimeInterval(270 + 300)) == 0)
+    }
+
     @Test func rateIsZeroWithOneSampleOrUnknownKey() {
         let h = BurnHistory()
         h.record("s", at: t0, cumulative: 1000)

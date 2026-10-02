@@ -64,6 +64,15 @@ struct RingFaceTests {
         #expect(RingFace(.init(percent: 42, resetsAt: nil, status: .ok)).fraction == 0.42)
     }
 
+    @Test func aLimitDrawsTheSameFaceAsItsHeadline() {
+        let limit = Limit(
+            id: "five_hour", kind: "session", group: "five_hour", percent: 87, severity: "warn",
+            resetsAt: nil, scopeModel: nil, isActive: true, status: .warn
+        )
+        #expect(RingFace(limit: limit) == RingFace(.init(percent: 87, resetsAt: nil, status: .warn)))
+        #expect(RingFace(limit: nil) == RingFace(nil))
+    }
+
     @Test func noHeadlineIsAnEmptyDimRing() {
         let ring = RingFace(nil)
         #expect(ring.label == "—")

@@ -76,7 +76,8 @@ enum DeckMetrics {
     static let staleAlpha = 0.55
     /// The landscape rail (deck WideDock `RAIL_WIDTH` is 200 dp; a little wider here for the rings).
     static let railWidth: CGFloat = 220
-    static let buttonShape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+    /// Buttons are capsules, the shape Liquid Glass gives system controls.
+    static let buttonShape = Capsule(style: .continuous)
 }
 
 /// Copy and links shared by the empty state and the pairing screen.
@@ -87,16 +88,4 @@ enum DeckLinks {
     claude-usage install --lan
     claude-usage pair
     """
-}
-
-extension Color {
-    init(hex: UInt32) {
-        self.init(
-            .sRGB,
-            red: Double((hex >> 16) & 0xFF) / 255,
-            green: Double((hex >> 8) & 0xFF) / 255,
-            blue: Double(hex & 0xFF) / 255,
-            opacity: 1
-        )
-    }
 }

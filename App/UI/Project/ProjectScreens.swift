@@ -23,7 +23,7 @@ struct ProjectScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
-        .background(DeckColor.bg)
+        .deckScreen()
         .navigationTitle(project?.name ?? fallbackName)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -55,19 +55,27 @@ struct ProjectScreen: View {
                 .padding(.horizontal, 10)
                 .padding(.top, 6)
                 tiles(project)
-                BurnChart(series: store.projectSeries(deviceId: deviceId, key: key))
-                    .frame(height: 140)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                breakdown(project.liveTokens)
-                LazyVStack(spacing: 0) {
+                VStack(spacing: 8) {
+                    BurnChart(series: store.projectSeries(deviceId: deviceId, key: key))
+                        .frame(height: 150)
+                    breakdown(project.liveTokens)
+                }
+                .padding(12)
+                .deckCard(radius: 20)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                LazyVStack(spacing: 6) {
                     ForEach(project.sessions) { session in
                         SessionDetailRow(store: store, deviceId: deviceId, session: session)
-                        Divider().overlay(DeckColor.line)
+                            .padding(.vertical, 4)
+                            .deckCard(radius: 14)
                     }
                 }
+                .padding(.horizontal, 10)
+                .animation(Reorder.slide, value: project.sessions.map(\.id))
             }
         }
+        .scrollIndicators(.hidden)
         if !project.sessions.isEmpty {
             Button {
                 if visual.isPaused {
@@ -79,19 +87,23 @@ struct ProjectScreen: View {
                 HStack(spacing: 8) {
                     if case .inFlight = visual {
                         ProgressView().controlSize(.small).tint(DeckColor.warn)
+                    } else {
+                        Image(systemName: visual.isPaused ? "play.fill" : "pause.fill")
+                            .contentTransition(.symbolEffect(.replace))
                     }
                     Text(visual.isPaused ? "Resume project" : "Pause project")
-                        .font(DeckFont.text(14, .semibold))
+                        .font(DeckFont.text(15, .semibold))
                 }
                 .foregroundStyle(visual == .disabled ? DeckColor.dim : DeckColor.warn)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .background(DeckColor.surface2, in: DeckMetrics.buttonShape)
-                .overlay(DeckMetrics.buttonShape.strokeBorder(DeckColor.warn.opacity(0.45), lineWidth: 1))
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .contentShape(DeckMetrics.buttonShape)
+                .deckGlass(in: DeckMetrics.buttonShape, tint: visual == .disabled ? nil : DeckColor.warn, interactive: true)
             }
             .buttonStyle(.plain)
             .disabled(visual == .disabled)
-            .padding(10)
-            .background(DeckColor.surface)
+            .accessibilityLabel(visual.isPaused ? "Resume project" : "Pause project")
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
             .sensoryFeedback(.impact(weight: .light), trigger: choosing)
             .confirmationDialog(
                 "Pause \(project.name) · \(project.sessions.count) \(project.sessions.count == 1 ? "session" : "sessions")?",
@@ -133,9 +145,7 @@ struct ProjectScreen: View {
         }
         .font(DeckFont.mono(11))
         .foregroundStyle(DeckColor.muted)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .background(DeckColor.surface2)
+        .padding(.top, 4)
     }
 }
 
@@ -146,18 +156,21 @@ private struct Tile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(label)
-                .font(DeckFont.text(10))
+                .textCase(.uppercase)
+                .font(DeckFont.text(9, .semibold))
+                .tracking(0.8)
                 .foregroundStyle(DeckColor.dim)
             Text(value)
-                .font(DeckFont.numeral(24))
+                .font(DeckFont.numeral(28))
                 .foregroundStyle(DeckColor.fg)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
+                .rolling(value)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(DeckColor.surface, in: RoundedRectangle(cornerRadius: 6))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .deckCard(radius: 16)
         .accessibilityElement(children: .combine)
     }
 }
@@ -225,17 +238,24 @@ struct BurnChart: View {
         Chart {
             ForEach(points) { point in
                 AreaMark(x: .value("minutes", point.minutesAgo), y: .value("tokens/min", point.value))
-                    .foregroundStyle(DeckColor.accent.opacity(0.18))
+                    .foregroundStyle(LinearGradient(
+                        colors: [DeckColor.accent.opacity(0.42), DeckColor.accent.opacity(0)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ))
+                    .interpolationMethod(.monotone)
                 LineMark(x: .value("minutes", point.minutesAgo), y: .value("tokens/min", point.value))
                     .foregroundStyle(DeckColor.accent)
-                    .lineStyle(StrokeStyle(lineWidth: 1.5))
+                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .interpolationMethod(.monotone)
             }
             if let last = points.last {
                 PointMark(x: .value("minutes", last.minutesAgo), y: .value("tokens/min", last.value))
                     .foregroundStyle(DeckColor.accent)
-                    .symbolSize(24)
+                    .symbolSize(40)
             }
         }
+        .shadow(color: DeckColor.accent.opacity(0.35), radius: 6)
         .chartXScale(domain: -300 ... 0)
         .chartYScale(domain: 0 ... top)
         .chartXAxis {
@@ -272,7 +292,7 @@ struct ProjectsScreen: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 0) {
+            LazyVStack(spacing: 6) {
                 if store.team.projects.isEmpty {
                     Text("No project has spent anything today.")
                         .font(DeckFont.text(13))
@@ -284,11 +304,15 @@ struct ProjectsScreen: View {
                         row(project)
                     }
                     .buttonStyle(.plain)
-                    Divider().overlay(DeckColor.line)
+                    .deckCard(radius: 14)
+                    .zoomSource(deviceId: project.deviceId, key: project.key)
                 }
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
         }
-        .background(DeckColor.bg)
+        .scrollIndicators(.hidden)
+        .deckScreen()
         .navigationTitle("Projects")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -313,9 +337,11 @@ struct ProjectsScreen: View {
                     .font(DeckFont.numeral(15, .medium))
                     .foregroundStyle(DeckColor.muted)
             }
-            Text(Format.tokens(project.todayTokens?.total ?? project.liveTokens.total))
-                .font(DeckFont.numeral(18, .medium))
+            let today = Format.tokens(project.todayTokens?.total ?? project.liveTokens.total)
+            Text(today)
+                .font(DeckFont.numeral(20, .medium))
                 .foregroundStyle(DeckColor.fg)
+                .rolling(today)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 10)

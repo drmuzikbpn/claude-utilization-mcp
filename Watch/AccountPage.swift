@@ -95,7 +95,7 @@ struct AccountPage: View {
 
     private func window(_ headline: WatchSnapshot.Headline?, label: String, size: RingSize, now: Date) -> some View {
         VStack(spacing: 2) {
-            RingGauge(ring: RingFace(headline), lineWidth: size.line, numeralSize: size.numeral)
+            RingGauge(ring: RingFace(headline), lineWidth: size.line, numeralSize: size.numeral, lively: !isLuminanceReduced)
                 .frame(width: size.diameter, height: size.diameter)
             if !isLuminanceReduced {
                 Text("\(label) · \(Format.resetCountdown(headline?.resetsAt, now: now))")

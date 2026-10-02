@@ -28,9 +28,17 @@ struct SessionRow: View {
                                     compact ? 12 : 13,
                                     .medium
                                 ))
-                                .foregroundStyle(DeckColor.fg)
+                                .foregroundStyle(headline != nil && session.title != nil ? DeckColor.muted : DeckColor.fg)
                                 .lineLimit(1)
                                 .layoutPriority(1)
+                            // Led by the project, a renamed session still says who it is: CalendarPA “Zeus”.
+                            if headline != nil, let title = session.title {
+                                Text("“\(title)”")
+                                    .font(DeckFont.text(compact ? 12 : 13, .semibold))
+                                    .foregroundStyle(DeckColor.fg)
+                                    .lineLimit(1)
+                                    .layoutPriority(2)
+                            }
                             if let pause = session.pause, pause.mode == .hard {
                                 Tag(text: Format.frozenTag(pause.freezes), color: DeckColor.frozen)
                             }
@@ -44,17 +52,19 @@ struct SessionRow: View {
                                 Tag(text: Format.hostShort(deviceName))
                             }
                         }
-                        Text(subtitle(lead: headline != nil ? name : nil))
+                        Text(subtitle(lead: headline != nil && session.title == nil ? name : nil))
                             .font(DeckFont.text(compact ? 10 : 11))
                             .foregroundStyle(DeckColor.muted)
                             .lineLimit(1)
                     }
                     Spacer(minLength: 0)
-                    Text(Format.ratePerMin(store.rate(deviceId: deviceId, sessionId: session.sessionId)))
+                    let rate = Format.ratePerMin(store.rate(deviceId: deviceId, sessionId: session.sessionId))
+                    Text(rate)
                         .font(DeckFont.numeral(compact ? 14 : 16, .medium))
-                        .foregroundStyle(DeckColor.muted)
+                        .foregroundStyle(DeckColor.fg.opacity(0.75))
                         .lineLimit(1)
                         .frame(width: 64, alignment: .trailing)
+                        .rolling(rate)
                     Sparkline(series: store.series(deviceId: deviceId, sessionId: session.sessionId))
                         .frame(width: compact ? 56 : 48, height: compact ? 18 : 20)
                 }
@@ -101,10 +111,7 @@ struct ProjectHeader: View {
         HStack(spacing: 6) {
             Button { withAnimation(.snappy) { store.toggle(id) } } label: {
                 HStack(spacing: 6) {
-                    Text(open ? "▾" : "▸")
-                        .font(DeckFont.text(12))
-                        .foregroundStyle(DeckColor.dim)
-                        .frame(width: 12)
+                    Chevron(open: open)
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(project.name)
@@ -121,14 +128,17 @@ struct ProjectHeader: View {
                             Text("\(Format.tokens(project.liveTokens.total)) today")
                                 .font(DeckFont.text(11))
                                 .foregroundStyle(DeckColor.muted)
+                                .rolling(project.liveTokens.total)
                         }
                     }
                     Spacer(minLength: 0)
-                    Text(Format.ratePerMin(store.projectRate(deviceId: project.deviceId, key: project.key)))
+                    let rate = Format.ratePerMin(store.projectRate(deviceId: project.deviceId, key: project.key))
+                    Text(rate)
                         .font(DeckFont.numeral(16, .medium))
-                        .foregroundStyle(DeckColor.muted)
+                        .foregroundStyle(DeckColor.fg.opacity(0.75))
                         .lineLimit(1)
                         .frame(width: 64, alignment: .trailing)
+                        .rolling(rate)
                     Sparkline(series: store.projectSparkline(deviceId: project.deviceId, key: project.key))
                         .frame(width: 48, height: 20)
                 }
@@ -143,10 +153,11 @@ struct ProjectHeader: View {
                 onFreeze: { store.freeze(target) }
             )
             Button { store.path.append(.project(deviceId: project.deviceId, key: project.key)) } label: {
-                Text("›")
-                    .font(DeckFont.text(22))
+                Image(systemName: "chevron.forward.circle.fill")
+                    .font(.system(size: 20, weight: .regular))
+                    .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(DeckColor.accent)
-                    .frame(width: 24, height: 44)
+                    .frame(width: 30, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -175,10 +186,7 @@ struct UserBlock: View {
         let age = "updated \(Format.age(user.limitsFetchedAt, now: store.now))"
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text(open ? "▾" : "▸")
-                    .font(DeckFont.text(12))
-                    .foregroundStyle(DeckColor.dim)
-                    .frame(width: 12)
+                Chevron(open: open)
                 Text(name)
                     .font(DeckFont.text(15, .semibold))
                     .foregroundStyle(DeckColor.fg)
@@ -234,17 +242,35 @@ struct UserBlock: View {
         [user.emailAddress, user.organizationName].compactMap(\.self).joined(separator: " · ")
     }
 
+    /// `5h ◔ 42%`: a little ring of the same percent ahead of the figure.
     private func glance(_ label: String, _ limit: Limit?) -> some View {
-        HStack(alignment: .lastTextBaseline, spacing: 3) {
+        HStack(spacing: 4) {
             Text(label)
                 .font(DeckFont.mono(11))
                 .foregroundStyle(DeckColor.muted)
+            RingGauge(ring: RingFace(limit: limit), lineWidth: 3, showsLabel: false, lively: true)
+                .frame(width: 18, height: 18)
             Text(limit.map { "\($0.percent)%" } ?? "—")
                 .font(DeckFont.numeral(16, .medium))
                 .foregroundStyle(limit.map { DeckColor.of($0.status) } ?? DeckColor.dim)
                 .lineLimit(1)
                 .frame(width: 40, alignment: .leading)
+                .rolling(limit?.percent)
         }
+    }
+}
+
+/// The fold indicator: a chevron that turns as its block opens.
+private struct Chevron: View {
+    var open: Bool
+
+    var body: some View {
+        Image(systemName: "chevron.right")
+            .font(.system(size: 11, weight: .bold))
+            .foregroundStyle(DeckColor.dim)
+            .rotationEffect(.degrees(open ? 90 : 0))
+            .frame(width: 14)
+            .animation(.snappy, value: open)
     }
 }
 

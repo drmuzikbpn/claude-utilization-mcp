@@ -380,6 +380,22 @@ final class DeckStore {
         }
     }
 
+    // MARK: - order
+
+    /// The portrait list: live projects fastest first, each with its sessions fastest first.
+    var liveProjects: [ProjectView] {
+        ActivityOrder.projects(
+            team.projects,
+            projectRate: { self.projectRate(deviceId: $0.deviceId, key: $0.key) },
+            sessionRate: { self.rate(deviceId: $0.deviceId, sessionId: $1.sessionId) }
+        )
+    }
+
+    /// The landscape list: every live session, fastest first, whichever project it is in.
+    var liveRows: [ActivityOrder.Row] {
+        ActivityOrder.sessions(team.projects) { self.rate(deviceId: $0.deviceId, sessionId: $1.sessionId) }
+    }
+
     // MARK: - burn
 
     func rate(deviceId: String, sessionId: String) -> Double {
