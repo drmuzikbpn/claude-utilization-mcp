@@ -137,7 +137,11 @@ async function cmdStatus(io: Required<Pick<CliIO, 'stdout' | 'stderr'>> & CliIO)
   } else {
     io.stdout('today: scanning transcripts…\n');
   }
-  io.stdout(`${pairingHint(loadConfig(configDir).bind)}\n`);
+  try {
+    io.stdout(`${pairingHint(loadConfig(configDir).bind)}\n`);
+  } catch {
+    // An unreadable config already showed up above; the hint is a courtesy.
+  }
   return 0;
 }
 

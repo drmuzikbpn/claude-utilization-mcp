@@ -183,6 +183,34 @@ describe('the page status route (§23.52)', () => {
     expect(hit(handler, 'GET', '/secret').status).toBe(200);
   });
 
+  it('a page that opens already expired removes the QR and the link without throwing', () => {
+    const removed: string[] = [];
+    const classes = new Set<string>();
+    const el = (id: string) => ({
+      id,
+      dataset: {} as Record<string, string>,
+      textContent: '',
+      classList: { add: (c: string) => classes.add(`${id}:${c}`), remove: () => undefined },
+      addEventListener: () => undefined,
+      remove: () => removed.push(id),
+    });
+    const body = { ...el('body'), dataset: { expires: '2000-01-01T00:00:00.000Z' }, classList: { add: (c: string) => classes.add(c) } };
+    const nodes: Record<string, ReturnType<typeof el>> = { copy: el('copy'), 'copy-label': el('copy-label'), left: el('left') };
+    const document = {
+      body,
+      title: '',
+      getElementById: (id: string) => nodes[id],
+      querySelector: () => el('qr'),
+    };
+    const run = new Function('document', 'location', 'fetch', 'setInterval', 'clearInterval', 'setTimeout', PAIR_PAGE_SCRIPT);
+    expect(() =>
+      run(document, { pathname: '/p' }, () => new Promise(() => undefined), () => 1, () => undefined, () => 1),
+    ).not.toThrow();
+    expect(classes.has('expired')).toBe(true);
+    expect(removed).toEqual(expect.arrayContaining(['qr', 'copy']));
+    expect(document.title).toContain('expired');
+  });
+
   it('the page polls only its own origin', () => {
     expect(PAIR_PAGE_CSP).toContain("connect-src 'self'");
     expect(PAIR_PAGE_SCRIPT).toContain("location.pathname + '/status'");
