@@ -18,7 +18,10 @@ class DaemonException(
             "network" to "Machine unreachable.",
             "not_found" to "Session no longer exists.",
             "conflict" to "That session can't be hard-paused (no trusted pid).",
-            "gone" to "Session ended; pause cleared."
+            "gone" to "Session ended; pause cleared.",
+            "pinning" to "This machine's certificate changed. Re-pair it with `claude-usage pair`.",
+            "rate_limited" to "Too many attempts. Wait a minute and try again.",
+            "bad_response" to "The machine sent a reply Usage Deck can't read."
         )
     }
 }
@@ -28,6 +31,7 @@ internal fun codeForStatus(status: Int): String = when (status) {
     404 -> "not_found"
     409 -> "conflict"
     410 -> "gone"
+    429 -> "rate_limited"
     else -> "http_$status"
 }
 
@@ -50,6 +54,7 @@ internal fun toDaemonException(t: Throwable?, response: Response?): DaemonExcept
         return daemonExceptionOf(response.code, body)
     }
     if (t is DaemonException) return t
+    if (PinnedTls.isPinMismatch(t)) return DaemonException("pinning", 0, null, null)
     if (t is IOException || t != null) return DaemonException("network", 0, t.message, null)
     return DaemonException("network", 0, null, null)
 }

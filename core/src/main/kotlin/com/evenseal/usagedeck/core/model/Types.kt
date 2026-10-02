@@ -2,14 +2,31 @@ package com.evenseal.usagedeck.core.model
 
 import java.time.Instant
 
+/**
+ * One paired daemon. A v1 pairing ([fp] null) talks plain HTTP to [addr]. A v2 pairing (daemon
+ * §23.47) talks HTTPS pinned to [fp] for everything, on the TLS [port], and may fall back across
+ * [addrs] — the address that redeemed the pairing code is [addr].
+ */
 data class MachineConfig(
     val id: String,
     val name: String,
     val addr: String,
     val port: Int,
-    val token: String
+    val token: String,
+    /** Lowercase hex SHA-256 of the daemon certificate's SubjectPublicKeyInfo; null for v1. */
+    val fp: String? = null,
+    /** Every address from the pairing link, in the daemon's order. Empty for v1. */
+    val addrs: List<String> = emptyList()
 ) {
-    val baseUrl: String get() = "http://$addr:$port"
+    val baseUrl: String get() = baseUrlFor(addr)
+
+    /** [addr] first, then the rest of [addrs] in the daemon's order. */
+    val candidates: List<String> get() = (listOf(addr) + addrs).distinct()
+
+    fun baseUrlFor(host: String): String = "${if (fp != null) "https" else "http"}://$host:$port"
+
+    override fun toString(): String =
+        "MachineConfig(id=$id, name=$name, addr=$addr, port=$port, token=<redacted>, fp=$fp, addrs=$addrs)"
 }
 
 enum class Health { FRESH, STALE, DEAD }
