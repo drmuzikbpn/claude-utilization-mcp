@@ -55,6 +55,11 @@ describe('createInstallReader (§23.48)', () => {
     writeSettings(p, { statusLine: { type: 'command', command: `${script} --flag` } });
     expect(createInstallReader(p)().statusline).toBe('includes-ours');
 
+    // An interpreter in front of a quoted script path — the shape Claude Code's own
+    // statusline setup writes.
+    writeSettings(p, { statusLine: { type: 'command', command: `bash "${script}"` } });
+    expect(createInstallReader(p)().statusline).toBe('includes-ours');
+
     writeFileSync(script, '#!/bin/sh\necho hi\n');
     expect(createInstallReader(p)().statusline).toBe('other');
   });

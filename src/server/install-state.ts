@@ -58,16 +58,24 @@ function readJson(file: string): Json | null | undefined {
   }
 }
 
+/** At most this many words of the command are checked for a script path. */
+const MAX_SCRIPT_CANDIDATES = 4;
+
+/** Does any script the command names — `/path/x.sh`, `bash "/path/x.sh"`, `~/x.sh` — mention us? */
 function scriptMentionsUs(command: string): boolean {
-  const first = command.trim().split(/\s+/)[0] ?? '';
-  const file = first.startsWith('~/') ? `${homedir()}${first.slice(1)}` : first;
-  if (!file.startsWith('/')) return false;
-  try {
-    if (statSync(file).size > SCRIPT_MAX_BYTES) return false;
-    return readFileSync(file, 'utf8').includes(OUR_NAME);
-  } catch {
-    return false;
-  }
+  const words = command.trim().split(/\s+/).slice(0, MAX_SCRIPT_CANDIDATES);
+  return words.some((word) => {
+    const bare = word.replace(/^["']|["']$/g, '');
+    const file = bare.startsWith('~/') ? `${homedir()}${bare.slice(1)}` : bare;
+    if (!file.startsWith('/')) return false;
+    try {
+      const st = statSync(file);
+      if (!st.isFile() || st.size > SCRIPT_MAX_BYTES) return false;
+      return readFileSync(file, 'utf8').includes(OUR_NAME);
+    } catch {
+      return false;
+    }
+  });
 }
 
 function statuslineOf(settings: Json | null | undefined, binPath: string): StatuslineState {
