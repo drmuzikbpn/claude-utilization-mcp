@@ -99,7 +99,11 @@ fixture both sides must hash identically.
 - A lost pairing is never "waiting": a 401 sets `repairReason = .tokenRejected`, a pin mismatch
   `.certificateChanged`. The client then stops polling and probes SSE once per `repairProbe`
   (60 s); any answer clears it. Home and the device screen show a `RepairCard` whose Re-pair
-  reuses the same record (`beginPairing(replacing:)`), then runs the Connecting overlay.
+  reuses the same record (`beginPairing(replacing:)`), then runs the Connecting overlay; an
+  invite that is not plausibly that device (`RepairMatch`) asks "Replace <old> with <new>?".
+  The REPAIR notification comes from the persisted `RepairLedger` (known-good → lost, once,
+  1 h cooldown), never the in-memory evaluator; tapping it opens Re-pair. Only a device's
+  current `DeviceClient` may update its state (`ingest(_:from:)` checks identity).
 - User-facing copy says **"device"**, never "Mac" (the daemon runs on Linux too).
 - Paired `DeviceRecord`s live in `UserDefaults` (`DeviceRegistry`), escalations and the alert
   ledger in the App Group suite. `/health.install.listeners` TLS addresses are **merged into**
