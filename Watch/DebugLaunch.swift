@@ -1,0 +1,35 @@
+#if DEBUG
+    import Foundation
+    import UsageCore
+
+    /// Launch arguments that load made-up data, for screenshots and simulator runs without an
+    /// iPhone: `-sampleSnapshot`, plus `-unreachable`, `-noDevices`, `-aod` and
+    /// `-screen account|actions|projects|project`.
+    enum DebugLaunch {
+        private static var arguments: [String] {
+            ProcessInfo.processInfo.arguments
+        }
+
+        static func sampleSnapshot() -> WatchSnapshot? {
+            guard arguments.contains("-sampleSnapshot") else { return nil }
+            var sample = WatchSnapshot.sample(now: unreachable ? .now.addingTimeInterval(-250) : .now)
+            if arguments.contains("-noDevices") {
+                sample.devices = []
+            }
+            return sample
+        }
+
+        static var unreachable: Bool {
+            arguments.contains("-unreachable")
+        }
+
+        static var alwaysOn: Bool {
+            arguments.contains("-aod")
+        }
+
+        static var screen: String? {
+            guard let index = arguments.firstIndex(of: "-screen"), arguments.indices.contains(index + 1) else { return nil }
+            return arguments[index + 1]
+        }
+    }
+#endif
