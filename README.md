@@ -8,6 +8,22 @@ from your phone and watch.**
 same usage numbers `/usage` shows and the token counts in Claude Code's own transcripts,
 and serves them on this machine only, unless you choose to let a phone in.
 
+## Two jobs, one daemon
+
+The daemon does two things, and you can use either or both:
+
+1. **It keeps your Claude Code sessions aware of their own usage.** Every terminal session
+   on this machine can see live rate-limit and token data while it works: a hook adds a
+   warning to the conversation when a limit gets tight, and the MCP tools let a session ask
+   for the numbers itself. Sessions use that to throttle themselves, for example switching
+   to lighter models, smaller reads or deferring big jobs as a window fills. You can also
+   pause and resume sessions from the CLI.
+2. **It is the backend the iPhone, Apple Watch and Android apps need.** The **Usage Deck**
+   apps have no data of their own: they read limits, token spend and live sessions from the
+   daemon on each of your machines, and send pause and resume back to it. To use an app,
+   install the daemon on every machine that runs Claude Code, then pair the phone with each
+   one (`claude-usage pair`).
+
 ## What you get
 
 | Where | What you see |
@@ -64,6 +80,7 @@ phone.
 
 ### Contents
 
+- [Two jobs, one daemon](#two-jobs-one-daemon): session self-throttling, and the backend for the apps
 - [What install changes on your machine](#what-install-changes-on-your-machine) ·
   [Undoing it](#undoing-it)
 - [The hook nudge](#the-hook-nudge) · [MCP tools](#mcp-tools) · [Status line](#status-line)
