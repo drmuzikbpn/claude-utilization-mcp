@@ -30,8 +30,9 @@ swift scripts/make-icon.swift App/Assets.xcassets/AppIcon.appiconset/icon-1024.p
 - `.github/workflows/ci.yml`: lint + `swift test` + both builds on every push/PR to `usage-ios`;
   a push to `usage-ios` also archives, exports and uploads to TestFlight. It never creates a
   GitHub Release or tag (the daemon's updater reads `/releases/latest`, §23.17).
-- Build number = `git rev-list --count HEAD`; TestFlight rejects a non-increasing one, so never
-  force-push this branch shorter. Version = `MARKETING_VERSION` (`0.1`).
+- Build number = `GITHUB_RUN_NUMBER * 10 + GITHUB_RUN_ATTEMPT`, which only ever goes up
+  (the commit count did not: a squash merge shortened history and build 28 followed 29).
+  TestFlight rejects a non-increasing number. Version = `MARKETING_VERSION` (`0.1`).
 - Signing: Debug automatic; Release manual — "Apple Distribution: Even Seal Productions LLC
   (YTHBPWUU3Z)" + four App Store profiles named `UsageDeck AppStore`, `UsageWidgets AppStore`,
   `UsageDeckWatch AppStore`, `UsageComplications AppStore` (all carry

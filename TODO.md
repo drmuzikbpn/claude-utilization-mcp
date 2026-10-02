@@ -7,11 +7,7 @@ carries `TODO` comments (swiftlint `no_todo`); they go here.
 
 ## Release
 
-- [ ] **TestFlight build numbers must only go up.** CI sets the build number to the commit count
-  (`git rev-list --count HEAD` in `.github/workflows/ci.yml`). A squash merge can lower that count:
-  PR #5 uploaded as build 28, after build 29 was already in TestFlight, so testers may still be
-  offered the older 29. Number builds from `GITHUB_RUN_NUMBER` plus an offset above 29, then
-  upload a fresh build.
+- [x] TestFlight build numbers only go up: `GITHUB_RUN_NUMBER * 10 + GITHUB_RUN_ATTEMPT`.
 - [ ] External TestFlight testing: Beta App Review, a feedback email, and the privacy URL
   (`PRIVACY.md` on GitHub).
 - [ ] Add the `test` check as a required check on the `usage-ios` ruleset (repository settings,
