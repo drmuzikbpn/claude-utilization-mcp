@@ -14,7 +14,7 @@ struct WideDockView: View {
             StatusBar(store: store, showsGear: true)
             HStack(spacing: 0) {
                 Rail(store: store, navigation: homeNavigation(store: store, empty: empty))
-                    .frame(width: 200)
+                    .frame(width: DeckMetrics.railWidth)
                     .frame(maxHeight: .infinity)
                     .overlay(alignment: .trailing) { Rectangle().fill(DeckColor.line).frame(width: 1) }
                 VStack(spacing: 0) {
@@ -141,9 +141,11 @@ private struct RailUser: View {
                 .tracking(1.2)
                 .foregroundStyle(DeckColor.muted)
                 .lineLimit(1)
+            // Sized to the rail's width so the 7 d ring never clips: big + gap + 0.6 × big.
+            let big = min(118, (DeckMetrics.railWidth - 24 - 12) / 1.6)
             HStack(alignment: .bottom, spacing: 10) {
-                RingNumber(store: store, limit: user.fiveHour, size: 50, ring: 96)
-                RingNumber(store: store, limit: user.sevenDay, size: 24, ring: 56)
+                RingNumber(store: store, limit: user.fiveHour, size: big * 0.5, ring: big)
+                RingNumber(store: store, limit: user.sevenDay, size: big * 0.6 * 0.42, ring: big * 0.6)
             }
             if user.health != .fresh {
                 Text("updated \(Format.age(user.limitsFetchedAt, now: store.now))")
@@ -169,9 +171,10 @@ private struct RingNumber: View {
         let fraction = Double(min(max(limit?.percent ?? 0, 0), 100)) / 100
         VStack(spacing: 4) {
             ZStack {
-                Circle().stroke(DeckColor.line, lineWidth: 5)
+                Circle().strokeBorder(DeckColor.line, lineWidth: 5)
                 if fraction > 0 {
                     Circle()
+                        .inset(by: 2.5)
                         .trim(from: 0, to: fraction)
                         .stroke(color, style: StrokeStyle(lineWidth: 5, lineCap: .round))
                         .rotationEffect(.degrees(-90))

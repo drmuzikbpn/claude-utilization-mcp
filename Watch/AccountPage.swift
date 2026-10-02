@@ -28,7 +28,8 @@ struct AccountPage: View {
                 // the 7 d ring with room under both for their countdowns.
                 GeometryReader { proxy in
                     let sizes = RingSize.fitting(proxy.size, showsText: !isLuminanceReduced)
-                    HStack(alignment: .center, spacing: RingSize.gap) {
+                    // Bottom-aligned like the phone's rail: both windows end on the same line.
+                    HStack(alignment: .bottom, spacing: RingSize.gap) {
                         window(account.fiveHour, label: "5 h", size: sizes.big, now: now)
                         window(account.sevenDay, label: "7 d", size: sizes.small, now: now)
                     }
@@ -61,6 +62,8 @@ struct AccountPage: View {
                     .accessibilityLabel(health == .dead ? "no recent data" : "stale data")
             }
         }
+        // Clear of the vertical page dots on the trailing edge.
+        .padding(.trailing, 14)
     }
 
     private struct RingSize {

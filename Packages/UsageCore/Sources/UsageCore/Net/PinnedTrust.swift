@@ -1,6 +1,29 @@
 import CryptoKit
 import Foundation
 import Security
+import Synchronization
+
+/// When PinnedTrust last refused a certificate. URLSession reports a refused challenge as a plain
+/// `URLError.cancelled`, which is also what any cancelled request looks like (a stream being
+/// replaced, a scene going to the background, a group losing its race). Only a cancellation
+/// shortly after a real refusal is a pin mismatch; reading every cancel as one marked a healthy
+/// device "Needs re-pair" the first time a request was cancelled.
+public final class PinRejections: Sendable {
+    public static let shared = PinRejections()
+    public static let window: TimeInterval = 10
+
+    private let last = Mutex<Date?>(nil)
+
+    public init() {}
+
+    public func note(at date: Date = Date()) {
+        last.withLock { $0 = date }
+    }
+
+    public func recent(now: Date = Date()) -> Bool {
+        last.withLock { $0.map { now.timeIntervalSince($0) < Self.window } ?? false }
+    }
+}
 
 /// Accepts a server's TLS certificate **iff** the SHA-256 of its SubjectPublicKeyInfo equals the
 /// fingerprint the pairing link carried. Every other challenge is refused.
@@ -37,7 +60,12 @@ public final class PinnedTrust: NSObject, URLSessionDelegate, Sendable {
         _: URLSession,
         didReceive challenge: URLAuthenticationChallenge
     ) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
-        guard let trust = accepted(challenge) else { return (.cancelAuthenticationChallenge, nil) }
+        guard let trust = accepted(challenge) else {
+            if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
+                PinRejections.shared.note()
+            }
+            return (.cancelAuthenticationChallenge, nil)
+        }
         return (.useCredential, URLCredential(trust: trust))
     }
 

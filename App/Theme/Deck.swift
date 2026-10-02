@@ -74,6 +74,8 @@ enum DeckFont {
 enum DeckMetrics {
     /// A device or account that stopped checking in fades to this (deck spec §11.1).
     static let staleAlpha = 0.55
+    /// The landscape rail (deck WideDock `RAIL_WIDTH` is 200 dp; a little wider here for the rings).
+    static let railWidth: CGFloat = 220
     static let buttonShape = RoundedRectangle(cornerRadius: 9, style: .continuous)
 }
 

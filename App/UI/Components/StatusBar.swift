@@ -11,8 +11,15 @@ struct StatusBar: View {
     var body: some View {
         HStack(spacing: 6) {
             if showsGear {
-                Chip(text: "⚙", dot: nil) { store.path.append(.settings) }
-                    .accessibilityLabel("Settings")
+                Button { store.path.append(.settings) } label: {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundStyle(DeckColor.muted)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Settings")
             }
             HStack(spacing: 6) {
                 Spacer(minLength: 0)
