@@ -114,7 +114,7 @@ fixture both sides must hash identically.
 - Tests are Swift Testing (`import Testing`), TDD. HTTP is tested through `StubURLProtocol`
   with a unique host per test, never a real network.
 - Conventional commits ending with `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`.
-- No `TODO`/`FIXME` in committed code (swiftlint `no_todo`); deferred work goes in the spec's
-  Deferred list.
+- No `TODO`/`FIXME` in committed code (swiftlint `no_todo`); open work goes in `TODO.md`,
+  design-level deferrals in the spec's Deferred list.
 - Pushes to `usage-ios` need a GO (the orchestrator session, else Alan). iOS CI publishes to
   TestFlight only — never a GitHub Release.
