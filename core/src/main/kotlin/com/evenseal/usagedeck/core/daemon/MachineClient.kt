@@ -57,6 +57,8 @@ class MachineClient(
 
     private val jobs = mutableListOf<Job>()
     private val lock = Any()
+    private var started = false
+    private var stopped = false
     private var connectionJob: Job? = null
     private var repairJob: Job? = null
     private var pollingJob: Job? = null
@@ -65,14 +67,19 @@ class MachineClient(
     private var thresholds: ThresholdsDto = ThresholdsDto()
 
     fun start() {
-        if (jobs.isNotEmpty()) return
-        synchronized(lock) { connectionJob = scope.launch { connectionLoop() } }
-        jobs += scope.launch { agingLoop() }
-        jobs += scope.launch { projectTokensLoop() }
+        synchronized(lock) {
+            if (started) return
+            started = true
+            connectionJob = scope.launch { connectionLoop() }
+            jobs += scope.launch { agingLoop() }
+            jobs += scope.launch { projectTokensLoop() }
+        }
     }
 
+    /** Final: a stopped client never reconnects or probes again (a re-pair builds a new one). */
     fun stop() {
         synchronized(lock) {
+            stopped = true
             stopPolling()
             connectionJob?.cancel()
             connectionJob = null
@@ -94,7 +101,7 @@ class MachineClient(
         if (_state.value.needsRepair != null) return
         try {
             val dto = api.tokensByProjectToday()
-            _state.update { it.copy(projectTokens = dto.groups.map { g -> g.toModel() }) }
+            updateLive { it.copy(projectTokens = dto.groups.map { g -> g.toModel() }) }
         } catch (e: DaemonException) {
             _state.update { it.copy(lastError = e.userMessage()) }
         }
@@ -173,21 +180,24 @@ class MachineClient(
             connectionJob?.cancel()
             connectionJob = null
             // Only a running client probes; a stopped one is being replaced or removed.
-            if (jobs.isNotEmpty()) repairJob = scope.launch { repairProbeLoop() }
+            if (started && !stopped) repairJob = scope.launch { repairProbeLoop() }
         }
     }
 
     private suspend fun repairProbeLoop() {
         while (coroutineContext.isActive) {
             delay(REPAIR_PROBE_MS)
+            // A bearer-gated GET, so only an accepted token (and the pinned key) passes.
             val healthy = try {
-                api.health()
+                api.rules()
                 true
             } catch (e: DaemonException) {
                 false
             }
             if (healthy) {
                 synchronized(lock) {
+                    // The answer can land after stop(): blocking I/O is not a cancellation point.
+                    if (stopped) return
                     _state.update { it.copy(needsRepair = null, lastError = null) }
                     repairJob = null
                     connectionJob = scope.launch { connectionLoop() }
@@ -198,7 +208,7 @@ class MachineClient(
     }
 
     private fun startPolling() {
-        if (pollingJob != null || _state.value.needsRepair != null) return
+        if (pollingJob != null || _state.value.needsRepair != null || stopped) return
         pollingJob = scope.launch {
             while (coroutineContext.isActive) {
                 poll()
@@ -238,9 +248,18 @@ class MachineClient(
 
     // ---- event application -------------------------------------------------------------------
 
+    /**
+     * Every update that carries the daemon's data goes through here. Once the machine is marked
+     * as needing a re-pair, a reply or event that was already in flight is dropped — checked
+     * inside the atomic update, so it cannot slip in between the check and the write.
+     */
+    private fun updateLive(transform: (MachineState) -> MachineState) {
+        _state.update { if (it.needsRepair != null) it else transform(it) }
+    }
+
     private fun onOpen() {
         stopPolling()
-        _state.update {
+        updateLive {
             it.copy(
                 transport = MachineState.Transport.SSE,
                 lastHeartbeatAt = clock.now(),
@@ -269,7 +288,7 @@ class MachineClient(
             is DaemonEvent.Spend -> applySpend(event)
             is DaemonEvent.SessionChange -> applySessionChange(event)
             is DaemonEvent.Pause -> applyPause(event)
-            is DaemonEvent.Update -> _state.update { it.copy(update = event.update.toModel()) }
+            is DaemonEvent.Update -> updateLive { it.copy(update = event.update.toModel()) }
             is DaemonEvent.Heartbeat -> applyHeartbeat(event)
             is DaemonEvent.Unknown -> Unit
         }
@@ -279,7 +298,7 @@ class MachineClient(
     private fun touch() {
         if (_state.value.needsRepair != null) return
         val now = clock.now()
-        _state.update { it.copy(lastHeartbeatAt = now, health = Aging.health(now, now)) }
+        updateLive { it.copy(lastHeartbeatAt = now, health = Aging.health(now, now)) }
     }
 
     private fun applySnapshot(event: DaemonEvent.Snapshot) {
@@ -288,7 +307,7 @@ class MachineClient(
         thresholds = event.thresholds
         etag = "W/\"${event.rev}\""
         val sessions = event.sessions.map { it.toModel() }
-        _state.update {
+        updateLive {
             it.copy(
                 name = event.name,
                 version = event.version,
@@ -318,17 +337,17 @@ class MachineClient(
     private fun applyHeartbeat(event: DaemonEvent.Heartbeat) {
         if (event.rev <= 0) return
         etag = "W/\"${event.rev}\""
-        _state.update { if (event.rev > it.rev) it.copy(rev = event.rev) else it }
+        updateLive { if (event.rev > it.rev) it.copy(rev = event.rev) else it }
     }
 
     private fun applyLimits(event: DaemonEvent.Limits) {
-        _state.update { it.copy(limits = limitsOf(event.limits), limitsFetchedAt = event.fetchedAt.toInstantOrNull()) }
+        updateLive { it.copy(limits = limitsOf(event.limits), limitsFetchedAt = event.fetchedAt.toInstantOrNull()) }
     }
 
     /** `today` is the cumulative authority; the per-event `delta` is deliberately not used. */
     private fun applySpend(event: DaemonEvent.Spend) {
         val today = event.today.toModel()
-        _state.update { it.copy(today = today) }
+        updateLive { it.copy(today = today) }
         burn.record(burnKeyForMachine(), clock.now(), today.total)
     }
 
@@ -336,10 +355,10 @@ class MachineClient(
         val session = event.session.toModel()
         val now = clock.now()
         if (event.type == "end") {
-            _state.update { it.copy(sessions = it.sessions.filterNot { s -> s.sessionId == session.sessionId }) }
+            updateLive { it.copy(sessions = it.sessions.filterNot { s -> s.sessionId == session.sessionId }) }
             burn.forget(burnKeyForSession(session.sessionId))
         } else {
-            _state.update {
+            updateLive {
                 val others = it.sessions.filterNot { s -> s.sessionId == session.sessionId }
                 it.copy(sessions = others + session)
             }
@@ -348,7 +367,7 @@ class MachineClient(
     }
 
     private fun applyPause(event: DaemonEvent.Pause) {
-        _state.update { it.copy(rules = event.rules.map { r -> r.toModel() }) }
+        updateLive { it.copy(rules = event.rules.map { r -> r.toModel() }) }
         // Pause state lives on the sessions, so re-read them once.
         scope.launch {
             try {
@@ -370,7 +389,7 @@ class MachineClient(
         lastStatus = summary.status
         thresholds = summary.thresholds
         val today = summary.today.toModel()
-        _state.update {
+        updateLive {
             it.copy(
                 limits = summary.toLimits(),
                 limitsFetchedAt = summary.fetchedAt.toInstantOrNull(),
@@ -382,7 +401,7 @@ class MachineClient(
 
     private fun applySessions(dto: SessionsDto) {
         val sessions = dto.sessions.map { it.toModel() }
-        _state.update { it.copy(sessions = sessions, rev = dto.rev) }
+        updateLive { it.copy(sessions = sessions, rev = dto.rev) }
         recordSessionBurn(sessions, clock.now())
     }
 
