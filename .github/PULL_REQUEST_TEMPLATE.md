@@ -18,7 +18,7 @@
 
 ## Deck contract
 
-- [ ] No change to what the `usage-deck` branch expects from the daemon — `limits[]`, the SSE
+- [ ] No change to what the `usage-android` branch (or `usage-ios`) expects from the daemon — `limits[]`, the SSE
       stream, the pause API — **or** the matching deck PR is linked above.
 
 ## Invariants

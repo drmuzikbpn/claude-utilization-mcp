@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "bin": { "claude-usage": "bin/claude-usage" },
-  "files": ["bin", "dist", "README.md", "LICENSE"],
+  "files": ["bin", "dist", "vendor", "README.md", "LICENSE"],
   "engines": { "node": ">=20" },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

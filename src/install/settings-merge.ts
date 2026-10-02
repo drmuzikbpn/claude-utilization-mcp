@@ -109,7 +109,7 @@ function asRecord(v: unknown): Record<string, unknown> | null {
   return typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 }
 
-function groupIsOurs(group: unknown, binPath: string): boolean {
+export function groupIsOurs(group: unknown, binPath: string): boolean {
   const rec = asRecord(group);
   if (rec === null) return false;
   const hooks = rec['hooks'];

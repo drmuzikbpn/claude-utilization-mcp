@@ -184,6 +184,60 @@ describe('scalar settings', () => {
     expect(b.service.calls).toEqual([]);
   });
 
+  it('lan on/off edits bind and restarts the service only after saving (§23.44)', async () => {
+    const b = bed({ settings: 'settings-empty.json' });
+    await runInstall(['--yes'], b.io);
+    const seen: unknown[] = [];
+    b.service.calls.length = 0;
+    const restart = b.service.restart.bind(b.service);
+    b.service.restart = async () => {
+      seen.push(config(b)['bind']);
+      await restart();
+    };
+    expect(await b.configure(['lan', 'on'])).toBe(0);
+    expect(config(b)['bind']).toEqual(['127.0.0.1', 'lan']);
+    expect(seen).toEqual([['127.0.0.1', 'lan']]);
+    expect(b.out).toContain('lan on');
+
+    expect(await b.configure(['lan', 'on'])).toBe(0);
+    expect(config(b)['bind']).toEqual(['127.0.0.1', 'lan']);
+
+    expect(await b.configure(['lan', 'off'])).toBe(0);
+    expect(config(b)['bind']).toEqual(['127.0.0.1']);
+    // The idempotent second `on` changed nothing, so it did not restart.
+    expect(seen).toEqual([['127.0.0.1', 'lan'], ['127.0.0.1']]);
+  });
+
+  it('lan on leaves the service alone when it is off', async () => {
+    const b = bed();
+    await b.configure(['service', 'off']);
+    b.service.calls.length = 0;
+    expect(await b.configure(['lan', 'on'])).toBe(0);
+    expect(b.service.calls).toEqual([]);
+    expect(config(b)['bind']).toEqual(['127.0.0.1', 'lan']);
+  });
+
+  it('port restarts the service only after the new port is saved', async () => {
+    const b = bed({ settings: 'settings-empty.json' });
+    await runInstall(['--yes'], b.io);
+    const seen: unknown[] = [];
+    const restart = b.service.restart.bind(b.service);
+    b.service.restart = async () => {
+      seen.push(config(b)['port']);
+      await restart();
+    };
+    await b.configure(['port', '50003']);
+    expect(seen).toEqual([50_003]);
+  });
+
+  it('refuses a port that collides with tls.port, and writes nothing', async () => {
+    const b = bed();
+    await b.configure(['port', '47291']);
+    expect(await b.configure(['port', '65535'])).toBe(1);
+    expect(b.err).toContain('tls.port');
+    expect(config(b)['port']).toBe(47_291);
+  });
+
   it('rejects a bad port', async () => {
     const b = bed();
     expect(await b.configure(['port', 'nope'])).toBe(1);

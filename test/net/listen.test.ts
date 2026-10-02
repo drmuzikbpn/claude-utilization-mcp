@@ -93,7 +93,7 @@ describe('listen with several addresses', () => {
   it('accepts a single host string, as the daemon used to call it', async () => {
     const server = make();
     const port = await server.listen(0, '127.0.0.1');
-    expect(server.addresses).toEqual([{ address: '127.0.0.1', port }]);
+    expect(server.addresses).toEqual([{ address: '127.0.0.1', port, tls: false }]);
   });
 
   it('binds and unbinds an address after startup', async () => {

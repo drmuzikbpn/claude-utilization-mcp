@@ -87,6 +87,9 @@ describe('check() — GET /repos/<repo>/releases/latest (§20)', () => {
   it('classifies foreign tags case-insensitively and leaves ours alone', () => {
     expect(isForeignTag('deck-1.4.0')).toBe(true);
     expect(isForeignTag('Deck-1.4.0')).toBe(true);
+    // §23.17: the iOS app ships via TestFlight only, but its tags are reserved all the same.
+    expect(isForeignTag('ios-0.3.12')).toBe(true);
+    expect(isForeignTag('iOS-0.3.12')).toBe(true);
     expect(isForeignTag('v0.1.65+0f7f1c3')).toBe(false);
     expect(isForeignTag('0.1.65')).toBe(false);
     // Not a prefix match on a version that merely contains the word.

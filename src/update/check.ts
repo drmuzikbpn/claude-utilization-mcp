@@ -68,7 +68,7 @@ export function releasesLatestUrl(repo: string, origin = GITHUB_API_ORIGIN): str
 }
 
 /** Release-tag prefixes owned by other artifacts in this repo (§23.17). */
-export const FOREIGN_TAG_PREFIXES = ['deck-'] as const;
+export const FOREIGN_TAG_PREFIXES = ['deck-', 'ios-'] as const;
 
 /** Does `tag` belong to something other than the daemon? Case-insensitive. */
 export function isForeignTag(tag: string): boolean {

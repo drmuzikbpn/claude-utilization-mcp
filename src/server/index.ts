@@ -1,4 +1,5 @@
 import { createServer as createHttpServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { redactConfig, type Config } from '../config.js';
 import { EventBus } from '../events/bus.js';
@@ -15,7 +16,9 @@ import {
 } from './events.js';
 import { sendError, sendJson } from './errors.js';
 import { createUserReader, defaultClaudeJsonPath } from './identity.js';
-import { buildHostPolicy, checkRequest, type HostPolicy } from './middleware.js';
+import { buildHostPolicy, checkRequest, isLoopbackRequest, isTlsRequest, normalizeAddress, PAIR_REDEEM_PATH, type HostPolicy } from './middleware.js';
+import { createInstallReader, type InstallPaths } from './install-state.js';
+import { buildPairingLink, createPairingCodes, type PairingCodes } from './pairing.js';
 import { parseTokensQuery } from './query.js';
 import { healthBody, limitsBody, summaryBody, type SnapshotDeps, type UpdateStateProvider } from './snapshot.js';
 import { zeroTotals, type TokensSource } from './types.js';
@@ -28,6 +31,9 @@ export * from './query.js';
 export * from './identity.js';
 export * from './snapshot.js';
 export * from './events.js';
+export * from './pairing.js';
+
+export const PAIR_CODE_PATH = '/v1/pair/code';
 
 /** 5 s request timeout (§4). */
 export const REQUEST_TIMEOUT_MS = 5_000;
@@ -63,11 +69,28 @@ export interface ServerOptions {
   /** Sessions and pause rules for the SSE `snapshot` event; defaults to empty arrays. */
   snapshots?: SnapshotProvider | undefined;
   eventsTuning?: EventsTuning;
+  /** §23.45: PEM key + certificate for HTTPS listeners; absent ⇒ `bind(…, { tls: true })` throws. */
+  tls?: { key: string; cert: string } | null;
+  /** §23.47: what a pairing link offers — TLS addresses (best first), the TLS port and the pin. */
+  pairing?: { info(): { addrs: string[]; port: number | null; fp: string | null } };
+  /** Injected in tests; one is created when omitted. */
+  pairingCodes?: PairingCodes;
+  /** §23.48: where to look for our hooks/statusLine/MCP entry; absent ⇒ no `/health.install`. */
+  install?: InstallPaths;
 }
 
 export interface BoundAddress {
   address: string;
   port: number;
+  /** §23.45: an HTTPS listener. */
+  tls: boolean;
+}
+
+/** One listener as the daemon asked for it — what `/health.install.listeners` reports (§23.48). */
+export interface ListenerInfo {
+  addr: string;
+  port: number;
+  tls: boolean;
 }
 
 export interface UsageServer {
@@ -76,8 +99,12 @@ export interface UsageServer {
   /** One `http.Server` per bound address, all sharing `handle` (§16). */
   readonly servers: readonly Server[];
   readonly addresses: readonly BoundAddress[];
-  /** The port every listener shares, or `null` before `listen`. */
+  /** The port every plain-HTTP listener shares, or `null` before `listen`. */
   readonly port: number | null;
+  /** The port the HTTPS listeners share, or `null` while there are none (§23.45). */
+  readonly tlsPort: number | null;
+  /** Every listener, in bind order: requested address, port, TLS or not. */
+  readonly listeners: readonly ListenerInfo[];
   /** The bus `GET /v1/events` streams; the daemon publishes onto it (§19). */
   readonly bus: EventBus;
   readonly events: EventsEndpoint;
@@ -86,9 +113,12 @@ export interface UsageServer {
   handle(req: IncomingMessage, res: ServerResponse): void;
   /** Listen on one address or several and resolve with the bound port (tests pass 0). */
   listen(port: number, hosts?: string | readonly string[]): Promise<number>;
-  /** Add one address after startup (SIGHUP re-resolution, §16); already bound → no-op. */
-  bind(host: string, port?: number): Promise<number>;
-  /** Stop listening on one address, leaving the rest up. */
+  /**
+   * Add one address after startup (SIGHUP re-resolution, §16); already bound → no-op.
+   * `{ tls: true }` adds an HTTPS listener instead (§23.45), defaulting to `tlsPort`.
+   */
+  bind(host: string, port?: number, opts?: { tls?: boolean }): Promise<number>;
+  /** Stop listening on one address — its HTTP and HTTPS listeners both — leaving the rest up. */
   unbind(host: string): Promise<void>;
   /** Replace the extra Host names — the MagicDNS name, re-resolved on SIGHUP (§16). */
   setExtraHostNames(names: readonly string[]): void;
@@ -109,6 +139,8 @@ const ROUTES: readonly RouteKey[] = [
   { method: 'POST', path: OBSERVE_PATH },
   { method: 'GET', path: '/v1/config' },
   { method: 'GET', path: EVENTS_PATH },
+  { method: 'POST', path: PAIR_CODE_PATH },
+  { method: 'POST', path: PAIR_REDEEM_PATH },
 ];
 
 function allowedMethodsFor(path: string): string[] {
@@ -127,12 +159,18 @@ export function createServer(opts: ServerOptions): UsageServer {
   let tokens: TokensSource | null = opts.tokens ?? null;
   // W3: one registration block — the routes themselves live in src/sessions/routes.ts.
   const sessionsRouter = opts.sessions?.router ?? null;
-  /** One listener per requested address, keyed by the lower-cased host we asked for. */
-  const listeners = new Map<string, { server: Server; addresses: BoundAddress[] }>();
+  /** One listener per requested address and scheme, keyed by `listenerKey`. */
+  const listeners = new Map<string, { server: Server; host: string; tls: boolean; addresses: BoundAddress[] }>();
+  const listenerKey = (host: string, tls: boolean): string => `${host.toLowerCase()}${tls ? '#tls' : ''}`;
   const bound: BoundAddress[] = [];
   let extraHostNames: string[] = [...(opts.extraHostNames ?? [])];
   let policy: HostPolicy = buildHostPolicy(bound, extraHostNames);
   let listenPort: number | null = null;
+  /** Set by close(): no listener may be opened after it, e.g. by a reload still in flight. */
+  let closed = false;
+  const listenerList = (): ListenerInfo[] =>
+    [...listeners.values()].map((l) => ({ addr: l.host, port: l.addresses[0]?.port ?? 0, tls: l.tls }));
+  const tlsPortNow = (): number | null => [...listeners.values()].find((l) => l.tls)?.addresses[0]?.port ?? null;
 
   /** `addresses` is handed out live, so it is refilled in place rather than replaced. */
   const rebuildPolicy = (): void => {
@@ -155,6 +193,10 @@ export function createServer(opts: ServerOptions): UsageServer {
     startedAt,
     now,
   };
+  if (opts.install !== undefined) {
+    const readInstall = createInstallReader(opts.install, now);
+    snapshotDeps.install = () => ({ ...readInstall(), listeners: listenerList() });
+  }
 
   const bus = opts.bus ?? new EventBus();
   const events = createEventsEndpoint({
@@ -218,6 +260,45 @@ export function createServer(opts: ServerOptions): UsageServer {
       return;
     }
     sendJson(res, 200, { accepted: true });
+  }
+
+  // --- §23.47: pairing -----------------------------------------------------------
+  const pairingCodes = opts.pairingCodes ?? createPairingCodes(opts.now === undefined ? {} : { now: opts.now });
+
+  /** Bearer already checked by the gate; minting is additionally loopback-only. */
+  function mintPairingCode(req: IncomingMessage, res: ServerResponse): void {
+    if (!isLoopbackRequest(req)) {
+      sendError(res, 403, 'forbidden', 'pairing codes are minted on this machine only', 'run `claude-usage pair` on the machine running the daemon');
+      return;
+    }
+    const info = opts.pairing?.info() ?? { addrs: [], port: null, fp: null };
+    if (info.addrs.length === 0 || info.port === null || info.fp === null) {
+      sendError(res, 409, 'conflict', 'no HTTPS listener to pair with', 'enable LAN access with `claude-usage configure lan on`');
+      return;
+    }
+    const { code, expiresAt } = pairingCodes.mint();
+    const parts = { name: opts.config.name, addrs: info.addrs, port: info.port, fp: info.fp, code };
+    sendJson(res, 200, { code, expiresAt, link: buildPairingLink(parts), name: parts.name, addrs: parts.addrs, port: parts.port, fp: parts.fp });
+  }
+
+  /** The one bearer-less mutating route: TLS only, single-use code, per-source limit. */
+  async function redeemPairingCode(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (!isTlsRequest(req)) {
+      sendError(res, 403, 'forbidden', 'pairing is only accepted over HTTPS', 'pair over https');
+      return;
+    }
+    const body = await readJsonBody(req);
+    const source = normalizeAddress(req.socket.remoteAddress) ?? 'unknown';
+    const outcome = pairingCodes.redeem(body?.['code'], source);
+    if (outcome === 'rate_limited') {
+      sendError(res, 429, 'rate_limited', 'too many failed pairing attempts', 'wait a minute, then run `claude-usage pair` again');
+      return;
+    }
+    if (outcome === 'invalid') {
+      sendError(res, 401, 'unauthorized', 'pairing code is invalid or expired', 'run `claude-usage pair` again');
+      return;
+    }
+    sendJson(res, 200, { token: opts.config.auth.token, name: opts.config.name, fp: opts.pairing?.info().fp ?? null });
   }
 
   // --- request pipeline -----------------------------------------------------
@@ -295,6 +376,12 @@ export function createServer(opts: ServerOptions): UsageServer {
       case EVENTS_PATH:
         events.handle(req, res);
         return;
+      case PAIR_CODE_PATH:
+        mintPairingCode(req, res);
+        return;
+      case PAIR_REDEEM_PATH:
+        await redeemPairingCode(req, res);
+        return;
       default:
         sendError(res, 404, 'not_found', `no route for ${path}`);
     }
@@ -307,12 +394,14 @@ export function createServer(opts: ServerOptions): UsageServer {
    * per-address so the daemon can add a tailnet address that only appeared later, or drop
    * one that went away, without disturbing loopback.
    */
-  async function bindOne(host: string, port: number): Promise<number> {
-    const key = host.toLowerCase();
+  async function bindOne(host: string, port: number, tls = false): Promise<number> {
+    if (closed) throw new Error('server is closed — not binding');
+    const key = listenerKey(host, tls);
     const existing = listeners.get(key);
     if (existing !== undefined) return existing.addresses[0]?.port ?? port;
 
-    const server = createHttpServer(handle);
+    if (tls && (opts.tls === undefined || opts.tls === null)) throw new Error('no TLS identity — cannot add an HTTPS listener');
+    const server: Server = tls && opts.tls ? createHttpsServer({ key: opts.tls.key, cert: opts.tls.cert }, handle) : createHttpServer(handle);
     server.requestTimeout = requestTimeoutMs;
     server.headersTimeout = requestTimeoutMs;
 
@@ -334,10 +423,15 @@ export function createServer(opts: ServerOptions): UsageServer {
     });
 
     const info = server.address() as AddressInfo | null;
-    const addresses: BoundAddress[] = [{ address: host, port: actual }];
-    if (info !== null && info.address !== host) addresses.push({ address: info.address, port: actual });
-    listeners.set(key, { server, addresses });
-    listenPort = actual;
+    const addresses: BoundAddress[] = [{ address: host, port: actual, tls }];
+    if (info !== null && info.address !== host) addresses.push({ address: info.address, port: actual, tls });
+    if (closed) {
+      // close() ran while this listener was coming up: it must not outlive the server.
+      await closeServer(server);
+      throw new Error('server is closed — not binding');
+    }
+    listeners.set(key, { server, host, tls, addresses });
+    if (!tls) listenPort = actual;
     rebuildPolicy();
     return actual;
   }
@@ -359,6 +453,12 @@ export function createServer(opts: ServerOptions): UsageServer {
     get port() {
       return listenPort;
     },
+    get tlsPort() {
+      return tlsPortNow();
+    },
+    get listeners() {
+      return listenerList();
+    },
     bus,
     events,
     get addresses() {
@@ -379,24 +479,29 @@ export function createServer(opts: ServerOptions): UsageServer {
       }
       return actual;
     },
-    async bind(host, port) {
-      const target = port ?? listenPort;
-      if (target === null) throw new Error('bind() needs a port until listen() has run');
-      return bindOne(host, target);
+    async bind(host, port, bindOpts = {}) {
+      const tls = bindOpts.tls === true;
+      const target = port ?? (tls ? tlsPortNow() : listenPort);
+      if (target === null) throw new Error('bind() needs a port until the first listener of its kind is up');
+      return bindOne(host, target, tls);
     },
     async unbind(host) {
-      const key = host.toLowerCase();
-      const entry = listeners.get(key);
-      if (entry === undefined) return;
-      listeners.delete(key);
+      const entries = [listenerKey(host, false), listenerKey(host, true)].flatMap((key) => {
+        const entry = listeners.get(key);
+        if (entry === undefined) return [];
+        listeners.delete(key);
+        return [entry];
+      });
+      if (entries.length === 0) return;
       rebuildPolicy();
-      await closeServer(entry.server);
+      await Promise.all(entries.map((entry) => closeServer(entry.server)));
     },
     setExtraHostNames(names) {
       extraHostNames = [...names];
       rebuildPolicy();
     },
     async close() {
+      closed = true;
       events.close();
       const entries = [...listeners.values()];
       listeners.clear();

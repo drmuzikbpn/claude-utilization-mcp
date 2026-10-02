@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ConfigError } from '../../src/config.js';
-import { resolveBindAddresses, TAILSCALE_KEYWORD } from '../../src/net/bind.js';
+import { LAN_KEYWORD, resolveBindAddresses, TAILSCALE_KEYWORD } from '../../src/net/bind.js';
 
 const noTailnet = async (): Promise<string | null> => null;
 const tailnet = async (): Promise<string | null> => '100.101.102.103';
@@ -85,5 +85,26 @@ describe('resolveBindAddresses', () => {
   it('uses the real resolver only when asked to', async () => {
     // No `resolveTailscale` and no keyword ⇒ nothing is ever executed.
     await expect(resolveBindAddresses(['127.0.0.1'])).resolves.toEqual(['127.0.0.1']);
+  });
+
+  it('resolves the lan keyword (§23.44)', async () => {
+    await expect(
+      resolveBindAddresses(['127.0.0.1', LAN_KEYWORD], { resolveTailscale: noTailnet, resolveLan: async () => '192.168.1.20' }),
+    ).resolves.toEqual(['127.0.0.1', '192.168.1.20']);
+  });
+
+  it('skips lan with a warning when there is no LAN address, never an error', async () => {
+    const { lines, log } = collect();
+    await expect(
+      resolveBindAddresses(['127.0.0.1', 'LAN'], { resolveTailscale: noTailnet, resolveLan: async () => null, log }),
+    ).resolves.toEqual(['127.0.0.1']);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/lan/i);
+  });
+
+  it('names both keywords in the error for a bad entry', async () => {
+    const err = await resolveBindAddresses(['wifi'], { resolveTailscale: noTailnet }).catch((e: unknown) => e);
+    expect((err as ConfigError).message).toContain('"lan"');
+    expect((err as ConfigError).message).toContain('"tailscale"');
   });
 });

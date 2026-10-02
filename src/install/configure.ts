@@ -1,6 +1,6 @@
 import { isIP } from 'node:net';
 import { networkInterfaces } from 'node:os';
-import { loadConfig, type Config } from '../config.js';
+import { ConfigError, loadConfig, validateConfig, type Config } from '../config.js';
 import { buildUnit, defaultExec, type ExecRunner } from '../service/index.js';
 import { addMcpServer, removeMcpServer } from './claude-json.js';
 import {
@@ -16,8 +16,8 @@ import { applySettings, removeSettings } from './settings-merge.js';
 
 /** `claude-usage configure` (§8, §16 pairing). */
 
-export type Toggle = 'service' | 'hook' | 'mcp' | 'statusline' | 'autoupdate';
-const TOGGLES: readonly Toggle[] = ['service', 'hook', 'mcp', 'statusline', 'autoupdate'];
+export type Toggle = 'service' | 'hook' | 'mcp' | 'statusline' | 'autoupdate' | 'lan';
+const TOGGLES: readonly Toggle[] = ['service', 'hook', 'mcp', 'statusline', 'autoupdate', 'lan'];
 
 function isToggle(v: string): v is Toggle {
   return (TOGGLES as readonly string[]).includes(v);
@@ -176,8 +176,15 @@ export async function setToggle(ctx: ResolvedContext, io: InstallIO, toggle: Tog
       config.autoUpdate = { ...config.autoUpdate, enabled: on };
       return `autoupdate ${on ? 'on' : 'off'}`;
     }
+    case 'lan': {
+      // §23.44: `bind` is read at startup, so the caller restarts the service after saving.
+      const rest = config.bind.filter((entry) => entry.trim().toLowerCase() !== 'lan');
+      config.bind = on ? [...rest, 'lan'] : rest.length > 0 ? rest : ['127.0.0.1'];
+      return `lan ${on ? 'on' : 'off'}`;
+    }
   }
 }
+
 
 async function interactiveMenu(ctx: ResolvedContext, io: InstallIO, config: Config): Promise<string[]> {
   const prompt = io.prompt;
@@ -206,7 +213,11 @@ async function interactiveMenu(ctx: ResolvedContext, io: InstallIO, config: Conf
   const changes: string[] = [];
   for (const toggle of TOGGLES) {
     const current =
-      toggle === 'autoupdate' ? config.autoUpdate.enabled : config.integrations[toggle as 'service' | 'hook' | 'mcp' | 'statusline'];
+      toggle === 'autoupdate'
+        ? config.autoUpdate.enabled
+        : toggle === 'lan'
+          ? config.bind.some((entry) => entry.trim().toLowerCase() === 'lan')
+          : config.integrations[toggle];
     const wanted = await yesNo(`${toggle}?`, current);
     if (wanted !== current) changes.push(await setToggle(ctx, io, toggle, wanted, config));
   }
@@ -246,6 +257,9 @@ export async function runConfigure(argv: readonly string[], io: InstallIO): Prom
 
     const { config } = loadConfigWithToken(ctx.configDir, io.randomToken);
     const changes: string[] = [];
+    /** Restart the service once the new config is on disk — never before (§23.44). */
+    let restart = false;
+    const bindBefore = JSON.stringify(config.bind);
 
     if (sub === undefined) {
       changes.push(...(await interactiveMenu(ctx, io, config)));
@@ -286,7 +300,7 @@ export async function runConfigure(argv: readonly string[], io: InstallIO): Prom
         // The unit embeds nothing port-specific today, but rewriting it keeps the
         // unit and config in step, and the restart picks the new port up (§8).
         await ctx.service.install(buildUnit({ nodePath: ctx.nodePath, binPath: ctx.binPath, env: ctx.env }));
-        await ctx.service.restart();
+        restart = true;
         changes.push('service unit rewritten and restarted');
       }
     } else if (sub === 'rotate-token') {
@@ -294,13 +308,26 @@ export async function runConfigure(argv: readonly string[], io: InstallIO): Prom
       changes.push('bearer token rotated — re-pair every device');
     } else {
       io.stderr(`claude-usage configure: unknown setting "${sub}"\n`);
-      io.stderr('  configure [service|hook|mcp|statusline|autoupdate] <on|off>\n');
+      io.stderr('  configure [service|hook|mcp|statusline|autoupdate|lan] <on|off>\n');
       io.stderr('  configure thresholds --warn N --critical N\n');
       io.stderr('  configure port N | rotate-token | pairing [--json] [--addr <ip>]\n');
       return 1;
     }
 
+    // Never save a config the daemon would refuse to start with (e.g. tls.port collisions).
+    try {
+      validateConfig(config);
+    } catch (err) {
+      if (err instanceof ConfigError) {
+        io.stderr(`claude-usage configure: ${err.message}\n`);
+        return 1;
+      }
+      throw err;
+    }
+    // `bind` is only read at startup (§23.44), so a changed one needs a restart too.
+    if (JSON.stringify(config.bind) !== bindBefore) restart = true;
     persistConfig(config, ctx.configDir);
+    if (restart && config.integrations.service) await ctx.service.restart();
     if (changes.length === 0) io.stdout('no changes\n');
     for (const change of changes) io.stdout(`${change}\n`);
     return 0;

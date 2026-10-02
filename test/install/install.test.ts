@@ -192,6 +192,26 @@ describe('opt-outs', () => {
     expect(b.out).toContain('append this to your own script');
   });
 
+  it('--lan appends the bind entry once (§23.44)', async () => {
+    const b = bed();
+    await b.run(['--yes', '--lan']);
+    expect(config(b)['bind']).toEqual(['127.0.0.1', 'lan']);
+    await b.run(['--yes', '--lan']);
+    expect(config(b)['bind']).toEqual(['127.0.0.1', 'lan']);
+  });
+
+  it('--yes alone does not widen reachability to the LAN, nor offer pairing', async () => {
+    let paired = 0;
+    const b = bed();
+    b.io.pair = async () => {
+      paired += 1;
+      return 0;
+    };
+    await b.run(['--yes']);
+    expect(config(b)['bind']).toEqual(['127.0.0.1']);
+    expect(paired).toBe(0);
+  });
+
   it('--tailscale appends the bind entry once', async () => {
     const b = bed();
     await b.run(['--yes', '--tailscale']);
@@ -210,7 +230,7 @@ describe('opt-outs', () => {
 
 describe('confirmation', () => {
   it('asks about each item and honours scripted answers', async () => {
-    const scripted = scriptedPrompter([true, false, false, true]);
+    const scripted = scriptedPrompter([true, false, false, true, true, false]);
     const b = bed({ settings: 'settings-empty.json', prompt: scripted.prompt, isTTY: true });
     expect(await b.run([])).toBe(0);
     expect(scripted.questions).toEqual([
@@ -218,10 +238,39 @@ describe('confirmation', () => {
       'Claude Code hooks?',
       'MCP server?',
       'status line?',
+      'LAN access for the iPhone app?',
+      'Open the pairing page now?',
     ]);
     expect(config(b)['integrations']).toEqual({ service: true, hook: false, mcp: false, statusline: true });
     expect(settings(b)['hooks']).toBeUndefined();
     expect(settings(b)['statusLine']).toBeDefined();
+  });
+
+  it('LAN defaults to yes interactively, and the pairing page is offered and opened', async () => {
+    const scripted = scriptedPrompter([true, true, true, false]); // LAN + pairing: defaults
+    const b = bed({ settings: 'settings-empty.json', prompt: scripted.prompt, isTTY: true });
+    let paired = 0;
+    b.io.pair = async () => {
+      paired += 1;
+      return 0;
+    };
+    expect(await b.run([])).toBe(0);
+    expect(config(b)['bind']).toEqual(['127.0.0.1', 'lan']);
+    expect(paired).toBe(1);
+  });
+
+  it('declining LAN skips the pairing offer — loopback-only cannot pair', async () => {
+    const scripted = scriptedPrompter([true, true, true, false, false]);
+    const b = bed({ settings: 'settings-empty.json', prompt: scripted.prompt, isTTY: true });
+    let paired = 0;
+    b.io.pair = async () => {
+      paired += 1;
+      return 0;
+    };
+    expect(await b.run([])).toBe(0);
+    expect(config(b)['bind']).toEqual(['127.0.0.1']);
+    expect(scripted.questions).not.toContain('Open the pairing page now?');
+    expect(paired).toBe(0);
   });
 
   it('fails on a non-TTY without --yes, and changes nothing', async () => {

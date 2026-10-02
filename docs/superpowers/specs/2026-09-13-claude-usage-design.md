@@ -530,6 +530,24 @@ QA from the Android dashboard, and two Macs in daily use.
 | §23.29 | A second `install` aborted on its own idempotency (2026-09-15) |
 | §23.30 | The ssh-install diagnosis was wrong (2026-09-15) |
 | §23.31 | An account switch kept serving the previous account's limits (2026-09-16) |
+| §23.32 | An upstream 429 is its own error, and `Retry-After` is honoured (2026-09-25) |
+| §23.33 | Staying under the usage endpoint's budget (2026-09-25) |
+| §23.34 | An honest User-Agent on the usage call (2026-09-25) |
+| §23.35 | Limits state transitions are logged at the default level (2026-09-26) |
+| §23.36 | Headline limits from Claude Code's statusline input (2026-09-26) |
+| §23.37 | `legacyWindows` follows observations; a lapse is pushed (2026-09-26) |
+| §23.38 | Incremental scans skip unchanged transcripts; flushes have a floor (2026-09-26) |
+| §23.39 | SSE back-pressure is a `false` write, not a non-empty buffer (2026-09-27) |
+| §23.40 | Old readings, reset windows and per-row `stale` (2026-09-27) |
+| §23.41 | The hook names the day of a far-off reset (2026-09-28) |
+| §23.42 | Observations survive a restart (2026-09-28) |
+| §23.43 | A closed stdout pipe is not a crash (2026-09-28) |
+| §23.44 | The `lan` bind keyword, re-resolved automatically (2026-10-01) |
+| §23.45 | HTTPS listener with a self-signed, pinned certificate (2026-10-01) |
+| §23.46 | Host policy accepts the `.local` name (2026-10-01) |
+| §23.47 | One-time pairing code: `POST /v1/pair/code`, `POST /v1/pair` (2026-10-01) |
+| §23.48 | `/health.install` and the `claude-usage pair` page (2026-10-01) |
+| §23.49 | Deferred (2026-10-01) |
 
 15 findings survived a 3-vote adversarial review (56 unique candidates). Where Part I
 conflicts with this section, this section wins.
@@ -767,8 +785,10 @@ keeps `freezes`; only ending the pause resets the counter.
 
 ## 23.17 Release-tag namespace shared with the Android dashboard (2026-09-14)
 
-The Android dashboard (`usage-deck`) lives in this repo on an orphan branch and publishes its
-APK from the same GitHub Releases both updaters read. Two artifacts, one release feed, so the
+The Android dashboard lives in this repo on the orphan branch `usage-android` (formerly
+`usage-deck`; its release tags stay `deck-`) and publishes its APK from the same GitHub
+Releases both updaters read. The iOS/watch app lives on `usage-ios` and publishes to TestFlight
+only — no GitHub Release. Two artifacts, one release feed, so the
 tags are namespaced:
 
 | Artifact | Tag | Assets | Flag |
@@ -780,7 +800,7 @@ tags are namespaced:
   correctly published APK release is invisible to it. The dashboard's checker considers only
   `deck-` tags.
 - **Belt and braces:** `check()` also skips any tag matching `FOREIGN_TAG_PREFIXES`
-  (`deck-`, case-insensitive) and reports it as *no update available*, not as an error. An
+  (`deck-`, and `ios-` as belt and braces for the iOS app, case-insensitive) and reports it as *no update available*, not as an error. An
   error would be worse than useless: `/releases/latest` returns exactly one release, so a
   mis-flagged APK would both fail the check and hide the next real daemon release behind a
   persistent "malformed release" state.
@@ -1535,3 +1555,141 @@ closed the pipe while the CLI was still writing. `main()` now installs
 error. This also covers `mcp` whose client has gone and a hook whose reader closed early, which must exit 0 regardless.
 
 **Test-first, per Part III:** `test/cli.test.ts`, "stdout closed early".
+
+### §23.44 The `lan` bind keyword, re-resolved automatically (2026-10-01)
+
+The iPhone/watch app must work on the same Wi-Fi without Tailscale. `config.bind` gains a second
+keyword, `lan`, next to `tailscale`.
+
+- **Resolution.** `lan` is the first non-internal RFC 1918 IPv4 address (`10/8`, `172.16/12`,
+  `192.168/16`) in `os.networkInterfaces()` order, on an interface whose name does not match
+  `^(bridge|br-|virbr|vmnet|vboxnet|docker|utun|tun|tap|wg|awdl|llw|lo)` — those are VM and
+  container bridges, VPN tunnels (incl. WireGuard) and Apple's peer-to-peer links, never the
+  network a phone is on. No subprocess. Nothing found ⇒ a warning
+  and a skipped entry, never an error (§16's rule for `tailscale`).
+- **Automatic rebind.** §23.21's retry is generalised from `tailscale` to every keyword entry:
+  while any wanted keyword address is missing or unbound, `reload()` re-runs on the backoff
+  timer. On top of that, while `lan` is configured, a 30 s timer (`LAN_WATCH_MS`) re-reads
+  `os.networkInterfaces()` — cheap, no subprocess — and calls `reload()` when the `lan` address
+  moved (Wi-Fi change, DHCP renewal, laptop moved between networks). `SIGHUP` still works.
+  Both timers are `unref`ed and cleared on stop.
+- **Install.** `install --lan` adds `lan` to `config.bind`. Interactive install asks
+  `LAN access for the iPhone app?` with **default yes**; `--yes` alone does **not** enable it
+  (a scripted install must not widen reachability unasked). `configure lan on|off` toggles it
+  later and restarts the service when one is installed, because `bind` is read at startup.
+- **Plain HTTP stays** on the LAN address as on every bound address (Android deck emulator
+  compatibility); everything off-loopback still needs the bearer (§16).
+
+**Test-first, per Part III:** `test/net/lan.test.ts` (resolution rules), `test/net/bind.test.ts`
+(keyword), `test/net/daemon-network.test.ts` (rebind on move, retry while missing).
+
+### §23.45 HTTPS listener with a self-signed, pinned certificate (2026-10-01)
+
+A phone on Wi-Fi is on a network the user does not control; the bearer must not cross it in the
+clear. The daemon adds TLS without any dependency.
+
+- **Key and certificate.** `src/net/tls.ts` generates an ECDSA P-256 key once
+  (`crypto.generateKeyPairSync`) and keeps it: `tls-key.pem` and `tls-cert.pem`, both 0600 in
+  the config directory. The X.509 v3 certificate is built by a small stdlib DER writer
+  (`src/net/x509.ts`) and signed with `crypto.sign('sha256', …)`: self-signed, `CN=claude-usage
+  <name>`, 825-day validity, `basicConstraints CA:FALSE`, `keyUsage digitalSignature`,
+  `extKeyUsage serverAuth`, `subjectAltName` = `localhost`, `127.0.0.1`, and the `.local` name
+  when known (Apple's TLS server-certificate rules, so the cert is acceptable even to code that
+  evaluates it normally). A certificate within 30 days of expiry, unreadable, or not matching
+  the key is **re-issued with the same key**, so the pin survives.
+- **Pin.** The fingerprint is the lowercase hex SHA-256 of the SubjectPublicKeyInfo DER.
+  Clients pin it; hostname and CA are irrelevant to them. Rotating it means deleting the two
+  files and restarting (paired apps must re-pair). `configure rotate-cert` is deferred.
+- **Listeners.** TLS is a per-listener flag. Every bound address keeps plain HTTP on `port`;
+  every **non-loopback** bound address (`lan`, `tailscale`, literals) also gets an
+  `https.createServer` on `tls.port` (default `port + 1`; `0` when `port` is `0`) running the
+  same request handler. `tls.loopback: true` (tests/CI only) adds HTTPS on loopback too. A TLS
+  bind failure is logged and skipped like a secondary HTTP bind; it never stops the daemon.
+  `unbind`, `SIGHUP` and the Host policy apply to TLS listeners exactly as to HTTP ones.
+  `daemon.json` records `tlsPort` (or `null`).
+- **Config.** `tls: { port: number | null, loopback: boolean }`, both optional.
+
+**Test-first, per Part III:** `test/net/x509.test.ts` (round-trip through
+`crypto.X509Certificate`, fingerprint, `openssl` agreement when present),
+`test/net/tls.test.ts` (0600 files, key kept, re-issue), `test/server/tls-listen.test.ts`.
+`test/fixtures/tls/cert.der` + `fingerprint.txt` is a throwaway cert produced by this writer and
+shared with the iOS app's pinning tests; its key is not committed.
+
+### §23.46 Host policy accepts the `.local` name (2026-10-01)
+
+Bonjour advertising was cut in review: no `dns-sd`/`avahi` child process. Instead the pairing
+link carries the machine's `.local` name as an address candidate, so the Host allowlist must
+accept it.
+
+- While `lan` is configured, the daemon resolves `<LocalHostName>.local` — `scutil --get
+  LocalHostName` on macOS (2 s timeout), else the first label of `os.hostname()` — and adds it
+  to the allowlist next to the MagicDNS name. Re-resolved by `reload()`.
+- The LAN IP needs nothing new: it is a bound address. Ports in the policy include `tls.port`.
+- The `.local` name is visible to anything on the LAN through mDNS anyway (macOS answers for
+  it); it is not a secret, and the bearer still gates everything.
+
+**Test-first, per Part III:** `test/net/lan.test.ts`, `test/net/daemon-network.test.ts`.
+
+### §23.47 One-time pairing code (2026-10-01)
+
+A QR code that carries the bearer is a password on a screen — screenshots, screen shares,
+shoulder surfing. The v2 pairing link carries a **one-time code** instead, redeemed over TLS.
+
+- `POST /v1/pair/code` — bearer **and** loopback required (non-loopback ⇒ 403 `forbidden`).
+  Mints a 128-bit code (`randomBytes(16)`, base64url, 22 chars), held only in daemon memory,
+  expiring after 5 min. Minting replaces any unused code. Answers `{ code, expiresAt, link,
+  name, addrs, port, fp }`, where `link` is
+  `usagedeck://pair?v=2&name=…&addrs=…&port=<tls.port>&fp=<64 hex>&code=…` and `addrs` lists
+  the TLS-bound addresses in order: LAN IPv4, `<LocalHostName>.local`, tailnet IPv4, other
+  literals, loopback last. No TLS listener at all ⇒ 409 `conflict`, hint
+  `claude-usage configure lan on`.
+- `POST /v1/pair` `{ code }` — **no bearer: the one documented exception** to "every mutating
+  endpoint requires the bearer". TLS listeners only (plain HTTP ⇒ 403 `forbidden`, hint
+  `pair over https`). Valid ⇒ 200 `{ token, name, fp }` and the code is burned. Unknown,
+  expired or used ⇒ 401 `unauthorized` (`pairing code is invalid or expired`, hint
+  ``run `claude-usage pair` again``). More than 5 failures in a minute from one remote address
+  ⇒ 429 `rate_limited` for the rest of that minute, even for a correct code. Comparison is
+  constant-time over SHA-256 digests. The code and token are never logged.
+- Why the exception is safe: the code is single-use, short-lived, 128-bit, minted only by
+  someone already holding the bearer on the machine itself, and only redeemable over a channel
+  the client has pinned from the same QR.
+- `configure pairing` is unchanged (v1 JSON with the bearer, for the Android deck).
+
+**Test-first, per Part III:** `test/server/pairing.test.ts`.
+
+### §23.48 `/health.install` and the `claude-usage pair` page (2026-10-01)
+
+- **`/health.install`** — so the app's setup check is definitive rather than inferred:
+  `{ hooks: boolean, statusline: "ours" | "includes-ours" | "other" | "none",
+  mcp: boolean | null, listeners: [{ addr, port, tls }] }`. `hooks` is true when every §17.1
+  event has our group in `~/.claude/settings.json`; `statusline` is `ours` when
+  `statusLine.command` is our command, `includes-ours` when it mentions `claude-usage` or names
+  a small script file that does, `other`, or `none`; `mcp` is whether `~/.claude.json` has
+  `mcpServers["claude-usage"]` (`null` when unreadable). File reads are cached for 60 s;
+  `listeners` is live. Never throws; never contains a path. REST `/health` only — the SSE
+  `snapshot` event (§19) builds its own payload and does not carry it; clients read it from
+  `/health`.
+- **`claude-usage pair`** — CLI-only, lazily imported, never in the daemon's import graph.
+  Mints a code through loopback `POST /v1/pair/code` with the bearer from `config.json`,
+  renders the link as an SVG QR with the vendored QRCode matrix code (`vendor/qrcode/`, from
+  `qrcode-terminal` 0.12.0, licence headers kept), and serves one HTML page from
+  `127.0.0.1` only, at a random 128-bit path, **once**: the first GET gets the page, everything
+  else (any other path, a second GET, a non-loopback peer) gets 404. Every response is
+  `Cache-Control: no-store`. The page shows the QR, short steps, the TestFlight link when
+  `TESTFLIGHT_URL` is set, the GitHub link, and "treat this like a password; if it was shown on
+  a call, run `claude-usage pair` again" (which mints a new code and voids the old one). The
+  page URL is a capability, so it never goes into argv (visible through `ps`) or the terminal:
+  `open` / `xdg-open` is given a 0600 redirect file in a fresh 0700 temp directory, and the
+  fallback prints that file's path. The page server closes, and the redirect file is deleted,
+  on Enter, Ctrl-C, or after 5 min. The code itself is never written to disk or printed.
+- `install` ends by offering it (`Open the pairing page now?`, interactive default yes; `--yes`
+  does not) when the daemon is healthy and has a non-loopback bind.
+
+**Test-first, per Part III:** `test/server/install-state.test.ts`, `test/install/pair.test.ts`.
+
+### §23.49 Deferred (2026-10-01)
+
+Recorded so they are not mistaken for oversights: a push relay (APNs) for real-time alerts and
+complications; daemon-side `escalateAfter` (soft → hard after N s without a client awake);
+the Android deck accepting the v2 pairing link and HTTPS; `configure rotate-cert`; remote access
+without a VPN.
