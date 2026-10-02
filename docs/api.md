@@ -23,6 +23,7 @@ sharing one handler.
 - [`GET /v1/sessions`](#get-v1sessions)
 - [Session lifecycle endpoints](#session-lifecycle-endpoints)
 - [Pause and resume](#pause-and-resume)
+- [Pairing — `POST /v1/pair/code`, `POST /v1/pair`](#pairing)
 - [`GET /v1/events` (SSE)](#get-v1events-sse)
 - [`limits[]` normalization](#limits-normalization)
 - [`since` and `groupBy`](#since-and-groupby)
@@ -30,13 +31,24 @@ sharing one handler.
 
 ## The request gate
 
+**Listeners (§23.45).** Plain HTTP on `port` (47291) on every bound address. Every
+non-loopback bound address also gets HTTPS on `tls.port` (default `port + 1`, 47292),
+running the same handler and gate, with a self-signed ECDSA P-256 certificate. Clients pin
+`fp`, the lowercase hex SHA-256 of the certificate's SubjectPublicKeyInfo DER:
+
+```bash
+openssl s_client -connect 192.168.1.20:47292 </dev/null 2>/dev/null \
+  | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | shasum -a 256
+```
+
 Every request passes through the same gate, in this order
 (`src/server/middleware.ts`):
 
 1. **Loopback detection** — from the socket's remote address (`127.0.0.0/8`, `::1`,
    IPv4-mapped forms). Never from a header.
 2. **Host allowlist** — the `Host` header's hostname must be `localhost`, `127.0.0.1`,
-   `::1`, an address the daemon is bound to, or the machine's MagicDNS name. If it carries
+   `::1`, an address the daemon is bound to, the machine's MagicDNS name, or its
+   `<LocalHostName>.local` name while `bind` has `lan`. If it carries
    a port, that port must be one we listen on. Otherwise **`421 misdirected_request`**.
    (`0.0.0.0` / `::` are never accepted as a `Host` value even when bound.)
 3. **Origin** — any request carrying an `Origin` header at all is **`403 forbidden`**.
@@ -44,6 +56,8 @@ Every request passes through the same gate, in this order
    - loopback + `GET`/`HEAD` → **no token required**;
    - loopback + `POST` to `/v1/sessions/register`, `/v1/sessions/{id}/heartbeat`,
      `/v1/sessions/{id}/end` → **no token required** (see the deviations section);
+   - `POST /v1/pair` from anywhere → **no token required**; the route itself demands HTTPS
+     and a one-time code ([Pairing](#pairing));
    - everything else → `Authorization: Bearer <config.auth.token>`, compared in constant
      time over sha256 digests. Missing or wrong → **`401 unauthorized`**. An empty
      configured token never matches anything.
@@ -55,6 +69,8 @@ Every request passes through the same gate, in this order
 | `POST /v1/pause` from `127.0.0.1`, no token | 401 |
 | Any request with `Origin:` | 403 |
 | `Host: evil.test` | 421 |
+| `POST /v1/pair` over HTTPS, no token, valid code | 200 |
+| `POST /v1/pair` over plain HTTP | 403 |
 
 ## Error envelope
 
@@ -119,7 +135,17 @@ Auth: loopback GET exempt. `HEAD` allowed.
               "state": "disabled", "deferredReason": null },
   "stats": { "filesTracked": 4, "eventsIndexed": 4, "parseErrors": 1,
              "lastScanAt": "2026-09-13T19:29:06.194Z", "spendReady": true,
-             "scan": { "filesDone": 4, "filesTotal": 4, "bytesDone": 6099, "bytesTotal": 6099 } }
+             "scan": { "filesDone": 4, "filesTotal": 4, "bytesDone": 6099, "bytesTotal": 6099 } },
+  "install": {
+    "hooks": true,
+    "statusline": "includes-ours",
+    "mcp": true,
+    "listeners": [
+      { "addr": "127.0.0.1",    "port": 47291, "tls": false },
+      { "addr": "192.168.1.20", "port": 47291, "tls": false },
+      { "addr": "192.168.1.20", "port": 47292, "tls": true }
+    ]
+  }
 }
 ```
 
@@ -128,6 +154,14 @@ Auth: loopback GET exempt. `HEAD` allowed.
   `null`. No tokens or credentials are ever in this object.
 - `stats.eventsIndexed` is the number of dedup keys held; `stats.scan` is present while a
   token store is attached.
+- `install` (§23.48) says what the iPhone app's setup check needs to know. `hooks`: every
+  hook event has our group in `~/.claude/settings.json`. `statusline`: `ours` means
+  `statusLine.command` is our command; `includes-ours` means it mentions `claude-usage`
+  inline or in a small script file; otherwise `other` or `none`. `mcp`: whether
+  `~/.claude.json` has `mcpServers["claude-usage"]`, or `null` when that file cannot be read.
+  `listeners` is live and lists every listener the daemon asked for. File reads are cached
+  for 60 s. The block never throws and never contains a path. The SSE `snapshot` carries
+  the same object. Its presence means the daemon supports v2 pairing.
 - `update.state` is one of `idle | checking | downloading | verifying | ready | deferred |
   disabled`. Today it is always `disabled` (see deviations).
 
@@ -464,6 +498,54 @@ Hard-freeze refusals, before any rule is created:
 `400` bodies are rejected the same way everywhere: a body that is not a JSON object (or
 over 64 KiB) → `{ "error": { "code": "bad_request", "message": "body must be a JSON
 object" } }`.
+
+## Pairing
+
+The v2 pairing flow (§23.47) gives a phone the bearer without the bearer ever appearing in
+a QR code.
+
+### `POST /v1/pair/code`
+
+Auth: bearer **and** loopback (`403 forbidden` from anywhere else). `claude-usage pair` is
+the caller. It mints a 128-bit, single-use code that expires in 5 minutes and voids any
+unused one.
+
+```json
+{
+  "code": "Q2xhdWRlVXNhZ2VQYWlyMQ",
+  "expiresAt": "2026-10-01T18:05:00.000Z",
+  "link": "usagedeck://pair?v=2&name=studio&addrs=192.168.1.20%2Cstudio.local%2C100.101.102.103&port=47292&fp=eeeb5db7…1a27&code=Q2xhdWRlVXNhZ2VQYWlyMQ",
+  "name": "studio",
+  "addrs": ["192.168.1.20", "studio.local", "100.101.102.103"],
+  "port": 47292,
+  "fp": "eeeb5db71defbf5a8dcd133e886b617f68a2cdfb8853e0b46ac1da446bdc1a27"
+}
+```
+
+`addrs` lists only addresses that have an HTTPS listener, best first: LAN IPv4, the
+`.local` name (only when the LAN address is listed), the tailnet IPv4, other literals, and
+loopback last. The link's query parameters always come in this order: `v=2`, then `name`
+and `addrs` (both percent-encoded), `port` (the TLS port), `fp` (64 hex), `code` (22
+base64url chars). It never contains the bearer. No HTTPS listener at all ⇒
+`409 conflict`, hint ``enable LAN access with `claude-usage configure lan on` ``.
+
+### `POST /v1/pair`
+
+Auth: **none**, the one documented exception (`docs/security.md` §1b). HTTPS listeners
+only: plain HTTP gets `403 forbidden` with hint `pair over https`, and the code survives.
+
+```
+POST /v1/pair    { "code": "Q2xhdWRlVXNhZ2VQYWlyMQ" }
+200              { "token": "<bearer>", "name": "studio", "fp": "eeeb…1a27" }
+```
+
+The code is burned on success. If the code is unknown, expired or already used, the
+response is `401 unauthorized` with message `pairing code is invalid or expired` and hint
+``run `claude-usage pair` again``. After 5 failures in a minute from one remote address,
+the rest of that minute gets `429 rate_limited`, even for a valid code.
+
+`configure pairing` is unchanged and still prints the v1 JSON, bearer included, for the
+Android dashboard.
 
 ## `GET /v1/events` (SSE)
 

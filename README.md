@@ -50,6 +50,7 @@ node bin/claude-usage install
 | `--no-mcp` | do not register the MCP server |
 | `--statusline` | also set `statusLine` (only if you do not already have one) |
 | `--tailscale` | add `"tailscale"` to `config.bind` so the daemon listens on the tailnet |
+| `--lan` | add `"lan"` to `config.bind` for the iPhone app on the same Wi-Fi (an interactive install asks, default yes; `--yes` alone does not add it) |
 | `--linger` | systemd only: `loginctl enable-linger` so the daemon survives logout |
 
 Uninstall: `claude-usage uninstall` (add `--purge` to delete config and state too).
@@ -236,25 +237,58 @@ Whatever it would do next is stopped at the same gate soft pause uses.
 > kills the command that was in flight — the session survives and sees a timeout error.
 > Short freezes are lossless; hold one for minutes and expect to lose the running tool.
 
-Other subcommands: `serve [--verbose]`, `install`, `configure`, `uninstall`, `mcp`,
+Other subcommands: `serve [--verbose]`, `install`, `configure`, `pair`, `uninstall`, `mcp`,
 `hook`, `statusline`, `observe`, `--version`, `help`.
 
-## Remote dashboard (Tailscale)
+## Remote dashboard (iPhone, Apple Watch, Android)
 
-The daemon can serve a second address on your tailnet so a phone or tablet can watch and
-control sessions.
+A phone can watch your limits and pause sessions. The iPhone app (with its Apple Watch
+companion) talks to the daemon over your **Wi-Fi**, encrypted, with nothing else to install.
+Tailscale is optional — use it to reach the daemon when you are away from home.
+
+```bash
+claude-usage install --lan       # or answer yes to "LAN access for the iPhone app?"
+claude-usage pair                # opens a one-time QR page in your browser
+```
+
+`claude-usage pair` asks the daemon for a **one-time pairing code** (valid 5 minutes, used
+once) and opens a page on this machine showing it as a QR code. Point the iPhone Camera at
+it and tap **Open in Usage Deck**. The app trades the code for the bearer token over HTTPS
+and pins the daemon's certificate, so the QR never carries the token itself. The page can be
+viewed once, from this machine only, and closes on Enter, Ctrl-C or after 5 minutes. If the
+QR was visible on a call or a screen share, run `claude-usage pair` again — that voids it.
+
+How it works:
+
+- **`lan`** in `config.bind` is this machine's private Wi-Fi/Ethernet address
+  (`192.168.x`, `10.x`, `172.16–31.x`; never a VM bridge or VPN tunnel). The daemon notices
+  when it changes, such as moving to another network, and rebinds within 30 seconds.
+  `claude-usage configure lan on|off` toggles it later.
+- **HTTPS.** Every non-loopback address also gets an HTTPS listener on `port + 1` (47292),
+  with a self-signed certificate generated once and kept in the config directory. Apps pin
+  its key fingerprint; the certificate's issuer and host name do not matter to them. Plain
+  HTTP stays on every address too, for the Android dashboard.
+- **`<your-mac>.local`** is accepted as a `Host`, and the pairing link offers it next to the
+  IP address.
+- **`/health.install`** tells the app whether the hooks, the status line and the MCP server
+  are set up, so its setup check can name the fix.
+
+### Tailscale (optional)
 
 ```bash
 claude-usage install --tailscale        # or: edit config.bind to ["127.0.0.1", "tailscale"]
-claude-usage configure pairing          # prints the pairing JSON + a terminal QR code
+claude-usage configure pairing          # v1 pairing JSON + terminal QR (Android dashboard)
 claude-usage configure pairing --json   # JSON only
 ```
 
-`bind` entries are IP literals or the keyword `tailscale`, resolved at startup to the
-first IPv4 interface address inside `100.64.0.0/10` (falling back to `tailscale ip -4`).
-No tailnet → a warning and loopback only. `SIGHUP` re-resolves without a restart.
+`bind` entries are IP literals or the keywords `tailscale` and `lan`. `tailscale` resolves to
+the first IPv4 interface address inside `100.64.0.0/10` (falling back to `tailscale ip -4`).
+An address that cannot be found gives a warning, and the daemon keeps retrying it.
+`SIGHUP` re-resolves without a restart. The tailnet address gets HTTPS too, so
+`claude-usage pair` lists it as a second address the iPhone can use when it is away from home.
 
-The pairing payload:
+The Android dashboard still pairs with `configure pairing`, whose v1 payload carries the
+bearer token itself. Treat that QR like a password:
 
 ```json
 { "v": 1, "name": "alans-mbp", "addr": "100.101.102.103", "port": 47291, "token": "…" }
@@ -264,12 +298,15 @@ The pairing payload:
 
 - A 32-byte random bearer token is minted at install and stored in `config.json` (`0600`).
   `claude-usage configure rotate-token` replaces it; every paired device must re-pair.
+- The one exception to "mutating requests need the token" is `POST /v1/pair`. It accepts
+  only a one-time pairing code that `claude-usage pair` minted, only over HTTPS, and stops
+  answering a sender after 5 failures in a minute.
 - **Loopback GET/HEAD needs no token** — that is what keeps the hook, the status line and
   `curl localhost` zero-config. Everything else — every non-loopback request, every
   mutating request even from loopback — requires `Authorization: Bearer <token>`, compared
   in constant time.
 - The `Host` header must name an address the daemon is actually bound to (or `localhost`,
-  or the machine's MagicDNS name); anything else is `421`. Any request carrying an `Origin`
+  or the machine's MagicDNS or `.local` name); anything else is `421`. Any request carrying an `Origin`
   header is `403`. No CORS headers are ever sent. That is the anti-DNS-rebinding story.
 - No endpoint ever returns a credential. The OAuth access token is read, used for one
   read-only GET and never stored, logged or serialized; `/v1/config` redacts the bearer
@@ -305,7 +342,7 @@ load/save round-trip. An invalid value is an error naming the key.
 | --- | --- | --- |
 | `name` | `os.hostname()` | label the dashboard shows for this machine |
 | `port` | `47291` | HTTP port (0–65535) |
-| `bind` | `["127.0.0.1"]` | IP literals and/or the keyword `tailscale` |
+| `bind` | `["127.0.0.1"]` | IP literals and/or the keywords `tailscale`, `lan` |
 | `auth.token` | `""` | bearer token; minted by `install`, `0600` |
 | `pollIntervalMs` | `300000` | limits poll interval (1 000 – 86 400 000; values under 120 000 are raised to 120 000) |
 | `thresholds.warn` | `80` | percent at which a limit becomes `warn` (0–100) |
@@ -321,6 +358,8 @@ load/save round-trip. An invalid value is an error naming the key.
 | `autoUpdate.intervalMs` | `600000` | release-check interval (1 000 – 86 400 000) |
 | `autoUpdate.repo` | `drmuzikbpn/claude-utilization-mcp` | release source; override for forks |
 | `events.maxClients` | `16` | concurrent SSE streams (1–4096) |
+| `tls.port` | `null` | HTTPS port for non-loopback addresses; `null` means `port + 1` |
+| `tls.loopback` | `false` | also serve HTTPS on loopback (tests and CI only) |
 
 Scriptable edits:
 

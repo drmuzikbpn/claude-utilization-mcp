@@ -5,6 +5,23 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 ## [Unreleased]
 
 ### Added
+- **iPhone app over Wi-Fi, no Tailscale needed.** A new `lan` bind keyword selects this
+  machine's private Wi-Fi/Ethernet address and follows it across network changes. Turn it
+  on with `install --lan` (an interactive install asks, default yes) or
+  `configure lan on|off` (§23.44).
+- HTTPS on `port + 1` for every non-loopback address. The certificate is self-signed and
+  pinned, and is built with no dependencies. Its key is generated once and kept, so apps
+  stay paired across restarts and certificate renewals. Plain HTTP is unchanged (§23.45).
+- The machine's `.local` name is accepted as a `Host` (§23.46).
+- One-time pairing codes. `POST /v1/pair/code` mints one; it needs the bearer and must come
+  from loopback. `POST /v1/pair` trades a code for the bearer over HTTPS only: each code
+  works once, expires after 5 minutes, and a sender is cut off after 5 failures in a
+  minute (§23.47).
+- `claude-usage pair` opens a one-time browser page showing the pairing QR code. The page
+  is served once, from loopback only, and the QR never carries the bearer. `install` offers
+  to open it at the end (§23.48).
+- `/health.install` reports whether the hooks, status line and MCP server are set up, and
+  lists the live listeners (§23.48).
 - Live headline limits without spending the usage endpoint's budget: `claude-usage observe`
   (and `claude-usage statusline`, automatically) forwards the `rate_limits` Claude Code passes
   its statusline to the new `POST /v1/limits/observed`. `session` / `weekly_all` are served
@@ -16,6 +33,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   up to an hour for the next poll (§23.37).
 
 ### Fixed
+- `configure port` restarted the service before saving the new port; it now saves first.
+- `ios-` release tags are ignored by the updater, like `deck-` (§23.17).
 - `claude-usage status | head` (or any reader that stops early) no longer prints an `EPIPE`
   stack trace; the CLI exits 0 quietly (§23.43).
 - A daemon restart, such as each auto-update, no longer briefly serves hours-old limit
