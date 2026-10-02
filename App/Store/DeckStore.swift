@@ -72,6 +72,9 @@ final class DeckStore {
     @ObservationIgnored private var observers: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var states: [String: DeviceState] = [:]
     @ObservationIgnored private(set) var isForeground = false
+    /// How many times the app has left the foreground; a pairing attempt that spans one was
+    /// interrupted (a system alert, usually) and does not count against its retry window.
+    @ObservationIgnored private var resigns = 0
     @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private var chipTask: Task<Void, Never>?
     @ObservationIgnored private var toastTask: Task<Void, Never>?
@@ -163,6 +166,9 @@ final class DeckStore {
     func setActive(_ active: Bool) {
         guard active != isForeground else { return }
         isForeground = active
+        if !active {
+            resigns += 1
+        }
         let all = Array(clients.values)
         if active {
             for client in all {
@@ -559,7 +565,8 @@ final class DeckStore {
         let reuse = replacing.flatMap { id in records.contains { $0.id == id } ? id : nil }
             ?? records.first { $0.fingerprint == invite.fingerprint }?.id
         do {
-            let config = try await PairingClient(invite: invite).redeem(invite, id: reuse ?? UUID().uuidString)
+            let config = try await PairingClient(invite: invite)
+                .redeem(invite, id: reuse ?? UUID().uuidString, patience: pairingPatience)
             try tokens.setToken(config.token, for: config.id)
             var record = config.record
             if let old = records.first(where: { $0.id == record.id }) {
@@ -586,6 +593,21 @@ final class DeckStore {
         } catch {
             pairingError = DaemonError.from(transport: error).userMessage
             showPairing = true
+        }
+    }
+
+    /// A first pairing is also the first LAN request, so iOS asks for Local Network access in
+    /// the middle of it and fails the request meanwhile. Redeem waits out the question (the alert
+    /// takes the app out of the foreground) and tries the unspent code again.
+    private var pairingPatience: PairingPatience {
+        var seen = resigns
+        return PairingPatience(window: 12) { @MainActor [weak self] in
+            guard let self else { return false }
+            while !isForeground, !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(200))
+            }
+            defer { seen = resigns }
+            return resigns != seen
         }
     }
 

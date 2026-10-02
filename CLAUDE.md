@@ -76,6 +76,10 @@ fixture both sides must hash identically.
   `NSAllowsArbitraryLoads`, ever.
 - Pairing link (`usagedeck://pair?v=2&name&addrs&port&fp&code`) carries a one-time code, never the
   bearer; `PairingClient` redeems it with `POST /v1/pair` (the one bearer-less endpoint).
+- A first pairing is the first LAN request, so iOS shows the Local Network question mid-redeem
+  and fails that request. `redeem(patience:)` retries only when no address answered (the code is
+  unspent), waits while the app is inactive (the alert is up) and gives the answer a fresh 12 s
+  window. A daemon refusal is never retried.
 - Devices are reached through the ordered `addrs` candidate list (`Endpoints`): last-good first,
   then pairing order; only transport failures move on, an HTTP error from a daemon that answered
   is final. Bonjour is cut.
