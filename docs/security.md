@@ -1,7 +1,7 @@
 # Security model
 
 `claude-usage` runs as your user, reads your Claude Code credentials, and — when you ask
-it to — listens on your tailnet and can stop your processes. This document says what it
+it to — listens on your LAN or tailnet and can stop your processes. This document says what it
 defends against, what it does not, and where the sharp edges are.
 
 ## Threat model
@@ -23,6 +23,58 @@ accidentally open.
 hard-freeze every session on the machine. Treat the pairing QR like a password. Rotate with
 `claude-usage configure rotate-token` (every paired device must re-pair).
 
+### 1a. Anything else on the LAN (§23.44, §23.45)
+
+`config.bind: ["127.0.0.1", "lan"]` puts the daemon on your Wi-Fi so the iPhone app can reach
+it. Everything in §1 applies, and a Wi-Fi network has a wider audience than a tailnet:
+guests, IoT devices, the café you take the laptop to. `lan` only ever picks an RFC 1918
+address, never a VM bridge or VPN tunnel. When you take the laptop to another network, the
+daemon listens there too, on that network's private address.
+
+**Defence:**
+
+- The bearer still gates every non-loopback request.
+- **TLS.** Every non-loopback address also has an HTTPS listener (`tls.port`, default
+  `port + 1`). The ECDSA P-256 key is generated once, kept at `0600`, and its SPKI SHA-256
+  fingerprint reaches the app inside the pairing QR. The app pins that fingerprint and trusts
+  nothing else, so a machine on the same Wi-Fi can neither read the bearer nor impersonate
+  the daemon. To rotate the key, delete `tls-key.pem` and `tls-cert.pem` and restart the
+  daemon. Every app must then pair again.
+- **Plain HTTP is still served on every bound address**, LAN included, because the Android
+  dashboard has no TLS yet. Do not pair an Android device over a network you do not trust:
+  its bearer travels in the clear. The iPhone app uses HTTPS only.
+
+**Visible on the network:** the machine's `.local` name, which macOS already announces over
+mDNS, and the fact that ports 47291/47292 are open. The `.local` name goes in the pairing
+link because the app can use it as an address.
+
+### 1b. The pairing code — the one bearer-less mutating endpoint (§23.47)
+
+`POST /v1/pair` trades a code for the bearer **without** a bearer. It is the only mutating
+endpoint that works that way, so its rules are strict:
+
+- Codes are minted only by `POST /v1/pair/code`, which needs the bearer **and** loopback,
+  which in practice means `claude-usage pair` on the machine itself.
+- A code is 128 random bits, lives only in daemon memory, expires after 5 minutes, works
+  once, and is voided when a new one is minted.
+- `/v1/pair` answers only on an HTTPS listener (plain HTTP gets `403`), so the bearer it
+  returns never crosses the network in the clear.
+- After 5 failed attempts in a minute, a remote address gets `429` for the rest of that
+  minute, even with the correct code. Codes are compared in constant time. The Host
+  allowlist and the Origin refusal still apply.
+- The code and the token are never logged or printed. `claude-usage pair` puts the code
+  only inside the QR's modules, on a page served once from `127.0.0.1` at a random 128-bit
+  path with `Cache-Control: no-store`. That URL never goes on a command line or to the
+  terminal: the browser is pointed at a `0600` redirect file in a fresh `0700` temp directory,
+  deleted when the page closes.
+
+**Not defended:** someone who can see your screen in the 5 minutes before the phone scans
+the code. Treat the page like a password. If it was shown on a call, run `claude-usage pair`
+again, which voids the old code. **Other local users on the same machine** are not a defended
+audience either (see §3): the page listens on loopback, which every local account can reach,
+and while the random path and single view make a hit unlikely, a local user who can watch
+your processes or your browser is outside what a user-level daemon can protect against.
+
 ### 2. Local browsers, web pages and DNS rebinding
 
 A page you visit can make requests to `http://127.0.0.1:47291` from your own browser. DNS
@@ -32,7 +84,8 @@ rebinding can make an attacker-controlled name resolve to a loopback or tailnet 
 **Defence, three layers:**
 
 - **Host allowlist.** The `Host` header must name an address the daemon is actually bound
-  to, or `localhost` / `127.0.0.1` / `::1`, or the machine's MagicDNS name — including the
+  to, or `localhost` / `127.0.0.1` / `::1`, or the machine's MagicDNS name, or its `.local`
+  name while `bind` has `lan` — including the
   port when one is present. A rebound `evil.test` name fails with `421`. `0.0.0.0` and `::`
   are never accepted as `Host` values even when bound.
 - **Origin rejection.** Any request carrying an `Origin` header at all is `403`. Browsers
@@ -69,7 +122,7 @@ Session control belongs to the human, through the CLI or the dashboard.
 | Reachable without the token | Requires the token |
 | --- | --- |
 | `GET`/`HEAD` from loopback: `/health`, `/v1/limits`, `/v1/summary`, `/v1/tokens`, `/v1/config`, `/v1/sessions`, `/v1/sessions/{id}/gate`, `/v1/pause/rules`, `/v1/events` | every request from a non-loopback address, `GET` included |
-| `POST` from loopback to `/v1/sessions/register`, `/v1/sessions/{id}/heartbeat`, `/v1/sessions/{id}/end` | every mutating request: `POST /v1/refresh`, `POST /v1/limits/observed`, `POST /v1/pause`, `POST /v1/resume`, `DELETE /v1/pause/rules/{id}`, the `/v1/sessions/{id}/pause|resume` sugar |
+| `POST` from loopback to `/v1/sessions/register`, `/v1/sessions/{id}/heartbeat`, `/v1/sessions/{id}/end` · `POST /v1/pair` over HTTPS with a valid one-time code (§1b) | every mutating request, including `POST /v1/pair/code` (also loopback-only): `POST /v1/refresh`, `POST /v1/limits/observed`, `POST /v1/pause`, `POST /v1/resume`, `DELETE /v1/pause/rules/{id}`, the `/v1/sessions/{id}/pause|resume` sugar |
 
 The loopback `GET` exemption is what keeps the hook, the status line and
 `curl localhost:47291/health` zero-config. The three exempt `POST`s are the hook's own
@@ -88,8 +141,9 @@ Loopback is determined from the socket's remote address, never from a header.
   logged, written to disk or serialized into any response. `claude-usage` never refreshes
   tokens — Claude Code owns refresh — and never calls any other Anthropic endpoint.
 - **The bearer token** is redacted to `"<redacted>"` in `GET /v1/config`. It appears in
-  clear text in exactly two places: `config.json` (`0600`) and the pairing payload you
-  asked for.
+  clear text in exactly three places: `config.json` (`0600`), the v1 pairing payload
+  `configure pairing` prints, and the `POST /v1/pair` response (HTTPS only) to an app holding
+  a valid one-time code. The v2 pairing link from `claude-usage pair` never contains it.
 - **Prompt and transcript content.** The spend scanner reads `message.usage` counters,
   model names, ids and timestamps. No prompt or response text is parsed, stored or served.
 - **Test fixtures** under `test/fixtures/` contain no credentials and no real prompt text.
@@ -105,6 +159,7 @@ That is disclosure worth protecting, and it is why non-loopback `GET` needs the 
 | --- | --- |
 | `~/.config/claude-usage/` | `0700` |
 | `config.json` (holds the bearer token) | `0600` |
+| `tls-key.pem`, `tls-cert.pem` (HTTPS identity, §23.45) | `0600` |
 | `state.json`, `sessions.json`, `pause.json`, `daemon.json`, `hook-state.json` | `0600` |
 | `paused/<sessionId>` markers (dir and files) | `0700` / `0600` |
 | `~/Library/Logs/claude-usage/` (macOS) | `0700` |

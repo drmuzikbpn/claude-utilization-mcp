@@ -29,7 +29,7 @@ describe('parseInstallArgs', () => {
   });
 
   it('honours every flag', () => {
-    const f = parseInstallArgs(['--yes', '--no-service', '--no-hook', '--no-mcp', '--statusline', '--tailscale', '--linger']);
+    const f = parseInstallArgs(['--yes', '--no-service', '--no-hook', '--no-mcp', '--statusline', '--tailscale', '--lan', '--linger']);
     expect(f).toEqual({
       yes: true,
       service: false,
@@ -37,6 +37,7 @@ describe('parseInstallArgs', () => {
       mcp: false,
       statusline: true,
       tailscale: true,
+      lan: true,
       linger: true,
       unknown: [],
     });

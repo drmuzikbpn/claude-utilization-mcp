@@ -1,8 +1,9 @@
 # claude-usage (repo: claude-utilization-mcp)
 
 Local daemon + hooks + MCP server giving Claude Code sessions account rate-limit % and local
-token spend; remote dashboard (Android, sibling repo `../android-project`) consumes it over
-Tailscale. **Spec is authoritative:** `docs/superpowers/specs/2026-09-13-claude-usage-design.md`
+token spend; remote dashboards consume it over the LAN (HTTPS, pinned) or Tailscale — the Android
+dashboard lives on orphan branch `usage-android` of this repo; the iOS/watch app lives on
+`usage-ios`. **Spec is authoritative:** `docs/superpowers/specs/2026-09-13-claude-usage-design.md`
 — Part II and Part III override Part I where they conflict. Plan: `docs/superpowers/plans/`.
 
 ## Commands
@@ -19,7 +20,9 @@ Tailscale. **Spec is authoritative:** `docs/superpowers/specs/2026-09-13-claude-
 - Never refresh Anthropic OAuth tokens; never call any Anthropic endpoint other than
   `GET /api/oauth/usage`.
 - Hooks always exit 0 and never block; daemon unreachable ⇒ hook prints nothing.
-- Every mutating endpoint requires the bearer token, even from loopback.
+- Every mutating endpoint requires the bearer token, even from loopback. Exceptions: the hooks'
+  loopback-only session bookkeeping (§17.1) and `POST /v1/pair` (§23.47 — TLS only, one-time
+  pairing code, rate-limited). Never log or print pairing codes.
 - Hard-frozen pids must be SIGCONTed on shutdown/uninstall; `claude-usage resume --all`
   must work with the daemon dead.
 - Edits to `~/.claude/settings.json` are merge-only; `~/.claude.json` is written via

@@ -34,8 +34,9 @@ Usage: claude-usage <command> [options]
   pause <scope> [--hard] [--reason] pause all | project:<path> | session:<id>
   resume <scope> | --all            clear pause rules (--all works with no daemon)
   install [--yes] [--no-service]    install the service, hooks and MCP server
-          [--no-hook] [--no-mcp] [--statusline] [--tailscale] [--linger]
+          [--no-hook] [--no-mcp] [--statusline] [--tailscale] [--lan] [--linger]
   configure [<setting> <on|off>]    interactive menu, or a scriptable setting
+  pair                              QR page to pair the iPhone app (one-time code)
   uninstall [--purge]               remove everything install added
   mcp                               MCP server over stdio (stdout is JSON-RPC only)
   update [--check]                  install the newest release (--check: just look)
@@ -400,6 +401,11 @@ export async function run(argv: readonly string[], io: CliIO = {}): Promise<numb
     case 'rollback': {
       const { runUpdateCli } = await import('./update/index.js');
       return runUpdateCli(cmd, rest, base);
+    }
+    case 'pair': {
+      // §23.48: CLI-only and lazy — the QR code and page server never load in the daemon.
+      const { runPair } = await import('./install/pair.js');
+      return runPair({ stdout, stderr, ...(io.configDir === undefined ? {} : { configDir: io.configDir }) });
     }
     case 'tokens':
       return cmdTokens(rest, base);
