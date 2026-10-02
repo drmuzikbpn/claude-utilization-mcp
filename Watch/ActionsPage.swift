@@ -5,7 +5,11 @@ import UsageCore
 /// pending escalation and the `today 4.2M · 3 live` footer.
 struct ActionsPage: View {
     @Environment(PhoneLink.self) private var link
-    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+    @Environment(\.isLuminanceReduced) private var systemLuminanceReduced
+    private var isLuminanceReduced: Bool {
+        AlwaysOn.dimmed(systemLuminanceReduced)
+    }
+
     let snapshot: WatchSnapshot
 
     var body: some View {

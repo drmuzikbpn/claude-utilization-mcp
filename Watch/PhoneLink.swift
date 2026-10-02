@@ -38,18 +38,17 @@ final class PhoneLink: NSObject {
     override init() {
         super.init()
         snapshot = store.read()
-    }
-
-    func start() {
         #if DEBUG
             if let sample = DebugLaunch.sampleSnapshot() {
                 isSample = true
                 snapshot = sample
                 reachable = !DebugLaunch.unreachable
-                return
             }
         #endif
-        guard WCSession.isSupported() else { return }
+    }
+
+    func start() {
+        guard !isSample, WCSession.isSupported() else { return }
         WCSession.default.delegate = self
         WCSession.default.activate()
     }

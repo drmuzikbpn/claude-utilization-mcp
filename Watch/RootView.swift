@@ -26,14 +26,7 @@ struct RootView: View {
         }
         .tint(Theme.text)
         .onAppear(perform: applyDebugScreen)
-        #if DEBUG
-            .environment(\.isLuminanceReduced, DebugLaunch.alwaysOn ? true : isLuminanceReduced)
-        #endif
     }
-
-    #if DEBUG
-        @Environment(\.isLuminanceReduced) private var isLuminanceReduced
-    #endif
 
     @ViewBuilder private var content: some View {
         if let snapshot = link.snapshot, snapshot.generatedAt != .distantPast {
@@ -109,6 +102,8 @@ struct UnreachableBanner: View {
                 .font(.system(size: 12, weight: .medium, design: .rounded))
                 .foregroundStyle(Theme.warn)
                 .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 3)
                 .background(Theme.warn.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))

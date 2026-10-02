@@ -84,7 +84,11 @@ private struct Figure: View {
 
 private struct SessionRowView: View {
     @Environment(PhoneLink.self) private var link
-    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+    @Environment(\.isLuminanceReduced) private var systemLuminanceReduced
+    private var isLuminanceReduced: Bool {
+        AlwaysOn.dimmed(systemLuminanceReduced)
+    }
+
     let session: WatchSnapshot.SessionRow
     let deviceId: String
     let snapshot: WatchSnapshot

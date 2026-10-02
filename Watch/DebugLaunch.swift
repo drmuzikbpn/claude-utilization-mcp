@@ -33,3 +33,15 @@
         }
     }
 #endif
+
+/// Always-On as the views see it: the system's flag, or `-aod` in a debug build (the simulator
+/// cannot be put into Always-On for a screenshot).
+enum AlwaysOn {
+    static func dimmed(_ isLuminanceReduced: Bool) -> Bool {
+        #if DEBUG
+            isLuminanceReduced || DebugLaunch.alwaysOn
+        #else
+            isLuminanceReduced
+        #endif
+    }
+}
