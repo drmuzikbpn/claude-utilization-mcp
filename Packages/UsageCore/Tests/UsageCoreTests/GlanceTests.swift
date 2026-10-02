@@ -103,9 +103,19 @@ struct GlanceFaceTests {
     @Test func staleDataShowsItsAgeAndAgesFurtherOnTheWrist() {
         let fresh = snapshot(accounts: [account("a", "Work", five: 10, seven: 10)])
         #expect(GlanceFace.make(snapshot: fresh, choice: .highest, now: t0.addingTimeInterval(10)).age == nil)
-        let later = GlanceFace.make(snapshot: fresh, choice: .highest, now: t0.addingTimeInterval(240))
+        // Widget entries step every 5 min and iOS refreshes the snapshot a few times an hour, so
+        // a glance ages on its own, slower clock: a 4-minute-old snapshot is still current.
+        let entry = GlanceFace.make(snapshot: fresh, choice: .highest, now: t0.addingTimeInterval(240))
+        #expect(entry.health == .fresh)
+        #expect(entry.age == nil)
+        let older = GlanceFace.make(snapshot: fresh, choice: .highest, now: t0.addingTimeInterval(25 * 60))
+        #expect(older.health == .stale)
+        #expect(older.age == "25m ago")
+        let later = GlanceFace.make(snapshot: fresh, choice: .highest, now: t0.addingTimeInterval(2 * 3600))
         #expect(later.health == .dead)
-        #expect(later.age == "4m ago")
+        // The watch app itself refreshes every 10 s, so it keeps the deck's 30 s / 2 min clock.
+        let work = fresh.accounts[0]
+        #expect(fresh.health(of: work, now: t0.addingTimeInterval(240)) == .dead)
         let staleAtSource = snapshot(accounts: [account("a", "Work", five: 10, seven: 10, health: .stale)])
         let face = GlanceFace.make(snapshot: staleAtSource, choice: .highest, now: t0)
         #expect(face.health == .stale)

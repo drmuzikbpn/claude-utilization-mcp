@@ -162,11 +162,16 @@ final class PhoneLink: NSObject {
 
     // MARK: - snapshots
 
+    @ObservationIgnored private var lastGlanceReload: WatchSnapshot?
+
     private func apply(_ next: WatchSnapshot, forceReload: Bool) {
         if let current = snapshot, current.generatedAt != .distantPast, !current.isSuperseded(by: next) {
             return
         }
-        let redraw = forceReload || !next.drawsSameGlance(as: snapshot)
+        // Complications age by generatedAt (20 min to stale), so redraw an unchanged face every 10 min.
+        let redraw = forceReload
+            || !next.drawsSameGlance(as: snapshot)
+            || SnapshotDiff.isDue(last: lastGlanceReload, next: next, heartbeat: 600, headlineOnly: true)
         snapshot = next
         let now = Date.now
         pending = pending.filter { target, flip in
@@ -175,6 +180,7 @@ final class PhoneLink: NSObject {
         }
         store.write(next)
         if redraw {
+            lastGlanceReload = next
             WidgetCenter.shared.reloadAllTimelines()
         }
     }

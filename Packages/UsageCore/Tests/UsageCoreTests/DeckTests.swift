@@ -274,7 +274,7 @@ struct DeckAlertsTests {
 }
 
 struct SnapshotDiffTests {
-    private func snapshot(_ percent: Int, at: Date = t0, rate: Double = 0) -> WatchSnapshot {
+    private func snapshot(_ percent: Int, rate: Double = 0, at: Date = t0) -> WatchSnapshot {
         WatchSnapshot(
             generatedAt: at,
             accounts: [.init(
@@ -303,6 +303,28 @@ struct SnapshotDiffTests {
         #expect(SnapshotDiff.sameContent(snapshot(10), snapshot(10, at: t0.addingTimeInterval(5))))
         #expect(!SnapshotDiff.sameContent(snapshot(10), snapshot(10, rate: 3)))
         #expect(!SnapshotDiff.sameContent(nil, snapshot(10)))
+    }
+
+    @Test func anUnchangedSnapshotIsStillDueOnceItsHeartbeatHasAged() {
+        // The watch and the widgets age data by generatedAt; an unchanged snapshot that is never
+        // re-sent would read as stale while the numbers are perfectly current.
+        let sent = snapshot(10)
+        #expect(!SnapshotDiff.isDue(last: sent, next: snapshot(10, at: t0.addingTimeInterval(5)), heartbeat: 20))
+        #expect(SnapshotDiff.isDue(last: sent, next: snapshot(10, at: t0.addingTimeInterval(20)), heartbeat: 20))
+        #expect(SnapshotDiff.isDue(last: sent, next: snapshot(11, at: t0.addingTimeInterval(1)), heartbeat: 20))
+        #expect(SnapshotDiff.isDue(last: nil, next: sent, heartbeat: 20))
+        #expect(!SnapshotDiff.isDue(
+            last: sent,
+            next: snapshot(10, rate: 3, at: t0.addingTimeInterval(1)),
+            heartbeat: 20,
+            headlineOnly: true
+        ))
+        #expect(SnapshotDiff.isDue(
+            last: sent,
+            next: snapshot(10, rate: 3, at: t0.addingTimeInterval(600)),
+            heartbeat: 600,
+            headlineOnly: true
+        ))
     }
 
     @Test func headlineIgnoresRatesButNotPercent() {

@@ -11,6 +11,9 @@ import WatchConnectivity
 final class WatchBridge: NSObject {
     /// Application-context pushes are coalesced to at most one per this interval.
     static let minimumInterval: Duration = .seconds(2)
+    /// Re-send an unchanged snapshot this often so the watch, which ages data by `generatedAt`,
+    /// does not grey out numbers that are still current.
+    static let heartbeat: TimeInterval = 20
 
     private weak var store: DeckStore?
     private var session: WCSession?
@@ -34,12 +37,12 @@ final class WatchBridge: NSObject {
         self.session = session
     }
 
-    /// Every rebuilt snapshot lands here; only a changed one is sent, and not more than once per
+    /// Every rebuilt snapshot lands here; only a changed (or heartbeat-due) one is sent, and not more than once per
     /// `minimumInterval` (the last one always goes, after the interval).
     private func offer(_ snapshot: WatchSnapshot) {
         let data = try? WatchSnapshotCodec.encode(snapshot)
         cached.withLock { $0 = data }
-        guard !SnapshotDiff.sameContent(lastSent, snapshot) else {
+        guard SnapshotDiff.isDue(last: lastSent, next: snapshot, heartbeat: Self.heartbeat) else {
             pending = nil
             return
         }

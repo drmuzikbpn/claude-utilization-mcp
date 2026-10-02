@@ -26,6 +26,16 @@ public extension WatchSnapshot {
         max(account.health, Aging.health(lastHeartbeatAt: generatedAt, now: now))
     }
 
+    /// The same verdict on a widget's clock. Widgets and complications redraw every 5 minutes from
+    /// a snapshot iOS refreshes a few times an hour, so the deck's 30 s heartbeat rule would grey
+    /// out every glance almost all the time. A glance is current under 20 minutes, stale under an
+    /// hour, dead after that.
+    func glanceHealth(of account: Account, now: Date) -> Health {
+        let age = now.timeIntervalSince(generatedAt)
+        let byAge: Health = age < GlanceAging.fresh ? .fresh : age < GlanceAging.dead ? .stale : .dead
+        return max(account.health, byAge)
+    }
+
     /// Whether `other` should replace this snapshot: never let an older reply (the phone's cached
     /// copy) overwrite a fresher application context.
     func isSuperseded(by other: WatchSnapshot) -> Bool {
@@ -39,6 +49,12 @@ public extension WatchSnapshot {
         guard let other else { return false }
         return hasDevices == other.hasDevices && accounts.map(GlanceKey.init) == other.accounts.map(GlanceKey.init)
     }
+}
+
+/// Widget-clock aging thresholds (see `glanceHealth(of:now:)`).
+public enum GlanceAging {
+    public static let fresh: TimeInterval = 20 * 60
+    public static let dead: TimeInterval = 60 * 60
 }
 
 private struct GlanceKey: Equatable {
@@ -96,7 +112,7 @@ public struct GlanceFace: Sendable, Equatable {
         guard let snapshot else { return blank(.noData) }
         guard snapshot.hasDevices else { return blank(.noDevices) }
         guard let account = snapshot.account(for: choice) else { return blank(.noData) }
-        let health = snapshot.health(of: account, now: now)
+        let health = snapshot.glanceHealth(of: account, now: now)
         let nearest = max(account.fiveHour?.percent ?? 0, account.sevenDay?.percent ?? 0)
         return GlanceFace(
             state: .account,
