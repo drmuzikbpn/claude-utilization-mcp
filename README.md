@@ -323,7 +323,8 @@ for when you are away from home.
    - *iPhone:* point the Camera at it and tap **Open in Usage Deck**, or scan it from the
      app's **Pair a device** screen. On the same Apple account you can also press
      **Copy link** on the page and paste it on that screen.
-   - *Android deck:* scan it from the deck's pairing screen.
+   - *Android deck:* scan it from the deck's pairing screen (deck builds released after
+     2026-10-02; older builds use [legacy pairing](#legacy-pairing-older-android-deck-builds)).
 5. **Done.** The page swaps the QR code for **Pairing successful — it is now safe to close
    this tab**, and the command exits by itself.
 
