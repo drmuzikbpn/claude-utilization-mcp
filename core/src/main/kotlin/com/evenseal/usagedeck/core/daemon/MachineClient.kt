@@ -3,9 +3,12 @@ package com.evenseal.usagedeck.core.daemon
 import com.evenseal.usagedeck.core.Clock
 import com.evenseal.usagedeck.core.model.Aging
 import com.evenseal.usagedeck.core.model.BurnHistory
+import com.evenseal.usagedeck.core.model.Health
 import com.evenseal.usagedeck.core.model.Limit
 import com.evenseal.usagedeck.core.model.MachineConfig
 import com.evenseal.usagedeck.core.model.MachineState
+import com.evenseal.usagedeck.core.model.PauseMode
+import com.evenseal.usagedeck.core.model.RepairReason
 import com.evenseal.usagedeck.core.model.Session
 import java.time.Instant
 import kotlin.coroutines.coroutineContext
@@ -30,10 +33,15 @@ import kotlinx.coroutines.launch
  * keeps polling until SSE opens again. A ticker re-derives [com.evenseal.usagedeck.core.model.Health]
  * from `lastHeartbeatAt`, and project token totals refresh every 30 s. Errors never escape;
  * they land in `state.lastError`.
+ *
+ * A rejected token (401) or a changed certificate, from any request or the stream, is not a
+ * network blip: the machine enters `state.needsRepair`, the stream and polling stop, its sessions
+ * are dropped and it reads dead, and only a slow `/health` probe runs (every minute) so a restored
+ * token recovers on its own. A re-pair replaces the config and with it this client.
  */
 class MachineClient(
     val config: MachineConfig,
-    private val api: DaemonApi,
+    api: DaemonApi,
     private val eventSource: () -> Flow<Any>,
     private val burn: BurnHistory,
     private val clock: Clock,
@@ -44,7 +52,13 @@ class MachineClient(
     private val _state = MutableStateFlow(MachineState(config))
     val state: StateFlow<MachineState> = _state.asStateFlow()
 
+    /** [api] as given, watched: an auth failure from any caller (pause, resume) marks the machine. */
+    val api: DaemonApi = AuthWatchingApi(api) { reason -> enterRepair(reason) }
+
     private val jobs = mutableListOf<Job>()
+    private val lock = Any()
+    private var connectionJob: Job? = null
+    private var repairJob: Job? = null
     private var pollingJob: Job? = null
     private var etag: String? = null
     private var lastStatus: StatusDto = StatusDto()
@@ -52,13 +66,19 @@ class MachineClient(
 
     fun start() {
         if (jobs.isNotEmpty()) return
-        jobs += scope.launch { connectionLoop() }
+        synchronized(lock) { connectionJob = scope.launch { connectionLoop() } }
         jobs += scope.launch { agingLoop() }
         jobs += scope.launch { projectTokensLoop() }
     }
 
     fun stop() {
-        stopPolling()
+        synchronized(lock) {
+            stopPolling()
+            connectionJob?.cancel()
+            connectionJob = null
+            repairJob?.cancel()
+            repairJob = null
+        }
         jobs.forEach { it.cancel() }
         jobs.clear()
     }
@@ -71,6 +91,7 @@ class MachineClient(
 
     /** `GET /v1/tokens?since=today&groupBy=project`. Failures are swallowed into `lastError`. */
     suspend fun refreshProjectTokens() {
+        if (_state.value.needsRepair != null) return
         try {
             val dto = api.tokensByProjectToday()
             _state.update { it.copy(projectTokens = dto.groups.map { g -> g.toModel() }) }
@@ -99,6 +120,7 @@ class MachineClient(
                     }
                 }
                 .firstOrNull { it is Connection.Closed }
+            if (_state.value.needsRepair != null) return
 
             if (opened) {
                 failures = 0
@@ -118,7 +140,11 @@ class MachineClient(
     private suspend fun agingLoop() {
         while (coroutineContext.isActive) {
             delay(tickerMs)
-            _state.update { it.copy(health = Aging.health(it.lastHeartbeatAt, clock.now())) }
+            _state.update {
+                it.copy(
+                    health = if (it.needsRepair != null) Health.DEAD else Aging.health(it.lastHeartbeatAt, clock.now())
+                )
+            }
         }
     }
 
@@ -129,8 +155,50 @@ class MachineClient(
         }
     }
 
+    // ---- lost pairing ------------------------------------------------------------------------
+
+    /** Terminal until [repairProbeLoop] hears a 200 or a re-pair replaces this client. */
+    private fun enterRepair(reason: RepairReason) {
+        synchronized(lock) {
+            if (_state.value.needsRepair != null) return
+            _state.update {
+                it.copy(
+                    needsRepair = reason,
+                    health = Health.DEAD,
+                    transport = MachineState.Transport.DISCONNECTED,
+                    sessions = emptyList()
+                )
+            }
+            stopPolling()
+            connectionJob?.cancel()
+            connectionJob = null
+            // Only a running client probes; a stopped one is being replaced or removed.
+            if (jobs.isNotEmpty()) repairJob = scope.launch { repairProbeLoop() }
+        }
+    }
+
+    private suspend fun repairProbeLoop() {
+        while (coroutineContext.isActive) {
+            delay(REPAIR_PROBE_MS)
+            val healthy = try {
+                api.health()
+                true
+            } catch (e: DaemonException) {
+                false
+            }
+            if (healthy) {
+                synchronized(lock) {
+                    _state.update { it.copy(needsRepair = null, lastError = null) }
+                    repairJob = null
+                    connectionJob = scope.launch { connectionLoop() }
+                }
+                return
+            }
+        }
+    }
+
     private fun startPolling() {
-        if (pollingJob != null) return
+        if (pollingJob != null || _state.value.needsRepair != null) return
         pollingJob = scope.launch {
             while (coroutineContext.isActive) {
                 poll()
@@ -183,6 +251,11 @@ class MachineClient(
     }
 
     private fun onClosed(error: DaemonException?) {
+        error?.repairReason()?.let { reason ->
+            _state.update { it.copy(lastError = error.userMessage()) }
+            enterRepair(reason)
+            return
+        }
         val transport =
             if (pollingJob != null) MachineState.Transport.POLLING else MachineState.Transport.DISCONNECTED
         _state.update { it.copy(transport = transport, lastError = error?.userMessage() ?: it.lastError) }
@@ -202,8 +275,9 @@ class MachineClient(
         }
     }
 
-    /** Every event, heartbeat included, proves the daemon is alive. */
+    /** Every event, heartbeat included, proves the daemon is alive — unless it has rejected us. */
     private fun touch() {
+        if (_state.value.needsRepair != null) return
         val now = clock.now()
         _state.update { it.copy(lastHeartbeatAt = now, health = Aging.health(now, now)) }
     }
@@ -332,5 +406,39 @@ class MachineClient(
         const val POLL_SCREEN_ON_MS = 2_000L
         const val POLL_SCREEN_OFF_MS = 30_000L
         const val PROJECT_TOKENS_MS = 30_000L
+        const val REPAIR_PROBE_MS = 60_000L
     }
+}
+
+/** Passes every call through; a 401 or pin mismatch also reports the machine as needing a re-pair. */
+private class AuthWatchingApi(
+    private val inner: DaemonApi,
+    private val onLost: (RepairReason) -> Unit
+) : DaemonApi {
+    private inline fun <T> watch(block: () -> T): T = try {
+        block()
+    } catch (e: DaemonException) {
+        e.repairReason()?.let(onLost)
+        throw e
+    }
+
+    override suspend fun health() = watch { inner.health() }
+
+    override suspend fun summary() = watch { inner.summary() }
+
+    override suspend fun sessions(ifNoneMatch: String?) = watch { inner.sessions(ifNoneMatch) }
+
+    override suspend fun tokensByProjectToday() = watch { inner.tokensByProjectToday() }
+
+    override suspend fun pause(scope: String, mode: PauseMode, reason: String) = watch {
+        inner.pause(
+            scope,
+            mode,
+            reason
+        )
+    }
+
+    override suspend fun resume(scope: String) = watch { inner.resume(scope) }
+
+    override suspend fun rules() = watch { inner.rules() }
 }

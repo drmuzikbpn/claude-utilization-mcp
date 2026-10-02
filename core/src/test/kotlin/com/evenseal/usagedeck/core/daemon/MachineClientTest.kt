@@ -32,9 +32,13 @@ class MachineClientTest {
         var tokensDto = TokensDto()
         var sessionsEtag: String? = "W/\"9\""
         var failSummary: DaemonException? = null
+        var failHealth: DaemonException? = null
+        var failTokens: DaemonException? = null
+        var failPause: DaemonException = DaemonException("not_found", 404, null, null)
 
         override suspend fun health(): HealthDto {
             calls += "health"
+            failHealth?.let { throw it }
             return HealthDto()
         }
 
@@ -51,12 +55,13 @@ class MachineClientTest {
 
         override suspend fun tokensByProjectToday(): TokensDto {
             calls += "tokens"
+            failTokens?.let { throw it }
             return tokensDto
         }
 
         override suspend fun pause(scope: String, mode: PauseMode, reason: String): PauseResponseDto {
             calls += "pause:$scope"
-            throw DaemonException("not_found", 404, null, null)
+            throw failPause
         }
 
         override suspend fun resume(scope: String): ResumeResponseDto {
@@ -76,6 +81,7 @@ class MachineClientTest {
         val burn = BurnHistory()
         val events = MutableSharedFlow<Any>(extraBufferCapacity = 64)
         val screenOn = MutableStateFlow(true)
+        var connects = 0
         lateinit var client: MachineClient
     }
 
@@ -132,7 +138,10 @@ class MachineClientTest {
         f.client = MachineClient(
             config = cfg,
             api = f.api,
-            eventSource = { f.events },
+            eventSource = {
+                f.connects++
+                f.events
+            },
             burn = f.burn,
             clock = f.clock,
             scope = backgroundScope,
@@ -435,5 +444,110 @@ class MachineClientTest {
         runCurrent()
         assertEquals("Token rejected. Re-run pairing on the Mac.", f.client.state.value.lastError)
         assertNotNull(f.client.state.value)
+    }
+
+    // ---- lost pairing ------------------------------------------------------------------------
+
+    private val unauthorized =
+        DaemonException("unauthorized", 401, "a valid Authorization: Bearer token is required", null)
+
+    @Test
+    fun `an sse 401 marks the machine as needing a re-pair and stops reconnecting`() = runTest {
+        val f = fixture()
+        f.events.emit(Connection.Open)
+        f.events.emit(snapshot(sessions = listOf(sessionDto("s1", 1000))))
+        runCurrent()
+
+        f.events.emit(Connection.Closed(unauthorized))
+        runCurrent()
+
+        val s = f.client.state.value
+        assertEquals("unauthorized", s.needsRepair!!.code)
+        assertEquals(Health.DEAD, s.health)
+        assertEquals(MachineState.Transport.DISCONNECTED, s.transport)
+        assertTrue("its sessions are no longer shown as live", s.sessions.isEmpty())
+
+        advanceTimeBy(59_000)
+        runCurrent()
+        assertEquals("no reconnect after a rejected token", 1, f.connects)
+        assertEquals("no hot polling either", 0, f.api.calls.count { it == "summary" })
+        assertEquals(Health.DEAD, f.client.state.value.health)
+    }
+
+    @Test
+    fun `a 401 on any request while the stream is still open also marks it and drops the stream`() = runTest {
+        val f = fixture()
+        f.events.emit(Connection.Open)
+        f.events.emit(snapshot())
+        runCurrent()
+        assertEquals(Health.FRESH, f.client.state.value.health)
+
+        // Token rotated without the daemon closing the established stream: the 30 s tokens
+        // refresh is the first request to hear about it.
+        f.api.failTokens = unauthorized
+        advanceTimeBy(30_100)
+        runCurrent()
+        assertEquals("unauthorized", f.client.state.value.needsRepair?.code)
+
+        f.events.emit(DaemonEvent.Heartbeat(rev = 9, at = "2026-09-13T14:00:30.000Z"))
+        runCurrent()
+        assertEquals("a stray heartbeat cannot make it look live again", Health.DEAD, f.client.state.value.health)
+    }
+
+    @Test
+    fun `a 401 from a pause marks the machine`() = runTest {
+        val f = fixture()
+        f.events.emit(Connection.Open)
+        f.events.emit(snapshot())
+        runCurrent()
+        f.api.failPause = unauthorized
+
+        runCatching { f.client.api.pause("all", PauseMode.SOFT, "usage-deck:x") }
+
+        assertEquals("unauthorized", f.client.state.value.needsRepair?.code)
+    }
+
+    @Test
+    fun `a certificate that no longer matches the pin is a re-pair too`() = runTest {
+        val f = fixture()
+        f.events.emit(Connection.Closed(DaemonException("pinning", 0, null, null)))
+        runCurrent()
+
+        assertEquals("pinning", f.client.state.value.needsRepair?.code)
+        assertTrue(f.client.state.value.needsRepair!!.message.contains("certificate"))
+    }
+
+    @Test
+    fun `network failures are not a lost pairing`() = runTest {
+        val f = fixture()
+        f.events.emit(Connection.Closed(DaemonException("network", 0, "refused", null)))
+        runCurrent()
+        assertNull(f.client.state.value.needsRepair)
+    }
+
+    @Test
+    fun `a slow probe recovers when the token is accepted again`() = runTest {
+        val f = fixture()
+        f.api.failHealth = unauthorized
+        f.events.emit(Connection.Closed(unauthorized))
+        runCurrent()
+
+        advanceTimeBy(60_100)
+        runCurrent()
+        assertEquals(1, f.api.calls.count { it == "health" })
+        assertEquals("still rejected", "unauthorized", f.client.state.value.needsRepair?.code)
+
+        f.api.failHealth = null
+        advanceTimeBy(60_100)
+        runCurrent()
+        assertEquals(2, f.api.calls.count { it == "health" })
+        assertNull(f.client.state.value.needsRepair)
+        assertEquals("the stream is reopened", 2, f.connects)
+
+        f.events.emit(Connection.Open)
+        f.events.emit(snapshot())
+        runCurrent()
+        assertEquals(Health.FRESH, f.client.state.value.health)
+        assertNull(f.client.state.value.lastError)
     }
 }
