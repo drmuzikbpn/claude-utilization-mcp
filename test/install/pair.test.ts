@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -6,7 +7,15 @@ import { dirname, join } from 'node:path';
 import { request } from 'node:http';
 import { saveConfig, defaultConfig } from '../../src/config.js';
 import { DaemonUnreachable } from '../../src/clients/http.js';
-import { createPairPageHandler, renderPairPage, runPair, startPairPage, type PairPage } from '../../src/install/pair.js';
+import {
+  createPairPageHandler,
+  PAIR_PAGE_CSP,
+  PAIR_PAGE_SCRIPT,
+  renderPairPage,
+  runPair,
+  startPairPage,
+  type PairPage,
+} from '../../src/install/pair.js';
 import { qrMatrix, qrSvg } from '../../src/install/qr.js';
 
 const require = createRequire(import.meta.url);
@@ -54,13 +63,39 @@ describe('vendored QR (§23.48)', () => {
 });
 
 describe('the pair page', () => {
-  it('shows the QR, steps, GitHub link and the password warning — never the code as text', () => {
+  it('shows the QR, steps, GitHub link and the password warning — the code only behind the copy button', () => {
     const html = renderPairPage({ link: LINK, name: 'studio', expiresAt: '2026-10-01T12:05:00Z', testflightUrl: '' });
     expect(html).toContain('<svg');
     expect(html).toContain('https://github.com/drmuzikbpn/claude-utilization-mcp');
-    expect(html).toContain('treat this like a password; if it was shown on a call, run <code>claude-usage pair</code> again');
-    expect(html).not.toContain('abcDEF0123456789');
+    expect(html).toContain('Treat this like a password; if it was shown on a call, run <code>claude-usage pair</code> again');
     expect(html).not.toContain('TestFlight</a>');
+    // §23.52: the link is in the page exactly once — the copy button's attribute — never as text.
+    expect(html.split('abcDEF0123456789')).toHaveLength(2);
+    expect(html).toContain(`data-link="${LINK.replace(/&/g, '&amp;')}"`);
+    const text = html.replace(/<script>[\s\S]*?<\/script>/, '').replace(/<[^>]*>/g, '');
+    expect(text).not.toContain('abcDEF0123456789');
+  });
+
+  it('offers "or copy the pairing link" with a copy icon, and counts down to the expiry', () => {
+    const html = renderPairPage({ link: LINK, name: 'studio', expiresAt: '2026-10-01T12:05:00Z', testflightUrl: '' });
+    expect(html).toContain('or copy the pairing link');
+    expect(html).toMatch(/<button type="button" class="copy" id="copy"[^>]*aria-label="Copy the pairing link"><svg class="i-copy"/);
+    expect(html).toContain('data-expires="2026-10-01T12:05:00.000Z"');
+    expect(html).toContain(`<script>${PAIR_PAGE_SCRIPT}</script>`);
+  });
+
+  it('is on the deck theme: dark ground, deck colours, no external loads', () => {
+    const html = renderPairPage({ link: LINK, name: 'studio', expiresAt: '2026-10-01T12:05:00Z', testflightUrl: '' });
+    for (const colour of ['#0e1013', '#3dbe8b', '#8c9bff', '#f0b429']) expect(html).toContain(colour);
+    expect(html).not.toMatch(/(src|href)="(https?:)?\/\/(?!github\.com)/);
+    expect(html).not.toMatch(/@import|url\(/);
+  });
+
+  it('allows exactly its own script through the CSP, by hash', () => {
+    const hash = createHash('sha256').update(PAIR_PAGE_SCRIPT).digest('base64');
+    expect(PAIR_PAGE_CSP).toContain(`script-src 'sha256-${hash}'`);
+    expect(PAIR_PAGE_CSP).toContain("default-src 'none'");
+    expect(PAIR_PAGE_CSP).not.toContain('unsafe-eval');
   });
 
   it('links TestFlight only when the URL is set, and escapes the name', () => {
@@ -133,6 +168,36 @@ function get(url: string): Promise<{ status: number; body: string; headers: Reco
   });
 }
 
+describe('the page status route (§23.52)', () => {
+  it('answers the state at path/status to loopback, any number of times, without spending the page', () => {
+    let state: 'pending' | 'paired' | 'expired' = 'pending';
+    const handler = createPairPageHandler('/secret', '<html>page</html>', () => state);
+    const first = hit(handler, 'GET', '/secret/status');
+    expect(first.status).toBe(200);
+    expect(JSON.parse(first.body)).toEqual({ state: 'pending' });
+    expect(first.headers['cache-control']).toBe('no-store');
+    state = 'paired';
+    expect(JSON.parse(hit(handler, 'GET', '/secret/status').body)).toEqual({ state: 'paired' });
+    expect(hit(handler, 'GET', '/secret/status', '192.168.1.9').status).toBe(404);
+    expect(hit(handler, 'GET', '/other/status').status).toBe(404);
+    expect(hit(handler, 'GET', '/secret').status).toBe(200);
+  });
+
+  it('the page polls only its own origin', () => {
+    expect(PAIR_PAGE_CSP).toContain("connect-src 'self'");
+    expect(PAIR_PAGE_SCRIPT).toContain("location.pathname + '/status'");
+  });
+
+  it('carries the success, expired and closed panels, hidden until the state arrives', () => {
+    const html = renderPairPage({ link: LINK, name: 'studio', expiresAt: '2026-10-01T12:05:00Z', testflightUrl: '' });
+    expect(html).toContain('<h2>Pairing successful</h2>');
+    expect(html).toContain('It is now safe to close this tab.');
+    expect(html).toContain('id="expired"');
+    expect(html).toContain('id="closed"');
+    expect(html).toContain('body.paired #paired');
+  });
+});
+
 describe('startPairPage', () => {
   it('listens on 127.0.0.1 at a random 128-bit path', async () => {
     const page = await startPairPage('<html>hi</html>');
@@ -162,6 +227,7 @@ describe('runPair', () => {
       stdout: (t) => (out += t),
       stderr: (t) => (out += t),
       client: {
+        get: async () => ({ state: 'pending' }),
         post: async (path: string) => {
           posted.push(path);
           return { code: 'abcDEF0123456789_-xyzQ', expiresAt: '2026-10-01T12:05:00Z', link: LINK, name: 'studio', addrs: ['192.168.1.20'], port: 47_292, fp: 'ab'.repeat(32) };
@@ -202,6 +268,7 @@ describe('runPair', () => {
       stdout: (t) => (out += t),
       stderr: (t) => (out += t),
       client: {
+        get: async () => ({ state: 'pending' }),
         post: async () => ({ code: 'abcDEF0123456789_-xyzQ', expiresAt: '2026-10-01T12:05:00Z', link: LINK, name: 'studio', addrs: ['192.168.1.20'], port: 47_292, fp: 'ab'.repeat(32) }),
       },
       open: async (target) => {
@@ -222,6 +289,7 @@ describe('runPair', () => {
       stdout: () => undefined,
       stderr: (t) => (err += t),
       client: {
+        get: async () => ({ state: 'pending' }),
         post: async () => {
           throw new DaemonUnreachable('POST /v1/pair/code: no HTTPS listener to pair with', { error: { hint: 'enable LAN access with `claude-usage configure lan on`' } }, 409);
         },
@@ -231,6 +299,81 @@ describe('runPair', () => {
     });
     expect(code).toBe(1);
     expect(err).toContain('configure lan on');
+  });
+
+  const MINTED = { code: 'abcDEF0123456789_-xyzQ', expiresAt: '2026-10-01T12:05:00Z', link: LINK, name: 'studio', addrs: ['192.168.1.20'], port: 47_292, fp: 'ab'.repeat(32) };
+
+  /** Run `runPair` with `states` answered in turn by `GET /v1/pair/code`; record what the page saw. */
+  async function pairWith(states: Array<string | Error>, opts: { userStops?: boolean } = {}) {
+    const configDir = setup();
+    let out = '';
+    const seen: string[] = [];
+    let polls = 0;
+    let file = '';
+    const code = await runPair({
+      configDir,
+      stdout: (t) => (out += t),
+      stderr: (t) => (out += t),
+      pollMs: 1,
+      lingerMs: 150,
+      client: {
+        post: async () => MINTED,
+        get: async () => {
+          // Hold the first state until the page has been seen in it, so slow runs stay ordered.
+          const next = seen.length === 0 ? states[0] : states[Math.min(polls, states.length - 1)];
+          polls += 1;
+          if (next instanceof Error) throw next;
+          return { state: next };
+        },
+      },
+      open: async (target) => {
+        file = target;
+      },
+      waitUntilDone: async (signal) => {
+        const url = `${redirectTarget(file)}/status`;
+        // Watch the page's status route the way the open page does, until the server goes away.
+        void (async () => {
+          for (;;) {
+            try {
+              seen.push(String(JSON.parse((await get(url)).body).state));
+            } catch {
+              return;
+            }
+            await new Promise((r) => setTimeout(r, 10));
+          }
+        })();
+        if (opts.userStops === true) {
+          await new Promise((r) => setTimeout(r, 60));
+          return;
+        }
+        await new Promise<void>((r) => signal.addEventListener('abort', () => r()));
+      },
+    });
+    return { code, out, seen, polls };
+  }
+
+  it('turns the page to "paired" as soon as the phone uses the code, then finishes by itself', async () => {
+    const r = await pairWith(['pending', 'pending', 'redeemed']);
+    expect(r.code).toBe(0);
+    expect(r.seen).toContain('pending');
+    expect(r.seen.at(-1)).toBe('paired');
+    expect(r.out).toContain('paired ✓');
+    expect(r.out).not.toContain('abcDEF0123456789');
+  });
+
+  it('turns the page to "expired" and exits 1 when the code runs out unused', async () => {
+    const r = await pairWith(['pending', 'expired']);
+    expect(r.code).toBe(1);
+    expect(r.seen.at(-1)).toBe('expired');
+    expect(r.out).toContain('run `claude-usage pair` again');
+  });
+
+  it('keeps waiting through status errors (an older daemon) until the user stops it', async () => {
+    const r = await pairWith([new Error('405')], { userStops: true });
+    expect(r.code).toBe(0);
+    expect(r.polls).toBeGreaterThan(1);
+    expect(r.seen.every((s) => s === 'pending')).toBe(true);
+    expect(r.out).not.toContain('paired ✓');
   });
 
   it('refuses before a token exists', async () => {

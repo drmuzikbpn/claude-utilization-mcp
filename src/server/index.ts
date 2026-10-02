@@ -140,6 +140,7 @@ const ROUTES: readonly RouteKey[] = [
   { method: 'GET', path: '/v1/config' },
   { method: 'GET', path: EVENTS_PATH },
   { method: 'POST', path: PAIR_CODE_PATH },
+  { method: 'GET', path: PAIR_CODE_PATH },
   { method: 'POST', path: PAIR_REDEEM_PATH },
 ];
 
@@ -281,6 +282,15 @@ export function createServer(opts: ServerOptions): UsageServer {
     sendJson(res, 200, { code, expiresAt, link: buildPairingLink(parts), name: parts.name, addrs: parts.addrs, port: parts.port, fp: parts.fp });
   }
 
+  /** §23.52: has the latest code been used? Loopback only; the answer carries no secret. */
+  function pairingCodeStatus(req: IncomingMessage, res: ServerResponse): void {
+    if (!isLoopbackRequest(req)) {
+      sendError(res, 403, 'forbidden', 'pairing status is only available on this machine', 'run `claude-usage pair` on the machine running the daemon');
+      return;
+    }
+    sendJson(res, 200, pairingCodes.status());
+  }
+
   /** The one bearer-less mutating route: TLS only, single-use code, per-source limit. */
   async function redeemPairingCode(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!isTlsRequest(req)) {
@@ -377,7 +387,8 @@ export function createServer(opts: ServerOptions): UsageServer {
         events.handle(req, res);
         return;
       case PAIR_CODE_PATH:
-        mintPairingCode(req, res);
+        if (method === 'POST') mintPairingCode(req, res);
+        else pairingCodeStatus(req, res);
         return;
       case PAIR_REDEEM_PATH:
         await redeemPairingCode(req, res);

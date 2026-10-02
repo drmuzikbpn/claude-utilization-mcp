@@ -69,6 +69,32 @@ describe('pairing codes (§23.47)', () => {
   });
 });
 
+describe('pairing code status (§23.52)', () => {
+  it('reports none → pending → redeemed, and a fresh mint starts over', () => {
+    let t = 0;
+    const codes = createPairingCodes({ now: () => t });
+    expect(codes.status()).toEqual({ state: 'none', expiresAt: null });
+    const { code, expiresAt } = codes.mint();
+    expect(codes.status()).toEqual({ state: 'pending', expiresAt });
+    codes.redeem('wrong', 'a');
+    expect(codes.status().state).toBe('pending');
+    expect(codes.redeem(code, 'a')).toBe('ok');
+    expect(codes.status()).toEqual({ state: 'redeemed', expiresAt });
+    t = PAIR_CODE_TTL_MS * 2; // redeemed stays redeemed after the expiry passes
+    expect(codes.status().state).toBe('redeemed');
+    codes.mint();
+    expect(codes.status().state).toBe('pending');
+  });
+
+  it('reports expired once an unused code times out', () => {
+    let t = 0;
+    const codes = createPairingCodes({ now: () => t });
+    codes.mint();
+    t = PAIR_CODE_TTL_MS;
+    expect(codes.status().state).toBe('expired');
+  });
+});
+
 describe('pairing link (§23.47)', () => {
   it('matches the contract shape and percent-encodes', () => {
     const link = buildPairingLink({
@@ -214,6 +240,26 @@ describe('POST /v1/pair/code (§23.47)', () => {
     expect(res.status).toBe(409);
     expect(json(res.body)['error']).toMatchObject({ code: 'conflict' });
     expect(res.body).toContain('configure lan on');
+  });
+});
+
+describe('GET /v1/pair/code (§23.52)', () => {
+  it('tells loopback whether the latest code was used — never the code or the token', async () => {
+    const { port, tlsPort } = await make();
+    const status = async (): Promise<Record<string, unknown>> => json((await rawRequest({ port, method: 'GET', path: '/v1/pair/code' })).body);
+    expect(await status()).toEqual({ state: 'none', expiresAt: null });
+    const { code } = await mint(port);
+    expect((await status())['state']).toBe('pending');
+    expect((await redeem(tlsPort, code)).status).toBe(200);
+    const after = await status();
+    expect(after['state']).toBe('redeemed');
+    expect(JSON.stringify(after)).not.toContain(String(code));
+    expect(JSON.stringify(after)).not.toContain(TOKEN);
+  });
+
+  it('is 403 off-loopback', async () => {
+    const { server, port } = await make();
+    expect((await viaHandle(server, port, '192.168.1.5', '/v1/pair/code', 'GET')).status).toBe(403);
   });
 });
 
