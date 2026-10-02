@@ -26,6 +26,21 @@ public enum SnapshotDiff {
         return a == b
     }
 
+    /// Whether `next` should go out: when it differs from what was last sent (only in what a
+    /// widget draws, with `headlineOnly`), or when the last one sent is `heartbeat` seconds old.
+    /// The receivers age data by `generatedAt`, so an unchanged snapshot still needs re-sending
+    /// now and then or current numbers would read as stale.
+    public static func isDue(
+        last: WatchSnapshot?,
+        next: WatchSnapshot,
+        heartbeat: TimeInterval,
+        headlineOnly: Bool = false
+    ) -> Bool {
+        guard let last else { return true }
+        let same = headlineOnly ? sameHeadline(last, next) : sameContent(last, next)
+        return !same || next.generatedAt.timeIntervalSince(last.generatedAt) >= heartbeat
+    }
+
     /// The parts a widget draws: accounts (percent, status, reset, staleness) and device health.
     /// Burn rates and session rows move every second and are not worth a widget reload.
     public static func sameHeadline(_ a: WatchSnapshot?, _ b: WatchSnapshot) -> Bool {

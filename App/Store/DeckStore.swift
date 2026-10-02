@@ -295,7 +295,8 @@ final class DeckStore {
             now: at
         )
         snapshot = built
-        if !SnapshotDiff.sameHeadline(widgetSnapshot, built) {
+        // Widgets age by generatedAt too (20 min to stale), so refresh an unchanged one every 10 min.
+        if SnapshotDiff.isDue(last: widgetSnapshot, next: built, heartbeat: 600, headlineOnly: true) {
             writeWidgets(built)
         }
         onSnapshot?(built)

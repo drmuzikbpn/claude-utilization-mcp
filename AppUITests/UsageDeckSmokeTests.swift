@@ -62,6 +62,15 @@ final class UsageDeckSmokeTests: XCTestCase {
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'team today'")).firstMatch
             .waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Pause all"].exists)
+        // The dock must actually fill the landscape window: the rail's Pause all on the left, the
+        // sessions pane reaching past the middle.
+        let window = app.windows.firstMatch.frame
+        let caption = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Sessions'")).firstMatch
+        let rateHeader = app.staticTexts["tok/min · 30m"]
+        XCTAssertGreaterThan(window.width, window.height, "window is landscape")
+        XCTAssertLessThan(app.buttons["Pause all"].frame.midX, window.midX, "rail sits left")
+        XCTAssertGreaterThan(caption.frame.minX, app.buttons["Pause all"].frame.maxX, "sessions pane is right of the rail")
+        XCTAssertGreaterThan(rateHeader.frame.maxX, window.width * 0.75, "sessions pane reaches the right edge")
         snap("wide-dock")
     }
 
