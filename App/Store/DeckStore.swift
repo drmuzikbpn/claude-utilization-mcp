@@ -65,6 +65,7 @@ final class DeckStore {
     @ObservationIgnored private let registry: DeviceRegistry
     @ObservationIgnored private let settingsStore: DeckSettingsStore
     @ObservationIgnored private let ledger: AlertLedger
+    @ObservationIgnored private let repairLedger: RepairLedger
     @ObservationIgnored private let notifier: AlertNotifier
     @ObservationIgnored private let shared: SharedSnapshotStore
     @ObservationIgnored private var clients: [String: DeviceClient] = [:]
@@ -94,6 +95,7 @@ final class DeckStore {
         settingsStore = DeckSettingsStore(defaults: defaults)
         settings = settingsStore.load()
         ledger = AlertLedger(defaults: group)
+        repairLedger = RepairLedger(defaults: group)
         pause = PauseController(
             team: { box.store?.team ?? TeamState() },
             apis: { box.store?.clients[$0]?.api },
@@ -198,15 +200,15 @@ final class DeckStore {
     func refreshAll() async {
         await pause.tick()
         let all = Array(clients.values)
-        await withTaskGroup(of: DeviceState.self) { group in
+        await withTaskGroup(of: (DeviceClient, DeviceState).self) { group in
             for client in all {
                 group.addTask {
                     await client.refresh()
-                    return await client.state
+                    return await (client, client.state)
                 }
             }
-            for await state in group {
-                ingest(state)
+            for await (client, state) in group {
+                ingest(state, from: client)
             }
         }
         fold()
@@ -237,7 +239,8 @@ final class DeckStore {
     private func connect(_ record: DeviceRecord) {
         guard let token = tokens.token(for: record.id) else {
             var orphan = DeviceState(record: record)
-            orphan.needsRepair = true
+            // No token in the Keychain to offer it: as good as rejected.
+            orphan.repairReason = .tokenRejected
             orphan.lastError = DaemonError.defaults["unauthorized"]
             states[record.id] = orphan
             return
@@ -246,7 +249,7 @@ final class DeckStore {
         clients[record.id] = client
         observers[record.id] = Task { [weak self] in
             for await state in await client.states() {
-                self?.ingest(state)
+                self?.ingest(state, from: client)
             }
         }
         if isForeground {
@@ -265,8 +268,10 @@ final class DeckStore {
         states[id] = nil
     }
 
-    private func ingest(_ state: DeviceState) {
-        guard clients[state.id] != nil else { return }
+    /// Only the device's current client may speak for it: after a re-pair, a late answer from
+    /// the replaced client (still holding the old token) must not mark the device again.
+    private func ingest(_ state: DeviceState, from client: DeviceClient) {
+        guard clients[state.id] === client else { return }
         states[state.id] = state
         fold()
     }
@@ -275,6 +280,7 @@ final class DeckStore {
         disconnect(id)
         tokens.removeToken(for: id)
         registry.remove(id)
+        repairLedger.forget(id)
         records.removeAll { $0.id == id }
         setupChecks[id] = nil
         burn.forget(prefix: "\(id)/")
@@ -367,6 +373,7 @@ final class DeckStore {
             ledger.forget(key)
         }
         let raised = ledger.admit(DeckAlerts.admissible(evaluator.evaluate(previous: previous, next: next), previous: previous))
+            + repairLedger.review(next, now: at)
         guard !raised.isEmpty else { return }
         let quiet = settings.isQuiet(at: at)
         for alert in raised {
@@ -496,6 +503,10 @@ final class DeckStore {
 
     /// A `usagedeck://pair?...` link opened from the Camera or another app.
     func handle(url: URL) {
+        if !showPairing {
+            // A link from outside is a new pairing unless the user is mid-"Re-pair".
+            replacingDeviceId = nil
+        }
         offer(PairingInput.classify(url.absoluteString))
     }
 
@@ -512,7 +523,7 @@ final class DeckStore {
     }
 
     func beginPairing(replacing id: String? = nil) {
-        replacingDeviceId = id
+        replacingDeviceId = id.flatMap { id in records.contains { $0.id == id } ? id : nil }
         pairingError = nil
         showPairing = true
     }
@@ -525,7 +536,16 @@ final class DeckStore {
 
     /// Redeems the confirmed invite over pinned HTTPS, keeps the token in the Keychain only,
     /// connects, asks for notification permission and runs the setup check at once.
-    func confirmPairing(_ invite: PairingInvite) async {
+    /// The record a "Re-pair" is about to replace, when the scanned invite does not look like the
+    /// same device (different name and addresses): the confirmation asks before replacing it.
+    func replacementConflict(_ invite: PairingInvite) -> DeviceRecord? {
+        guard let id = replacingDeviceId, let old = records.first(where: { $0.id == id }) else { return nil }
+        return RepairMatch.sameDevice(old, invite) ? nil : old
+    }
+
+    /// `replace: false` ("Pair as new") ignores the pending Re-pair and pairs the invite as its
+    /// own device (or the one already holding its certificate).
+    func confirmPairing(_ invite: PairingInvite, replace: Bool = true) async {
         // One pairing at a time: a link that arrives mid-pairing waits for its confirmation
         // until the overlay has closed.
         guard !pairingInFlight, connecting == nil else {
@@ -535,7 +555,8 @@ final class DeckStore {
         pendingInvite = nil
         pairingInFlight = true
         defer { pairingInFlight = false }
-        let reuse = replacingDeviceId.flatMap { id in records.contains { $0.id == id } ? id : nil }
+        let replacing = replace ? replacingDeviceId : nil
+        let reuse = replacing.flatMap { id in records.contains { $0.id == id } ? id : nil }
             ?? records.first { $0.fingerprint == invite.fingerprint }?.id
         do {
             let config = try await PairingClient(invite: invite).redeem(invite, id: reuse ?? UUID().uuidString)
@@ -551,6 +572,7 @@ final class DeckStore {
                 records.append(record)
             }
             registry.save(records)
+            repairLedger.forget(record.id)
             setupChecks[record.id] = nil
             connect(record)
             fold()
@@ -588,7 +610,7 @@ final class DeckStore {
         // unreachable" in the device's own state.
         await Task { await client.refresh() }.value
         guard !Task.isCancelled, connect.current?.id == attempt else { return }
-        await ingest(client.state)
+        await ingest(client.state, from: client)
         let check = await evaluateSetup(deviceId, client: client)
         guard !Task.isCancelled, connect.current?.id == attempt else { return }
         setupChecks[deviceId] = check

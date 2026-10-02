@@ -97,6 +97,15 @@ final class UsageDeckSmokeTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Re-pair"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Or paste the pairing link"].exists)
         snap("re-pair")
+        // A code from some other device: ask before it replaces studio. (Made-up code, no daemon.)
+        let field = app.textFields.firstMatch
+        field.tap()
+        field.typeText("usagedeck://pair?v=2&name=attic&addrs=10.0.0.9&port=47292&fp=\(String(repeating: "cd", count: 32))"
+            + "&code=abcdefghijklmnopqrstuv\n")
+        XCTAssertTrue(app.alerts["Replace studio with attic?"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.buttons["Pair as new"].exists)
+        snap("replace-confirm")
+        app.alerts.buttons["Cancel"].tap()
     }
 
     @MainActor
