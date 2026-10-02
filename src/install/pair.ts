@@ -7,9 +7,16 @@
  * server listens on 127.0.0.1 at a random 128-bit path, answers that path exactly once, and
  * 404s everything else — so neither a second tab, a history replay, nor another process
  * guessing ports gets it.
+ *
+ * The URL itself is a capability, so it never goes on a command line (argv is visible to
+ * every local user through `ps`) or to the terminal: the browser is pointed at a 0600
+ * redirect file in a fresh 0700 directory, which is deleted when the page closes.
  */
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { DaemonClient, DaemonUnreachable } from '../clients/http.js';
@@ -39,8 +46,8 @@ export interface PairIO {
   configDir?: string;
   /** Injected in tests; defaults to an authenticated loopback `DaemonClient`. */
   client?: { post(path: string, body?: unknown): Promise<unknown> };
-  /** Opens the page; defaults to `open` / `xdg-open`. */
-  open?: (url: string) => Promise<void>;
+  /** Opens the redirect file (a path, never the URL); defaults to `open` / `xdg-open`. */
+  open?: (file: string) => Promise<void>;
   /** Resolves when the user is done: Enter, Ctrl-C or the timeout by default. */
   waitUntilDone?: () => Promise<void>;
   testflightUrl?: string;
@@ -153,10 +160,28 @@ export async function startPairPage(html: string): Promise<PairPage> {
   };
 }
 
-function defaultOpen(platform: string): (url: string) => Promise<void> {
-  return (url) =>
+export interface RedirectFile {
+  file: string;
+  remove(): void;
+}
+
+/** A private (0600 in a fresh 0700 directory) HTML file that forwards the browser to `url`. */
+export function writeRedirectFile(url: string): RedirectFile {
+  const dir = mkdtempSync(join(tmpdir(), 'claude-usage-pair-'));
+  chmodSync(dir, 0o700);
+  const file = join(dir, 'pair.html');
+  const html =
+    '<!doctype html><meta charset="utf-8"><meta name="referrer" content="no-referrer">' +
+    `<meta http-equiv="refresh" content="0;url=${url}"><title>claude-usage pair</title>` +
+    `<p><a href="${url}">Open the pairing page</a></p>\n`;
+  writeFileSync(file, html, { mode: 0o600, flag: 'wx' });
+  return { file, remove: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+function defaultOpen(platform: string): (file: string) => Promise<void> {
+  return (file) =>
     new Promise<void>((resolve, reject) => {
-      const child = spawn(platform === 'darwin' ? 'open' : 'xdg-open', [url], { stdio: 'ignore', detached: true });
+      const child = spawn(platform === 'darwin' ? 'open' : 'xdg-open', [file], { stdio: 'ignore', detached: true });
       child.once('error', reject);
       child.once('spawn', () => {
         child.unref();
@@ -212,17 +237,20 @@ export async function runPair(io: PairIO): Promise<number> {
     testflightUrl: io.testflightUrl ?? TESTFLIGHT_URL,
   });
   const page = await startPairPage(html);
+  let redirect: RedirectFile | null = null;
   try {
+    redirect = writeRedirectFile(page.url);
     io.stdout(`pairing ${minted.name} — reachable at ${minted.addrs.join(', ')} (HTTPS port ${String(minted.port)})\n`);
     try {
-      await (io.open ?? defaultOpen(String(io.platform ?? process.platform)))(page.url);
+      await (io.open ?? defaultOpen(String(io.platform ?? process.platform)))(redirect.file);
       io.stdout('opened the pairing page in your browser — it can be viewed once.\n');
     } catch {
-      io.stdout(`open this page in a browser on this machine (it can be viewed once):\n  ${page.url}\n`);
+      io.stdout(`open this file in a browser on this machine (the page can be viewed once):\n  ${redirect.file}\n`);
     }
     io.stdout('press Enter when the phone is paired (the page closes by itself in 5 minutes)\n');
     await (io.waitUntilDone ?? (() => defaultWaitUntilDone()))();
   } finally {
+    redirect?.remove();
     await page.close();
   }
   return 0;

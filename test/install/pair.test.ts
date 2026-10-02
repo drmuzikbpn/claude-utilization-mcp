@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { request } from 'node:http';
 import { saveConfig, defaultConfig } from '../../src/config.js';
 import { DaemonUnreachable } from '../../src/clients/http.js';
@@ -25,6 +25,13 @@ function upstreamMatrix(text: string): boolean[][] {
   qr.make();
   const n = qr.getModuleCount();
   return Array.from({ length: n }, (_, r) => Array.from({ length: n }, (_, c) => qr.isDark(r, c)));
+}
+
+/** The page URL inside a redirect file written by `runPair`. */
+function redirectTarget(file: string): string {
+  const m = /url=(http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{32})/.exec(readFileSync(file, 'utf8'));
+  if (m === null) throw new Error('no redirect URL in the file');
+  return m[1] as string;
 }
 
 const LINK = `usagedeck://pair?v=2&name=studio&addrs=192.168.1.20%2Cstudio.local&port=47292&fp=${'ab'.repeat(32)}&code=abcDEF0123456789_-xyzQ`;
@@ -147,6 +154,7 @@ describe('runPair', () => {
     const configDir = setup();
     let out = '';
     let opened = '';
+    let pageUrl = '';
     let page = '';
     const posted: string[] = [];
     const code = await runPair({
@@ -159,11 +167,16 @@ describe('runPair', () => {
           return { code: 'abcDEF0123456789_-xyzQ', expiresAt: '2026-10-01T12:05:00Z', link: LINK, name: 'studio', addrs: ['192.168.1.20'], port: 47_292, fp: 'ab'.repeat(32) };
         },
       },
-      open: async (url) => {
-        opened = url;
+      open: async (target) => {
+        opened = target;
       },
       waitUntilDone: async () => {
-        page = (await get(opened)).body;
+        // What reaches `open` (and so argv) is a private file, not the capability URL.
+        expect(opened).not.toMatch(/^https?:/);
+        expect(statSync(opened).mode & 0o777).toBe(0o600);
+        expect(statSync(dirname(opened)).mode & 0o777).toBe(0o700);
+        pageUrl = redirectTarget(opened);
+        page = (await get(pageUrl)).body;
       },
     });
     expect(code).toBe(0);
@@ -173,7 +186,32 @@ describe('runPair', () => {
     expect(out).not.toContain('test-bearer-token');
     expect(out).toContain('studio');
     // The page server is closed afterwards.
-    await expect(get(opened)).rejects.toThrow();
+    await expect(get(pageUrl)).rejects.toThrow();
+    expect(out).not.toContain(pageUrl);
+    // The redirect file goes with it.
+    expect(existsSync(opened)).toBe(false);
+    expect(existsSync(dirname(opened))).toBe(false);
+  });
+
+  it('when no browser opens, prints the redirect file’s path — never the URL', async () => {
+    const configDir = setup();
+    let out = '';
+    let file = '';
+    await runPair({
+      configDir,
+      stdout: (t) => (out += t),
+      stderr: (t) => (out += t),
+      client: {
+        post: async () => ({ code: 'abcDEF0123456789_-xyzQ', expiresAt: '2026-10-01T12:05:00Z', link: LINK, name: 'studio', addrs: ['192.168.1.20'], port: 47_292, fp: 'ab'.repeat(32) }),
+      },
+      open: async (target) => {
+        file = target;
+        throw new Error('no browser');
+      },
+      waitUntilDone: async () => undefined,
+    });
+    expect(out).toContain(file);
+    expect(out).not.toMatch(/http:\/\/127\.0\.0\.1/);
   });
 
   it('explains how to enable LAN when the daemon has no HTTPS listener', async () => {

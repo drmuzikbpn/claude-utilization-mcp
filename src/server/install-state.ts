@@ -111,7 +111,7 @@ export function readInstallFiles(p: InstallPaths): InstallFiles {
   }
 }
 
-/** Cached reader, shared by `/health` and the SSE snapshot (which embeds `healthBody`). */
+/** Cached reader behind `/health.install` (REST only — the SSE snapshot does not carry it). */
 export function createInstallReader(p: InstallPaths, now: () => number = Date.now, ttlMs = INSTALL_CACHE_MS): () => InstallFiles {
   let cached: InstallFiles | null = null;
   let readAt = 0;

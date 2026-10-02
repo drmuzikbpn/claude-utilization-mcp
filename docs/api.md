@@ -160,8 +160,9 @@ Auth: loopback GET exempt. `HEAD` allowed.
   inline or in a small script file; otherwise `other` or `none`. `mcp`: whether
   `~/.claude.json` has `mcpServers["claude-usage"]`, or `null` when that file cannot be read.
   `listeners` is live and lists every listener the daemon asked for. File reads are cached
-  for 60 s. The block never throws and never contains a path. The SSE `snapshot` carries
-  the same object. Its presence means the daemon supports v2 pairing.
+  for 60 s. The block never throws and never contains a path. It is on REST `/health`
+  only; the SSE `snapshot` event does not carry it. Its presence means the daemon supports
+  v2 pairing.
 - `update.state` is one of `idle | checking | downloading | verifying | ready | deferred |
   disabled`. Today it is always `disabled` (see deviations).
 

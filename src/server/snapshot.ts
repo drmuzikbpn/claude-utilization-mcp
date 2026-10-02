@@ -28,7 +28,7 @@ export interface SnapshotDeps {
   version: string;
   startedAt: number;
   now(): number;
-  /** §23.48: `/health.install`; absent ⇒ the key is omitted. */
+  /** §23.48: `/health.install` (REST only; `snapshotPayload` does not embed it); absent ⇒ omitted. */
   install?: () => InstallBody;
 }
 

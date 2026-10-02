@@ -1665,9 +1665,10 @@ shoulder surfing. The v2 pairing link carries a **one-time code** instead, redee
   event has our group in `~/.claude/settings.json`; `statusline` is `ours` when
   `statusLine.command` is our command, `includes-ours` when it mentions `claude-usage` or names
   a small script file that does, `other`, or `none`; `mcp` is whether `~/.claude.json` has
-  `mcpServers["claude-usage"]` (`null` when unreadable). File reads are cached for 60 s and
-  shared with the SSE snapshot (which embeds `healthBody`); `listeners` is live. Never throws;
-  never contains a path.
+  `mcpServers["claude-usage"]` (`null` when unreadable). File reads are cached for 60 s;
+  `listeners` is live. Never throws; never contains a path. REST `/health` only — the SSE
+  `snapshot` event (§19) builds its own payload and does not carry it; clients read it from
+  `/health`.
 - **`claude-usage pair`** — CLI-only, lazily imported, never in the daemon's import graph.
   Mints a code through loopback `POST /v1/pair/code` with the bearer from `config.json`,
   renders the link as an SVG QR with the vendored QRCode matrix code (`vendor/qrcode/`, from
@@ -1677,8 +1678,10 @@ shoulder surfing. The v2 pairing link carries a **one-time code** instead, redee
   `Cache-Control: no-store`. The page shows the QR, short steps, the TestFlight link when
   `TESTFLIGHT_URL` is set, the GitHub link, and "treat this like a password; if it was shown on
   a call, run `claude-usage pair` again" (which mints a new code and voids the old one). The
-  browser is opened with `open` / `xdg-open`; the page server closes on Enter, Ctrl-C, or after
-  5 min. Nothing is written to disk and the code is never printed.
+  page URL is a capability, so it never goes into argv (visible through `ps`) or the terminal:
+  `open` / `xdg-open` is given a 0600 redirect file in a fresh 0700 temp directory, and the
+  fallback prints that file's path. The page server closes, and the redirect file is deleted,
+  on Enter, Ctrl-C, or after 5 min. The code itself is never written to disk or printed.
 - `install` ends by offering it (`Open the pairing page now?`, interactive default yes; `--yes`
   does not) when the daemon is healthy and has a non-loopback bind.
 

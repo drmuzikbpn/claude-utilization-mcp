@@ -64,11 +64,16 @@ endpoint that works that way, so its rules are strict:
   allowlist and the Origin refusal still apply.
 - The code and the token are never logged or printed. `claude-usage pair` puts the code
   only inside the QR's modules, on a page served once from `127.0.0.1` at a random 128-bit
-  path with `Cache-Control: no-store`.
+  path with `Cache-Control: no-store`. That URL never goes on a command line or to the
+  terminal: the browser is pointed at a `0600` redirect file in a fresh `0700` temp directory,
+  deleted when the page closes.
 
 **Not defended:** someone who can see your screen in the 5 minutes before the phone scans
 the code. Treat the page like a password. If it was shown on a call, run `claude-usage pair`
-again, which voids the old code.
+again, which voids the old code. **Other local users on the same machine** are not a defended
+audience either (see §3): the page listens on loopback, which every local account can reach,
+and while the random path and single view make a hit unlikely, a local user who can watch
+your processes or your browser is outside what a user-level daemon can protect against.
 
 ### 2. Local browsers, web pages and DNS rebinding
 

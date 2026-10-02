@@ -21,7 +21,14 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   is served once, from loopback only, and the QR never carries the bearer. `install` offers
   to open it at the end (§23.48).
 - `/health.install` reports whether the hooks, status line and MCP server are set up, and
-  lists the live listeners (§23.48).
+  lists the live listeners (§23.48). It is on REST `/health` only, not in the SSE snapshot.
+
+### Changed
+- **Upgrade note:** a daemon whose `bind` already includes `tailscale`, `lan` or any
+  non-loopback IP gains an HTTPS listener on `port + 1` (**47292** by default) on those
+  addresses, and generates a TLS key (`tls-key.pem`, `tls-cert.pem`, `0600`) in the config
+  directory on its first start after the upgrade. Plain HTTP on 47291 is unchanged. Set
+  `tls.port` if 47292 is taken; it must differ from `port`.
 - Live headline limits without spending the usage endpoint's budget: `claude-usage observe`
   (and `claude-usage statusline`, automatically) forwards the `rate_limits` Claude Code passes
   its statusline to the new `POST /v1/limits/observed`. `session` / `weekly_all` are served
@@ -35,6 +42,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 ### Fixed
 - `configure port` restarted the service before saving the new port; it now saves first.
 - `ios-` release tags are ignored by the updater, like `deck-` (§23.17).
+- `claude-usage pair` no longer passes the one-time page URL to `open` / `xdg-open` (where
+  other local users could read it from `ps`) or prints it; it opens a private redirect file.
 - `claude-usage status | head` (or any reader that stops early) no longer prints an `EPIPE`
   stack trace; the CLI exits 0 quietly (§23.43).
 - A daemon restart, such as each auto-update, no longer briefly serves hours-old limit
