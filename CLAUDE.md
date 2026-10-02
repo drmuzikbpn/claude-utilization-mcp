@@ -14,6 +14,8 @@ Lives on the orphan branch `usage-ios` of `drmuzikbpn/claude-utilization-mcp`.
 xcodegen generate                              # UsageDeck.xcodeproj is generated, never committed
 xcodebuild -project UsageDeck.xcodeproj -scheme UsageDeck \
   -destination 'generic/platform=iOS Simulator' build        # also builds + embeds the watch app
+xcodebuild -project UsageDeck.xcodeproj -scheme UsageDeck \
+  -destination 'platform=iOS Simulator,name=<an iOS 18+ iPhone>' test   # UI smoke test (demo data)
 xcodebuild -project UsageDeck.xcodeproj -scheme UsageDeckWatch \
   -destination 'generic/platform=watchOS Simulator' build
 swiftformat . && swiftlint lint --strict        # lefthook runs both + `swift build` on pre-commit
@@ -27,7 +29,8 @@ of this repo and runs whichever `lefthook.yml` the committing worktree has. Neve
 | Path | What lives there |
 | --- | --- |
 | `Packages/UsageCore/` | SwiftPM, no UI. `Daemon/` (DTOs, `DaemonAPI`, `EventStream`, `Endpoints`, errors), `Net/PinnedTrust`, `Pairing/`, `Device/` (`DeviceReducer` + `DeviceClient` actor), `Model/` (`TeamState`, `Aging`, `BurnHistory`, `Version`, `Highest`, `SetupCheck`, `UserNames`), `Pause/`, `Alerts/`, `Format/`, `Watch/` (`WatchSnapshot`, wire messages), `Storage/TokenStore`. Linked by all four targets. |
-| `App/` | iOS app `com.evenseal.usagedeck` (iOS 18). |
+| `App/` | iOS app `com.evenseal.usagedeck` (iOS 18). `Store/` (`DeckStore` — the one `@Observable` app model; `WatchBridge`, `AlertNotifier`, `BackgroundRefresh`, Debug-only `DemoData`), `UI/` (Ledger, WideDock, Project/Projects, Device, Settings, Pairing, shared `Components/`), `Theme/` (palette + bundled OFL fonts in `Resources/Fonts`). App logic that can be tested without UIKit lives in UsageCore `Deck/` (`DeckSettings`, `DeviceRegistry`, `InstallID`, `AddressMerge`, `PairingInput`, `PauseVisuals`, `HomeEmpty`, `DeckAlerts`, `SnapshotDiff`). |
+| `AppUITests/` | XCUITest smoke test: launches with `-UsageDeckDemo` (Debug only, made-up devices, no daemon) and walks every screen. |
 | `Watch/` | watchOS app `com.evenseal.usagedeck.watchkitapp` (watchOS 11), single target. |
 | `Widgets/` | iOS widget extension `.widgets`. |
 | `Complications/` | watchOS widget extension `.watchkitapp.complications`. |
@@ -73,6 +76,13 @@ fixture both sides must hash identically.
 - `BurnHistory` is written from device actors and read on the main actor: every access locks.
 - Every user-facing error comes from the daemon envelope: hint → message → per-code default.
 - User-facing copy says **"device"**, never "Mac" (the daemon runs on Linux too).
+- Paired `DeviceRecord`s live in `UserDefaults` (`DeviceRegistry`), escalations and the alert
+  ledger in the App Group suite. `/health.install.listeners` TLS addresses are **merged into**
+  a record's `addrs` (appended), never replace them — the `.local` name must survive.
+- A v1 JSON paste is rejected with the Android message and its token is never stored or echoed;
+  the paste field is cleared.
+- Frozen alerts never fire for a device's first state after launch (`DeckAlerts`); limit alerts
+  do, gated once per window by `AlertLedger`. Quiet hours deliver silently (passive), never drop.
 - Watch↔phone: `{refresh}` every 10 s; the phone replies at once with its cached snapshot and
   follows with a fresh one via `updateApplicationContext`. Snapshots go through
   `WatchSnapshotCodec` (< 60 KB, top 20 projects). Complication transfers only on a ≥ 5-point

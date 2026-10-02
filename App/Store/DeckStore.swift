@@ -101,6 +101,20 @@ final class DeckStore {
         fold()
     }
 
+    #if DEBUG
+        /// `-UsageDeckDemo`: made-up devices with no clients behind them (see `DemoData`).
+        func seedDemo() {
+            let at = Date()
+            let devices = DemoData.devices(now: at)
+            DemoData.seedBurn(burn, devices: devices, now: at)
+            records = devices.map(\.record)
+            for device in devices {
+                states[device.id] = device
+            }
+            fold()
+        }
+    #endif
+
     // MARK: - lifecycle
 
     /// Foreground: SSE streams, the escalation timer and the ticker run. Background: all stop;

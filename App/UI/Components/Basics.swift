@@ -47,6 +47,7 @@ struct Tag: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background((color?.opacity(0.15) ?? DeckColor.surface2), in: RoundedRectangle(cornerRadius: 5))
+            .fixedSize()
     }
 }
 

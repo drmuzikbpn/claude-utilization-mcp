@@ -82,6 +82,9 @@ struct PauseButton: View {
         .accessibilityLabel(accessibilityText)
     }
 
+    /// U+25B6 with the text variation selector, so it never renders as the emoji button.
+    private static let play = "\u{25B6}\u{FE0E}"
+
     private var isInFlight: Bool {
         if case .inFlight = visual {
             return true
@@ -91,14 +94,14 @@ struct PauseButton: View {
 
     private var label: String {
         switch visual {
-        case let .soft(countdown): countdown ?? "▶"
+        case let .soft(countdown): countdown ?? Self.play
         case let .frozen(elapsed): elapsed
         default: "❚❚"
         }
     }
 
     private var isGlyph: Bool {
-        label == "❚❚" || label == "▶"
+        label == "❚❚" || label == Self.play
     }
 
     private var ring: Color {
