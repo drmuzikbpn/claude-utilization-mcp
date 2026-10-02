@@ -46,6 +46,12 @@ final class DeckStore {
     private(set) var pairingInFlight = false
     /// Set by "Re-pair" on a device: the next redeemed invite replaces that device's token.
     private(set) var replacingDeviceId: String?
+    /// A device just paired: "Connecting to <name>…" shows until its first full load is in.
+    private(set) var connect = ConnectTracker()
+
+    var connecting: ConnectTracker.Attempt? {
+        connect.current
+    }
 
     let pause: PauseController
 
@@ -68,6 +74,8 @@ final class DeckStore {
     @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private var chipTask: Task<Void, Never>?
     @ObservationIgnored private var toastTask: Task<Void, Never>?
+    @ObservationIgnored private var bootstrapTask: Task<Void, Never>?
+    @ObservationIgnored private var connectTimer: Task<Void, Never>?
     @ObservationIgnored private var widgetSnapshot: WatchSnapshot?
     @ObservationIgnored private(set) var snapshot = WatchSnapshot.empty
 
@@ -112,6 +120,33 @@ final class DeckStore {
                 states[device.id] = device
             }
             fold()
+            if DemoData.opensConnecting, let studio = devices.first {
+                seedConnecting(studio)
+            }
+        }
+
+        /// Plays a pairing's first load for `studio`: nothing in hand, then all of it at once.
+        private func seedConnecting(_ studio: DeviceState) {
+            var waiting = studio
+            waiting.summaryLoaded = false
+            states[studio.id] = waiting
+            if DemoData.holdsConnecting {
+                connect = ConnectTracker(timeout: 600)
+            }
+            _ = connect.begin(deviceId: studio.id, name: studio.record.name, now: Date())
+            armConnectTimer()
+            fold()
+            guard !DemoData.holdsConnecting else { return }
+            Task { [weak self] in
+                try? await Task.sleep(for: DemoData.connectingDelay)
+                guard let self, let attempt = connecting else { return }
+                var arrived = studio
+                arrived.summaryLoaded = true
+                states[studio.id] = arrived
+                setupChecks[studio.id] = SetupCheck.evaluate(health: DemoData.health(studio), error: nil, limitsFresh: true)
+                connect.settle(attempt.id)
+                fold()
+            }
         }
     #endif
 
@@ -132,10 +167,19 @@ final class DeckStore {
             }
             pause.start()
             startTicker()
-            for record in records {
+            // A device still connecting gets its check from `bootstrap`, after its first refresh.
+            for record in records where record.id != connecting?.deviceId {
                 Task { await runSetupCheck(record.id, quietly: true) }
             }
+            // Requests that were in flight when the app was suspended are no answer: start over.
+            if let attempt = connect.resume(now: Date()) {
+                startBootstrap(attempt)
+                armConnectTimer()
+            }
         } else {
+            connect.pause(now: Date())
+            connectTimer?.cancel()
+            bootstrapTask?.cancel()
             for client in all {
                 Task { await client.stop() }
             }
@@ -245,13 +289,17 @@ final class DeckStore {
             checking.insert(id)
         }
         defer { checking.remove(id) }
+        setupChecks[id] = await evaluateSetup(id, client: client)
+    }
+
+    private func evaluateSetup(_ id: String, client: DeviceClient) async -> SetupCheck {
         do {
             let health = try await client.api.health()
             mergeAddresses(id, reported: health.tlsAddrs, api: client.api)
             let limitsFresh = !(states[id]?.limits.isEmpty ?? true)
-            setupChecks[id] = SetupCheck.evaluate(health: health, error: nil, limitsFresh: limitsFresh)
+            return SetupCheck.evaluate(health: health, error: nil, limitsFresh: limitsFresh)
         } catch {
-            setupChecks[id] = SetupCheck.evaluate(health: nil, error: DaemonError.from(transport: error), limitsFresh: false)
+            return SetupCheck.evaluate(health: nil, error: DaemonError.from(transport: error), limitsFresh: false)
         }
     }
 
@@ -335,12 +383,14 @@ final class DeckStore {
         }
     }
 
+    static let toastDuration: Duration = .seconds(4)
+
     func showToast(_ text: String) {
         toast = text
         toastSerial += 1
         toastTask?.cancel()
         toastTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(4))
+            try? await Task.sleep(for: Self.toastDuration)
             guard !Task.isCancelled else { return }
             self?.toast = nil
         }
@@ -472,6 +522,12 @@ final class DeckStore {
     /// Redeems the confirmed invite over pinned HTTPS, keeps the token in the Keychain only,
     /// connects, asks for notification permission and runs the setup check at once.
     func confirmPairing(_ invite: PairingInvite) async {
+        // One pairing at a time: a link that arrives mid-pairing waits for its confirmation
+        // until the overlay has closed.
+        guard !pairingInFlight, connecting == nil else {
+            pendingInvite = invite
+            return
+        }
         pendingInvite = nil
         pairingInFlight = true
         defer { pairingInFlight = false }
@@ -491,17 +547,79 @@ final class DeckStore {
                 records.append(record)
             }
             registry.save(records)
+            setupChecks[record.id] = nil
             connect(record)
             fold()
             replacingDeviceId = nil
             showPairing = false
             pairingError = nil
-            path = [.device(record.id)]
-            notifier.requestAuthorization()
-            await runSetupCheck(record.id)
+            if let attempt = connect.begin(deviceId: record.id, name: record.name, now: Date()) {
+                startBootstrap(attempt)
+                armConnectTimer()
+            }
         } catch {
             pairingError = DaemonError.from(transport: error).userMessage
             showPairing = true
+        }
+    }
+
+    /// Where the connecting overlay stands; nil when it is not showing.
+    var connectingPhase: FirstLoad.Phase? {
+        guard let attempt = connecting else { return nil }
+        return connect.phase(state: team.device(attempt.deviceId), check: setupChecks[attempt.deviceId], now: now)
+    }
+
+    private func startBootstrap(_ attempt: Int) {
+        guard let deviceId = connect.current?.deviceId else { return }
+        bootstrapTask?.cancel()
+        setupChecks[deviceId] = nil
+        bootstrapTask = Task { [weak self] in await self?.bootstrap(attempt, deviceId: deviceId) }
+    }
+
+    /// One REST pass and then the setup check, in that order, so the checklist's "Usage limits"
+    /// row sees the limits the pass brought in. Results only count for the attempt that asked.
+    private func bootstrap(_ attempt: Int, deviceId: String) async {
+        guard let client = clients[deviceId] else { return }
+        // Not cancelled with us: a cancelled URLSession request would read as "Device
+        // unreachable" in the device's own state.
+        await Task { await client.refresh() }.value
+        guard !Task.isCancelled, connect.current?.id == attempt else { return }
+        await ingest(client.state)
+        let check = await evaluateSetup(deviceId, client: client)
+        guard !Task.isCancelled, connect.current?.id == attempt else { return }
+        setupChecks[deviceId] = check
+        connect.settle(attempt)
+    }
+
+    /// The timeout runs off its own timer, over foreground time only (paused in the background).
+    private func armConnectTimer() {
+        connectTimer?.cancel()
+        guard let attempt = connecting?.id, let remaining = connect.remaining(now: Date()) else { return }
+        connectTimer = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(remaining))
+            guard !Task.isCancelled else { return }
+            self?.connect.expire(attempt)
+        }
+    }
+
+    /// Closes the connecting overlay onto the device screen (also its Skip button). `message`
+    /// is the reason it stopped waiting, shown as a toast; the notification permission prompt
+    /// waits until the toast has been read rather than covering it.
+    func finishConnecting(_ attempt: Int, message: String? = nil) {
+        guard let done = connect.finish(attempt) else { return }
+        bootstrapTask?.cancel()
+        connectTimer?.cancel()
+        if records.contains(where: { $0.id == done.deviceId }) {
+            path = [.device(done.deviceId)]
+        }
+        guard let message else {
+            notifier.requestAuthorization()
+            return
+        }
+        showToast(message)
+        Task { [weak self] in
+            try? await Task.sleep(for: Self.toastDuration + .milliseconds(500))
+            self?.notifier.requestAuthorization()
         }
     }
 }

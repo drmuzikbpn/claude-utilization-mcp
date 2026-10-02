@@ -371,6 +371,9 @@ public struct DeviceState: Sendable, Equatable {
     public var update: UpdateState?
     public var projectTokens: [ProjectTokens] = []
     public var rev: Int64 = 0
+    /// A stream snapshot or a `/v1/summary` has landed: limits and spend are this device's
+    /// answer, not the empty defaults (which may be the answer too, on a fresh install).
+    public var summaryLoaded = false
     public var lastError: String?
     /// The daemon rejected the token (401): the device needs re-pairing, not a retry.
     public var needsRepair: Bool = false
