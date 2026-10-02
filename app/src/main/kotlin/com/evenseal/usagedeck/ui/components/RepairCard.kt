@@ -61,6 +61,16 @@ fun RepairCard(machine: MachineState, onRepair: (String) -> Unit, modifier: Modi
                 fontSize = 11.sp,
                 modifier = Modifier.padding(top = 2.dp)
             )
+            // The deck can no longer lift its own pauses there; the Mac can.
+            if (machine.rules.isNotEmpty()) {
+                Text(
+                    text = "If sessions on $name are stuck paused, run `claude-usage resume --all` there.",
+                    color = DeckColors.muted,
+                    fontFamily = DeckType.mono,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
         }
         Text(
             text = "Re-pair",

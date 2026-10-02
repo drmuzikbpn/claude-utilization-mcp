@@ -6,6 +6,8 @@ import androidx.compose.ui.test.performClick
 import com.evenseal.usagedeck.core.model.Health
 import com.evenseal.usagedeck.core.model.MachineConfig
 import com.evenseal.usagedeck.core.model.MachineState
+import com.evenseal.usagedeck.core.model.PauseMode
+import com.evenseal.usagedeck.core.model.PauseRule
 import com.evenseal.usagedeck.core.model.RepairReason
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -44,5 +46,25 @@ class RepairCardTest {
         compose.onNodeWithText("Re-pair").performClick()
 
         assertEquals("m1", opened)
+    }
+
+    @Test
+    fun `a machine with standing pause rules gets the resume hint`() {
+        val paused = machine.copy(
+            rules = listOf(
+                PauseRule("r1", "all", PauseMode.HARD, "usage-deck:x", java.time.Instant.EPOCH, "dashboard")
+            )
+        )
+        compose.setContent { RepairCard(machine = paused, onRepair = {}) }
+
+        compose.onNodeWithText("If sessions on studio are stuck paused, run `claude-usage resume --all` there.")
+            .assertExists()
+    }
+
+    @Test
+    fun `no rules, no resume hint`() {
+        compose.setContent { RepairCard(machine = machine, onRepair = {}) }
+        compose.onNodeWithText("If sessions on studio are stuck paused, run `claude-usage resume --all` there.")
+            .assertDoesNotExist()
     }
 }
