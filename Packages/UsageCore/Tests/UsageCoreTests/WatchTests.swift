@@ -111,6 +111,17 @@ struct WatchSnapshotTests {
         #expect(try WatchSnapshotCodec.decode(WatchSnapshotCodec.encode(snapshot)) == snapshot)
     }
 
+    @Test func sharedStoreRoundTripsAndToleratesAMissingFile() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = SharedSnapshotStore(directory: dir)
+        #expect(store.read() == nil)
+        let snapshot = WatchSnapshot.make(team: bigTeam(projects: 2, sessionsEach: 1), escalations: [], now: t0)
+        store.write(snapshot)
+        #expect(store.read() == snapshot)
+    }
+
     @Test func keepsTheTop20ProjectsInOrder() throws {
         let snapshot = WatchSnapshot.make(team: bigTeam(projects: 30, sessionsEach: 1), escalations: [], now: t0)
         let decoded = try WatchSnapshotCodec.decode(WatchSnapshotCodec.encode(snapshot))
