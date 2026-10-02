@@ -83,9 +83,9 @@ hook is missing.
 
 ## Remote and pushing
 
-This project lives on the orphan branch `usage-deck` of `drmuzikbpn/claude-utilization-mcp` (the
-daemon's repo; local `main` tracks `origin/usage-deck`, pushed 2026-09-14 with Alan's approval).
-Do not `git push` without explicit approval in the session. CI runs on pushes to `usage-deck` only
+This project lives on the orphan branch `usage-android` of `drmuzikbpn/claude-utilization-mcp` (the
+daemon's repo; local `main` tracks `origin/usage-android`, pushed 2026-09-14 with Alan's approval). Renamed from `usage-deck` on 2026-10-01; the iPhone + Apple Watch app lives on `usage-ios`.
+Do not `git push` without explicit approval in the session. CI runs on pushes to `usage-android` only
 (never a wildcard: the daemon's release job runs on `main`) and publishes a `deck-<version>`
 pre-release once the signing secrets exist; until then it only tests.
 
