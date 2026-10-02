@@ -2,11 +2,12 @@ import { rmSync } from 'node:fs';
 import { createTokenReader } from './credentials/index.js';
 import { EventBus } from './events/bus.js';
 import { LimitsPoller, effectivePollIntervalMs } from './limits/poller.js';
-import { ensureConfigDir, expandHome, loadConfig, resolveConfigDir, writeJsonFile, type Config } from './config.js';
+import { effectiveTlsPort, ensureConfigDir, expandHome, loadConfig, resolveConfigDir, writeJsonFile, type Config } from './config.js';
 import { daemonFilePath } from './clients/http.js';
 import { bindWants, LAN_KEYWORD, resolveBindAddresses, TAILSCALE_KEYWORD } from './net/bind.js';
 import { resolveLanIPv4, resolveLocalHostName } from './net/lan.js';
 import { resolveMagicDnsName, resolveTailscaleIPv4 } from './net/tailscale.js';
+import { loadOrCreateTlsIdentity, type TlsIdentity } from './net/tls.js';
 import { isLoopbackAddress } from './server/middleware.js';
 import { startBusPublishers } from './server/events.js';
 import { createSessionsSubsystem, type SessionsSubsystem } from './sessions/index.js';
@@ -46,6 +47,14 @@ export const TAILNET_RETRY_MAX_MS = 600_000;
  * `os.networkInterfaces()` only — no subprocess — so the steady-state cost is negligible.
  */
 export const LAN_WATCH_MS = 30_000;
+
+/**
+ * §23.45: which bound addresses also get an HTTPS listener — every non-loopback one, and
+ * loopback too only when `tls.loopback` asks (tests and the iOS contract job).
+ */
+export function wantsTls(host: string, loopback: boolean): boolean {
+  return loopback || !isLoopbackAddress(host);
+}
 
 export function defaultNetworkResolver(): NetworkResolver {
   return {
@@ -105,6 +114,10 @@ export interface DaemonHandle {
   readonly magicDnsName: string | null;
   /** The `.local` name currently accepted in `Host` while `bind` has `lan` (§23.46), or `null`. */
   readonly localHostName: string | null;
+  /** The HTTPS port, or `null` while no HTTPS listener is up (§23.45). */
+  readonly tlsPort: number | null;
+  /** The pinned SPKI fingerprint, or `null` when this daemon has no TLS identity (§23.45). */
+  readonly fingerprint: string | null;
   /** `SIGHUP`: re-resolve the keyword addresses and Host names, re-bind what changed (§16). */
   reload(): Promise<void>;
   stop(): Promise<void>;
@@ -216,6 +229,25 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   if (localHostName !== null) debug(`net: local name ${localHostName}`);
   const hostNames = (): string[] => [magicDnsName, localHostName].filter((n): n is string => n !== null);
 
+  // --- §23.45: the TLS identity, only when some listener could want it ----------
+  const tlsLoopback = config.tls.loopback;
+  const mayNeedTls =
+    tlsLoopback ||
+    config.bind.some((entry) => {
+      const e = entry.trim().toLowerCase();
+      return e === TAILSCALE_KEYWORD || e === LAN_KEYWORD || !isLoopbackAddress(e);
+    });
+  let tlsIdentity: TlsIdentity | null = null;
+  if (mayNeedTls) {
+    try {
+      tlsIdentity = loadOrCreateTlsIdentity({ configDir, name: config.name, localHostName });
+      if (tlsIdentity.created) log('tls: generated a new key — apps paired with an earlier key must pair again');
+      else if (tlsIdentity.reissued) debug('tls: certificate re-issued for the existing key');
+    } catch (err) {
+      log(`tls: no HTTPS listeners — ${(err as Error).message}`);
+    }
+  }
+
   // --- §20: the auto-updater ------------------------------------------------
   // Built before the server so `/health.update` reads live state from the first
   // request; started after the listener is up so the first check never races boot.
@@ -252,6 +284,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     bus,
     sessions,
     extraHostNames: hostNames(),
+    tls: tlsIdentity === null ? null : { key: tlsIdentity.key, cert: tlsIdentity.cert },
     // §19: SSE snapshot carries the live sessions + pause rules.
     ...(sessions ? { snapshots: { sessions: () => sessions.registry.list(), rules: () => sessions.rules.list() } } : {}),
   });
@@ -263,8 +296,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
    * time it looks. Cleared for a host once it binds, so a later failure is reported again.
    */
   const reportedBindFailures = new Set<string>();
-  function logBindFailure(host: string, port: number, err: unknown): void {
-    const line = `http: could not bind ${host}:${String(port)} — ${(err as Error).message}`;
+  function logBindFailure(host: string, port: number, err: unknown, scheme = 'http'): void {
+    const line = `${scheme}: could not bind ${host}:${String(port)} — ${(err as Error).message}`;
     if (reportedBindFailures.has(line)) return;
     reportedBindFailures.add(line);
     log(line);
@@ -296,12 +329,36 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   }
   debug(`http: listening on ${boundHosts.map((h) => `${h}:${bound}`).join(', ')}`);
 
-  writeJsonFile(daemonFilePath(configDir), {
-    pid: process.pid,
-    port: bound,
-    startedAt: new Date().toISOString(),
-    version,
-  });
+  /** §23.45: the HTTPS port asked for; once one TLS listener is up, the rest share its port. */
+  const requestedTlsPort = effectiveTlsPort(config, port);
+  /** Hosts with an HTTPS listener. Best-effort, like every secondary HTTP bind. */
+  const tlsHosts = new Set<string>();
+  async function bindTls(host: string): Promise<void> {
+    if (tlsIdentity === null || !wantsTls(host, tlsLoopback) || tlsHosts.has(host)) return;
+    const target = server.tlsPort ?? requestedTlsPort;
+    try {
+      const actual = await server.bind(host, target, { tls: true });
+      tlsHosts.add(host);
+      debug(`https: listening on ${host}:${actual}`);
+    } catch (err) {
+      logBindFailure(host, target, err, 'https');
+    }
+  }
+  for (const host of boundHosts) await bindTls(host);
+
+  const startedAtIso = new Date().toISOString();
+  let recordedTlsPort: number | null = server.tlsPort;
+  const writeDaemonFile = (): void => {
+    recordedTlsPort = server.tlsPort;
+    writeJsonFile(daemonFilePath(configDir), {
+      pid: process.pid,
+      port: bound,
+      tlsPort: recordedTlsPort,
+      startedAt: startedAtIso,
+      version,
+    });
+  };
+  writeDaemonFile();
 
   if (opts.poll !== false) {
     poller.start();
@@ -371,8 +428,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
       if (next.includes(host)) continue;
       await server.unbind(host);
       boundHosts.splice(boundHosts.indexOf(host), 1);
+      tlsHosts.delete(host);
       log(`http: stopped listening on ${host}:${bound}`);
     }
+
+    // HTTPS follows HTTP: new hosts get one, and an earlier failure gets another try.
+    for (const host of boundHosts) await bindTls(host);
+    if (server.tlsPort !== recordedTlsPort && !stopped) writeDaemonFile();
 
     const magic = wantsTailnet ? await network.magicDnsName() : null;
     const local = wantsLan ? await localHostNameOf() : null;
@@ -496,6 +558,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     get localHostName() {
       return localHostName;
     },
+    get tlsPort() {
+      return server.tlsPort;
+    },
+    fingerprint: tlsIdentity?.fingerprint ?? null,
     reload,
     stop,
   };
@@ -522,6 +588,10 @@ export async function serve(opts: DaemonOptions = {}): Promise<number> {
   for (const address of handle.addresses) {
     const host = address.includes(':') ? `[${address}]` : address;
     log(`claude-usage ${handle.config.name} listening on http://${host}:${handle.port}`);
+  }
+  for (const listener of handle.server.listeners.filter((l) => l.tls)) {
+    const host = listener.addr.includes(':') ? `[${listener.addr}]` : listener.addr;
+    log(`claude-usage ${handle.config.name} listening on https://${host}:${listener.port}`);
   }
 
   // §16: re-resolve the tailnet on SIGHUP; a reload never brings the daemon down.

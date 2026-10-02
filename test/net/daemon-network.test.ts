@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer as createNetServer, type Server as NetServer } from 'node:net';
 import { saveConfig, defaultConfig } from '../../src/config.js';
-import { serve, startDaemon, PortInUseError, type DaemonHandle, type DaemonOptions, type NetworkResolver } from '../../src/daemon.js';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { serve, startDaemon, PortInUseError, wantsTls, type DaemonHandle, type DaemonOptions, type NetworkResolver } from '../../src/daemon.js';
 import { FakeTokensSource } from '../helpers/fakes.js';
 import { tempConfigDir } from '../helpers/fake-daemon.js';
 import { rawRequest } from '../helpers/raw-request.js';
@@ -370,5 +372,56 @@ describe('the lan keyword (§23.44, §23.46)', () => {
     const after = net.lanCalls;
     await new Promise((r) => setTimeout(r, 60));
     expect(net.lanCalls).toBe(after);
+  });
+});
+
+describe('HTTPS listeners in the daemon (§23.45)', () => {
+  it('adds HTTPS on loopback with tls.loopback, records tlsPort and exposes the pin', async () => {
+    const configDir = tempConfigDir();
+    const h = await start(['127.0.0.1'], new FakeNetwork(), {
+      configDir,
+      config: { ...defaultConfig(), bind: ['127.0.0.1'], auth: { token: 'test-bearer-token' }, tls: { port: null, loopback: true } },
+    });
+    expect(h.tlsPort).not.toBeNull();
+    expect(h.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    const tlsPort = h.tlsPort as number;
+    const res = await rawRequest({ port: tlsPort, tls: true, path: '/health', headers: { host: `127.0.0.1:${tlsPort}` } });
+    expect(res.status).toBe(200);
+    const info = JSON.parse(readFileSync(join(configDir, 'daemon.json'), 'utf8')) as { tlsPort: number };
+    expect(info.tlsPort).toBe(tlsPort);
+  });
+
+  it('a loopback-only daemon has no TLS listener and creates no key', async () => {
+    const configDir = tempConfigDir();
+    const h = await start(['127.0.0.1'], new FakeNetwork(), { configDir });
+    expect(h.tlsPort).toBeNull();
+    expect(h.fingerprint).toBeNull();
+    expect(existsSync(join(configDir, 'tls-key.pem'))).toBe(false);
+    const info = JSON.parse(readFileSync(join(configDir, 'daemon.json'), 'utf8')) as { tlsPort: unknown };
+    expect(info.tlsPort).toBeNull();
+  });
+
+  it('a TLS port that is taken is logged, never fatal', async () => {
+    const taken = createNetServer();
+    sockets.push(taken);
+    const port = await new Promise<number>((resolve) => {
+      taken.listen(0, '127.0.0.1', () => resolve((taken.address() as { port: number }).port));
+    });
+    const lines: string[] = [];
+    const h = await start(['127.0.0.1'], new FakeNetwork(), {
+      config: { ...defaultConfig(), bind: ['127.0.0.1'], auth: { token: 'test-bearer-token' }, tls: { port, loopback: true } },
+      log: (l) => lines.push(l),
+    });
+    expect(h.tlsPort).toBeNull();
+    expect(lines.join('\n')).toMatch(/https: could not bind 127\.0\.0\.1/);
+    expect((await rawRequest({ port: h.port, path: '/health' })).status).toBe(200);
+  });
+
+  it('wantsTls: every non-loopback address, loopback only when asked', () => {
+    expect(wantsTls('192.168.1.20', false)).toBe(true);
+    expect(wantsTls('100.101.102.103', false)).toBe(true);
+    expect(wantsTls('127.0.0.1', false)).toBe(false);
+    expect(wantsTls('::1', false)).toBe(false);
+    expect(wantsTls('127.0.0.1', true)).toBe(true);
   });
 });

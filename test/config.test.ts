@@ -6,6 +6,7 @@ import {
   ConfigError,
   configPath,
   defaultConfig,
+  effectiveTlsPort,
   expandHome,
   loadConfig,
   redactConfig,
@@ -94,6 +95,8 @@ describe('validation', () => {
     ['retentionDays', { retentionDays: 0 }, 'retentionDays'],
     ['events.maxClients', { events: { maxClients: 0 } }, 'events.maxClients'],
     ['autoUpdate.enabled', { autoUpdate: { enabled: 1 } }, 'autoUpdate.enabled'],
+    ['tls.port', { tls: { port: 70_000 } }, 'tls.port'],
+    ['tls.loopback', { tls: { loopback: 'yes' } }, 'tls.loopback'],
   ];
 
   for (const [label, input, key] of cases) {
@@ -152,3 +155,19 @@ describe('redactConfig', () => {
     expect(redactConfig(defaultConfig()).auth.token).toBe('');
   });
 });
+
+describe('tls (§23.45)', () => {
+  it('defaults to port + 1, and to 0 when the HTTP port is 0', () => {
+    const c = validateConfig({});
+    expect(c.tls).toEqual({ port: null, loopback: false });
+    expect(effectiveTlsPort(c, 47_291)).toBe(47_292);
+    expect(effectiveTlsPort(c, 0)).toBe(0);
+  });
+
+  it('honours an explicit port and keeps unknown keys', () => {
+    const c = validateConfig({ tls: { port: 9443, loopback: true, future: 1 } });
+    expect(effectiveTlsPort(c, 47_291)).toBe(9443);
+    expect(c.tls).toMatchObject({ loopback: true, future: 1 });
+  });
+});
+

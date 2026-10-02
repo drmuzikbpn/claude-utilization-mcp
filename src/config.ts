@@ -38,6 +38,14 @@ export interface EventsConfig {
   maxClients: number;
 }
 
+/** §23.45: HTTPS listeners. */
+export interface TlsConfig {
+  /** `null` ⇒ `port + 1` (or `0` when `port` is `0`). */
+  port: number | null;
+  /** Also serve HTTPS on loopback — tests and the iOS contract job only. */
+  loopback: boolean;
+}
+
 /**
  * Effective configuration. The index signature is what lets unknown keys from an
  * existing `config.json` survive a load/save round-trip (§9).
@@ -55,6 +63,7 @@ export interface Config {
   integrations: Integrations;
   autoUpdate: AutoUpdateConfig;
   events: EventsConfig;
+  tls: TlsConfig;
   [key: string]: unknown;
 }
 
@@ -93,7 +102,14 @@ export function defaultConfig(): Config {
     integrations: { service: true, hook: true, mcp: true, statusline: false },
     autoUpdate: { enabled: true, intervalMs: 600_000, repo: 'drmuzikbpn/claude-utilization-mcp' },
     events: { maxClients: 16 },
+    tls: { port: null, loopback: false },
   };
+}
+
+/** The HTTPS port for an HTTP port (§23.45): explicit `tls.port`, else `port + 1`; `0` stays `0`. */
+export function effectiveTlsPort(config: Pick<Config, 'tls'>, httpPort: number): number {
+  if (config.tls.port !== null) return config.tls.port;
+  return httpPort === 0 ? 0 : httpPort + 1;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -178,6 +194,7 @@ export function validateConfig(input: unknown): Config {
   const authRaw = reqSection(raw, 'auth');
   const autoUpdateRaw = reqSection(raw, 'autoUpdate');
   const eventsRaw = reqSection(raw, 'events');
+  const tlsRaw = reqSection(raw, 'tls');
 
   const config: Config = {
     ...raw,
@@ -206,6 +223,11 @@ export function validateConfig(input: unknown): Config {
     events: {
       ...eventsRaw,
       maxClients: nestedInt(eventsRaw, 'maxClients', 'events.maxClients', d.events.maxClients, 1, 4_096),
+    },
+    tls: {
+      ...tlsRaw,
+      port: tlsRaw['port'] === undefined || tlsRaw['port'] === null ? null : nestedInt(tlsRaw, 'port', 'tls.port', 0, 0, 65_535),
+      loopback: reqBool(tlsRaw, 'loopback', 'tls.loopback', d.tls.loopback),
     },
   };
   return config;

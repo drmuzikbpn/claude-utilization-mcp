@@ -1,4 +1,5 @@
 import { createServer as createHttpServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { redactConfig, type Config } from '../config.js';
 import { EventBus } from '../events/bus.js';
@@ -63,11 +64,22 @@ export interface ServerOptions {
   /** Sessions and pause rules for the SSE `snapshot` event; defaults to empty arrays. */
   snapshots?: SnapshotProvider | undefined;
   eventsTuning?: EventsTuning;
+  /** §23.45: PEM key + certificate for HTTPS listeners; absent ⇒ `bind(…, { tls: true })` throws. */
+  tls?: { key: string; cert: string } | null;
 }
 
 export interface BoundAddress {
   address: string;
   port: number;
+  /** §23.45: an HTTPS listener. */
+  tls: boolean;
+}
+
+/** One listener as the daemon asked for it — what `/health.install.listeners` reports (§23.48). */
+export interface ListenerInfo {
+  addr: string;
+  port: number;
+  tls: boolean;
 }
 
 export interface UsageServer {
@@ -76,8 +88,12 @@ export interface UsageServer {
   /** One `http.Server` per bound address, all sharing `handle` (§16). */
   readonly servers: readonly Server[];
   readonly addresses: readonly BoundAddress[];
-  /** The port every listener shares, or `null` before `listen`. */
+  /** The port every plain-HTTP listener shares, or `null` before `listen`. */
   readonly port: number | null;
+  /** The port the HTTPS listeners share, or `null` while there are none (§23.45). */
+  readonly tlsPort: number | null;
+  /** Every listener, in bind order: requested address, port, TLS or not. */
+  readonly listeners: readonly ListenerInfo[];
   /** The bus `GET /v1/events` streams; the daemon publishes onto it (§19). */
   readonly bus: EventBus;
   readonly events: EventsEndpoint;
@@ -86,9 +102,12 @@ export interface UsageServer {
   handle(req: IncomingMessage, res: ServerResponse): void;
   /** Listen on one address or several and resolve with the bound port (tests pass 0). */
   listen(port: number, hosts?: string | readonly string[]): Promise<number>;
-  /** Add one address after startup (SIGHUP re-resolution, §16); already bound → no-op. */
-  bind(host: string, port?: number): Promise<number>;
-  /** Stop listening on one address, leaving the rest up. */
+  /**
+   * Add one address after startup (SIGHUP re-resolution, §16); already bound → no-op.
+   * `{ tls: true }` adds an HTTPS listener instead (§23.45), defaulting to `tlsPort`.
+   */
+  bind(host: string, port?: number, opts?: { tls?: boolean }): Promise<number>;
+  /** Stop listening on one address — its HTTP and HTTPS listeners both — leaving the rest up. */
   unbind(host: string): Promise<void>;
   /** Replace the extra Host names — the MagicDNS name, re-resolved on SIGHUP (§16). */
   setExtraHostNames(names: readonly string[]): void;
@@ -127,12 +146,14 @@ export function createServer(opts: ServerOptions): UsageServer {
   let tokens: TokensSource | null = opts.tokens ?? null;
   // W3: one registration block — the routes themselves live in src/sessions/routes.ts.
   const sessionsRouter = opts.sessions?.router ?? null;
-  /** One listener per requested address, keyed by the lower-cased host we asked for. */
-  const listeners = new Map<string, { server: Server; addresses: BoundAddress[] }>();
+  /** One listener per requested address and scheme, keyed by `listenerKey`. */
+  const listeners = new Map<string, { server: Server; host: string; tls: boolean; addresses: BoundAddress[] }>();
+  const listenerKey = (host: string, tls: boolean): string => `${host.toLowerCase()}${tls ? '#tls' : ''}`;
   const bound: BoundAddress[] = [];
   let extraHostNames: string[] = [...(opts.extraHostNames ?? [])];
   let policy: HostPolicy = buildHostPolicy(bound, extraHostNames);
   let listenPort: number | null = null;
+  const tlsPortNow = (): number | null => [...listeners.values()].find((l) => l.tls)?.addresses[0]?.port ?? null;
 
   /** `addresses` is handed out live, so it is refilled in place rather than replaced. */
   const rebuildPolicy = (): void => {
@@ -307,12 +328,13 @@ export function createServer(opts: ServerOptions): UsageServer {
    * per-address so the daemon can add a tailnet address that only appeared later, or drop
    * one that went away, without disturbing loopback.
    */
-  async function bindOne(host: string, port: number): Promise<number> {
-    const key = host.toLowerCase();
+  async function bindOne(host: string, port: number, tls = false): Promise<number> {
+    const key = listenerKey(host, tls);
     const existing = listeners.get(key);
     if (existing !== undefined) return existing.addresses[0]?.port ?? port;
 
-    const server = createHttpServer(handle);
+    if (tls && (opts.tls === undefined || opts.tls === null)) throw new Error('no TLS identity — cannot add an HTTPS listener');
+    const server: Server = tls && opts.tls ? createHttpsServer({ key: opts.tls.key, cert: opts.tls.cert }, handle) : createHttpServer(handle);
     server.requestTimeout = requestTimeoutMs;
     server.headersTimeout = requestTimeoutMs;
 
@@ -334,10 +356,10 @@ export function createServer(opts: ServerOptions): UsageServer {
     });
 
     const info = server.address() as AddressInfo | null;
-    const addresses: BoundAddress[] = [{ address: host, port: actual }];
-    if (info !== null && info.address !== host) addresses.push({ address: info.address, port: actual });
-    listeners.set(key, { server, addresses });
-    listenPort = actual;
+    const addresses: BoundAddress[] = [{ address: host, port: actual, tls }];
+    if (info !== null && info.address !== host) addresses.push({ address: info.address, port: actual, tls });
+    listeners.set(key, { server, host, tls, addresses });
+    if (!tls) listenPort = actual;
     rebuildPolicy();
     return actual;
   }
@@ -359,6 +381,12 @@ export function createServer(opts: ServerOptions): UsageServer {
     get port() {
       return listenPort;
     },
+    get tlsPort() {
+      return tlsPortNow();
+    },
+    get listeners() {
+      return [...listeners.values()].map((l) => ({ addr: l.host, port: l.addresses[0]?.port ?? 0, tls: l.tls }));
+    },
     bus,
     events,
     get addresses() {
@@ -379,18 +407,22 @@ export function createServer(opts: ServerOptions): UsageServer {
       }
       return actual;
     },
-    async bind(host, port) {
-      const target = port ?? listenPort;
-      if (target === null) throw new Error('bind() needs a port until listen() has run');
-      return bindOne(host, target);
+    async bind(host, port, bindOpts = {}) {
+      const tls = bindOpts.tls === true;
+      const target = port ?? (tls ? tlsPortNow() : listenPort);
+      if (target === null) throw new Error('bind() needs a port until the first listener of its kind is up');
+      return bindOne(host, target, tls);
     },
     async unbind(host) {
-      const key = host.toLowerCase();
-      const entry = listeners.get(key);
-      if (entry === undefined) return;
-      listeners.delete(key);
+      const entries = [listenerKey(host, false), listenerKey(host, true)].flatMap((key) => {
+        const entry = listeners.get(key);
+        if (entry === undefined) return [];
+        listeners.delete(key);
+        return [entry];
+      });
+      if (entries.length === 0) return;
       rebuildPolicy();
-      await closeServer(entry.server);
+      await Promise.all(entries.map((entry) => closeServer(entry.server)));
     },
     setExtraHostNames(names) {
       extraHostNames = [...names];
