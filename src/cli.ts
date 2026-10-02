@@ -35,7 +35,7 @@ Usage: claude-usage <command> [options]
   pause <scope> [--hard] [--reason] pause all | project:<path> | session:<id>
   resume <scope> | --all            clear pause rules (--all works with no daemon)
   install [--yes] [--no-service]    install the service, hooks and MCP server
-          [--no-hook] [--no-mcp] [--statusline] [--tailscale] [--lan] [--linger]
+          [--no-hook] [--no-mcp] [--statusline | --no-statusline] [--tailscale] [--lan] [--linger]
   configure [<setting> <on|off>]    interactive menu, or a scriptable setting
   pair                              QR page to pair the iPhone app (one-time code)
   uninstall [--purge]               remove everything install added

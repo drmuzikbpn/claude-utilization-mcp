@@ -153,7 +153,9 @@ export async function setToggle(ctx: ResolvedContext, io: InstallIO, toggle: Tog
           statusline: !isHook,
         });
         if (!isHook && r.statusLine?.outcome === 'other-exists') {
-          io.stdout(`you already have a statusLine — append this to your own script:\n  ${r.statusLine.snippet}\n`);
+          io.stdout(
+            `you already have a statusLine — add this line to your own status line script, after it reads stdin into $input:\n  ${r.statusLine.snippet}\n`,
+          );
         }
       } else {
         removeSettings({ file: ctx.settingsFile, binPath: ctx.binPath, hook: isHook, statusline: !isHook });

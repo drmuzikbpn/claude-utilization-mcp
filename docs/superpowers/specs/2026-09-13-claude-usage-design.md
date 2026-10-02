@@ -535,6 +535,7 @@ QA from the Android dashboard, and two Macs in daily use.
 | §23.34 | An honest User-Agent on the usage call (2026-09-25) |
 | §23.35 | Limits state transitions are logged at the default level (2026-09-26) |
 | §23.36 | Headline limits from Claude Code's statusline input (2026-09-26) |
+| §23.54 | Install wires the limits feed by default (2026-10-02) |
 | §23.37 | `legacyWindows` follows observations; a lapse is pushed (2026-09-26) |
 | §23.38 | Incremental scans skip unchanged transcripts; flushes have a floor (2026-09-26) |
 | §23.39 | SSE back-pressure is a `false` write, not a non-empty buffer (2026-09-27) |
@@ -1767,3 +1768,33 @@ the old one until its next restart — a rotation that did nothing. It now resta
 `claude-usage pair`.
 
 **Test-first, per Part III:** `test/install/configure.test.ts`.
+
+### §23.54 Install wires the limits feed by default (2026-10-02)
+
+Overrides §7.3 and §8 step 2 ("statusline no"). Since §23.36 the headline limits come from
+Claude Code's statusline input, so a fresh install with the status line off had hooks, sessions
+and token counts but no 5-hour or 7-day numbers: the phone and watch showed empty rings.
+
+- **Install looks first.** Before the plan is printed, install reads what `statusLine` holds
+  (the §23.48 states) and the plan's "live limits" item says what will happen for that case.
+- **None → the silent feed.** `statusLine = { type: "command", command: "<bin> observe" }`.
+  `observe` prints nothing and exits 0, so Claude Code's UI does not change. Default yes;
+  `--yes` accepts it.
+- **Ours, or the user's own that already forwards (`includes-ours`) → nothing is written.**
+- **The user's own, not forwarding (`other`) → never edited** (merge-only, as ever). Install
+  prints the one `observe` line to add to their script, and the final table reads
+  `limits  needs one line in your own status line (see note)`. `configure statusline on` prints
+  the same line (it used to print the `statusline` command, which is not what a script needs).
+- **`--statusline`** still means the visible `5h 42% · 7d 61%` line; asking for it replaces our
+  feed. The feed never replaces a visible line. **`--no-statusline`** leaves `statusLine` alone.
+- **Privacy, stated in the plan before anything is written:** the feed reads only the
+  `rate_limits` percentages from the statusline payload and POSTs them to the daemon on
+  loopback. No prompt text, paths or model output are read, stored or sent anywhere.
+- **Existing installs are not edited by an update.** Re-running `claude-usage install` wires
+  the feed; the app's setup check ("Status line") points there.
+- The final table's `statusline` row is now `limits`: `live, from Claude Code` | `needs one
+  line…` | `off`. `uninstall` and `configure statusline off` remove the feed like the line
+  (both are our command).
+
+**Test-first, per Part III:** `test/install/plan.test.ts`, `test/install/install.test.ts`,
+`test/install/settings-merge.test.ts`.

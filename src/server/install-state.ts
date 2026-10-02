@@ -5,15 +5,11 @@
  * Read-only, best-effort, never throws, and never reports a path. File reads are cached for
  * 60 s; the server adds the live listener list on top.
  */
-import { readFileSync, statSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { commandTargetsBin, groupIsOurs, HOOK_EVENTS } from '../install/settings-merge.js';
+import { readFileSync } from 'node:fs';
+import { commandForwardsToUs, commandTargetsBin, groupIsOurs, HOOK_EVENTS } from '../install/settings-merge.js';
 import { claudeJsonPath, currentBin, settingsPath } from '../paths.js';
 
 export const INSTALL_CACHE_MS = 60_000;
-/** A statusLine script larger than this is not read. */
-const SCRIPT_MAX_BYTES = 64 * 1024;
-const OUR_NAME = 'claude-usage';
 /** `mcpServers` key we register — `MCP_KEY` in install/claude-json.ts, which the daemon does not load. */
 const MCP_KEY = 'claude-usage';
 
@@ -58,32 +54,12 @@ function readJson(file: string): Json | null | undefined {
   }
 }
 
-/** At most this many words of the command are checked for a script path. */
-const MAX_SCRIPT_CANDIDATES = 4;
-
-/** Does any script the command names — `/path/x.sh`, `bash "/path/x.sh"`, `~/x.sh` — mention us? */
-function scriptMentionsUs(command: string): boolean {
-  const words = command.trim().split(/\s+/).slice(0, MAX_SCRIPT_CANDIDATES);
-  return words.some((word) => {
-    const bare = word.replace(/^["']|["']$/g, '');
-    const file = bare.startsWith('~/') ? `${homedir()}${bare.slice(1)}` : bare;
-    if (!file.startsWith('/')) return false;
-    try {
-      const st = statSync(file);
-      if (!st.isFile() || st.size > SCRIPT_MAX_BYTES) return false;
-      return readFileSync(file, 'utf8').includes(OUR_NAME);
-    } catch {
-      return false;
-    }
-  });
-}
-
 function statuslineOf(settings: Json | null | undefined, binPath: string): StatuslineState {
   const command = asRecord(settings?.['statusLine'])?.['command'];
   if (typeof command !== 'string' || command.trim().length === 0) return 'none';
   if (commandTargetsBin(command, binPath)) return 'ours';
   // Users with their own statusLine append our command to it (§7.3) — inline or in a script.
-  if (command.includes(OUR_NAME) || scriptMentionsUs(command)) return 'includes-ours';
+  if (commandForwardsToUs(command)) return 'includes-ours';
   return 'other';
 }
 

@@ -109,8 +109,8 @@ something a session can see mid-conversation and something you can glance at on 
 ## Install options
 
 The [Quick start](#quick-start) is the whole install. `install` is interactive and confirms
-each item; `--yes` accepts the defaults (service **on**, hook **on**, MCP **on**, status
-line **off**, LAN **off**). Flags:
+each item; `--yes` accepts the defaults (service **on**, hook **on**, MCP **on**, live
+limits **on**, LAN **off**). Flags:
 
 | Flag | Effect |
 | --- | --- |
@@ -118,7 +118,8 @@ line **off**, LAN **off**). Flags:
 | `--no-service` | do not install the launchd/systemd unit |
 | `--no-hook` | do not register the Claude Code hooks |
 | `--no-mcp` | do not register the MCP server |
-| `--statusline` | also set `statusLine` (only if you do not already have one) |
+| `--statusline` | show `5h 42% · 7d 61%` in Claude Code's status line (only if you do not already have one) instead of the silent limits feed |
+| `--no-statusline` | leave `statusLine` alone entirely: no live limits |
 | `--lan` | add `"lan"` to `config.bind` so a phone on the same Wi-Fi can reach the daemon (an interactive install asks, default yes; `--yes` alone does not add it) |
 | `--tailscale` | add `"tailscale"` to `config.bind` so the daemon listens on the tailnet |
 | `--linger` | systemd only: `loginctl enable-linger` so the daemon survives logout |
@@ -138,7 +139,7 @@ Uninstall: `claude-usage uninstall` (add `--purge` to delete config and state to
 | `~/Library/LaunchAgents/com.github.drmuzikbpn.claude-usage.plist` (macOS) | LaunchAgent, `RunAtLoad`, `KeepAlive: { SuccessfulExit: false }` | `0644` |
 | `~/Library/Logs/claude-usage/daemon.{out,err}.log` (macOS) | daemon stdout/stderr | dir `0700` |
 | `~/.config/systemd/user/claude-usage.service` (Linux) | user unit, `Restart=on-failure`, `WantedBy=default.target`; logs go to the journal | `0644` |
-| `~/.claude/settings.json` | **merge-only**: four hook groups, optionally `statusLine` | mode preserved |
+| `~/.claude/settings.json` | **merge-only**: four hook groups, and `statusLine` only when you have none | mode preserved |
 | `~/.claude/settings.json.claude-usage.bak` | one-time backup, written once and never overwritten | copies the source mode |
 | `~/.claude.json` | `mcpServers["claude-usage"]`, written by `claude mcp add --scope user` | `0600` |
 
@@ -242,13 +243,24 @@ overwriting it:
                   "command": "/Users/you/.local/share/claude-usage/current/bin/claude-usage statusline" } }
 ```
 
-### Live limits from your own statusline
+### Live limits: the feed install sets up
 
 Anthropic's usage endpoint allows this daemon only a few calls an hour, so the headline
 numbers come from Claude Code itself: it passes its statusline command a `rate_limits`
-object (5-hour and 7-day utilisation, read from its own model responses). `claude-usage
-statusline` forwards it automatically. If you keep your own statusline script, add one line
-after it reads stdin (the example assumes it is in `$input`):
+object (5-hour and 7-day utilisation, read from its own model responses). Without that
+feed the 5-hour and 7-day numbers stay empty, on this machine and in the phone app.
+
+`install` checks what your `statusLine` holds and wires the feed for you:
+
+- **You have no status line:** it sets `statusLine` to `claude-usage observe`, which prints
+  nothing, so Claude Code looks exactly as before. (`--statusline` sets the visible line
+  instead; it forwards too.)
+- **Yours already forwards to claude-usage:** nothing is changed.
+- **You have your own:** it is never edited. Install prints the one line below for you to
+  add after your script reads stdin (the example assumes it is in `$input`).
+
+The feed reads only those rate-limit percentages and hands them to the daemon on this
+machine. It does not read, store or send prompts, paths or anything else in the payload.
 
 ```bash
 printf '%s' "$input" | ~/.local/share/claude-usage/current/bin/claude-usage observe >/dev/null 2>&1 &
@@ -466,7 +478,7 @@ load/save round-trip. An invalid value is an error naming the key.
 | `integrations.service` | `true` | what install turned on; `configure` keeps these in step |
 | `integrations.hook` | `true` | |
 | `integrations.mcp` | `true` | |
-| `integrations.statusline` | `false` | |
+| `integrations.statusline` | `false` | install turns it on (the limits feed) unless `--no-statusline` |
 | `autoUpdate.enabled` | `true` | auto-update on/off |
 | `autoUpdate.intervalMs` | `600000` | release-check interval (1 000 – 86 400 000) |
 | `autoUpdate.repo` | `drmuzikbpn/claude-utilization-mcp` | release source; override for forks |
