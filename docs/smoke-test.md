@@ -35,7 +35,8 @@ Tick each line, or write down what happened instead.
       redeems, and the machine appears, its data arriving over HTTPS.
 - [ ] Scanning the same `claude-usage pair` QR a second time reports the daemon's "run
       `claude-usage pair` again" and leaves the machine paired.
-- [ ] Re-pairing a Mac that was paired the legacy way replaces its row rather than adding a second.
+- [ ] Re-pairing a Mac that was paired the legacy way replaces its row rather than adding a second,
+      and keeps a name given to it under Settings.
 - [ ] *Pairing → Scan QR* still reads a legacy QR from `claude-usage configure pairing` and the
       machine appears.
 - [ ] A QR from a daemon with a rotated token reports "Token rejected, re-run pairing on the Mac"

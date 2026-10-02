@@ -113,18 +113,28 @@ class MachineStoreTest {
     }
 
     @Test
-    fun `pairing the same key again replaces the row`() {
+    fun `pairing the same key again replaces the row, keeping its id and deck-side name`() {
+        store.add(mbp)
         store.add(pinned)
-        store.pair(pinned.copy(id = "m4", addr = "100.1.1.3", token = "tok-new"))
-        assertEquals(listOf("m4"), store.machines.value.map { it.id })
-        assertEquals("tok-new", store.machines.value.single().token)
+        store.add(mini)
+        store.rename("m3", "Studio upstairs")
+
+        val stored = store.pair(pinned.copy(id = "m4", name = "studio", addr = "100.1.1.3", token = "tok-new"))
+
+        assertEquals(listOf("m1", "m3", "m2"), store.machines.value.map { it.id })
+        assertEquals(stored, store.machines.value[1])
+        assertEquals("tok-new", stored.token)
+        assertEquals("100.1.1.3", stored.addr)
+        assertEquals("Studio upstairs", stored.name)
+        assertEquals("m3", stored.id)
     }
 
     @Test
     fun `pairing the same address and port again replaces the row`() {
         store.add(mbp)
         store.pair(mbp.copy(id = "m9", token = "tok-new"))
-        assertEquals(listOf("m9"), store.machines.value.map { it.id })
+        assertEquals(listOf("m1"), store.machines.value.map { it.id })
+        assertEquals("tok-new", store.machines.value.single().token)
     }
 
     @Test
@@ -133,7 +143,48 @@ class MachineStoreTest {
         store.add(legacy)
         store.add(mini)
         store.pair(pinned)
-        assertEquals(listOf("m2", "m3"), store.machines.value.map { it.id })
+        assertEquals(listOf("old", "m2"), store.machines.value.map { it.id })
+        assertEquals("a".repeat(64), store.machines.value.first().fp)
+    }
+
+    @Test
+    fun `the v1 upgrade ignores the port, since the legacy row is on the http port`() {
+        store.add(MachineConfig("old", "studio", "192.168.1.30", 47291, "tok-old"))
+        store.pair(pinned)
+        assertEquals(listOf("old"), store.machines.value.map { it.id })
+        assertEquals(47292, store.machines.value.single().port)
+    }
+
+    @Test
+    fun `a loopback legacy row is never taken for the machine a v2 pairing lists on loopback`() {
+        val local = MachineConfig("emu", "this-mac", "127.0.0.1", 47291, "tok-local")
+        val named = MachineConfig("emu2", "this-mac", "localhost", 47291, "tok-local2")
+        store.add(local)
+        store.add(named)
+
+        store.pair(pinned.copy(addrs = pinned.addrs + listOf("localhost", "127.0.0.1")))
+
+        assertEquals(listOf("emu", "emu2", "m3"), store.machines.value.map { it.id })
+    }
+
+    @Test
+    fun `a pairing matching several rows keeps the first one's id and drops the rest`() {
+        store.add(MachineConfig("old", "studio", "100.1.1.3", 47291, "tok-old"))
+        store.add(pinned.copy(id = "dup"))
+        store.pair(pinned.copy(id = "new"))
+        assertEquals(listOf("old"), store.machines.value.map { it.id })
+    }
+
+    @Test
+    fun `concurrent writers never drop a row`() {
+        val threads = (0 until 8).map { t ->
+            Thread { repeat(25) { i -> store.add(mbp.copy(id = "t$t-$i")) } }
+        }
+        threads.forEach { it.start() }
+        threads.forEach { it.join() }
+
+        assertEquals(200, store.machines.value.size)
+        assertEquals(200, MachineStore.open(context).machines.value.size)
     }
 
     @Test

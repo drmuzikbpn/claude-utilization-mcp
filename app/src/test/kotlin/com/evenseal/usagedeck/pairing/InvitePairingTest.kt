@@ -41,8 +41,8 @@ class InvitePairingTest {
 
         val paired = InvitePairing({ redeemed }, store, work).pair(invite)
 
-        assertEquals(redeemed, paired)
-        assertEquals(listOf(redeemed), store.machines.value)
+        assertEquals(redeemed.copy(id = "old"), paired)
+        assertEquals(listOf(paired), store.machines.value)
     }
 
     @Test

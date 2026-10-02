@@ -62,7 +62,7 @@ class InvitePairing(
     }
 
     private suspend fun redeemAndStore(invite: PairingInvite): MachineConfig = try {
-        redeem(invite).also { store.pair(it) }
+        store.pair(redeem(invite))
     } catch (e: CancellationException) {
         throw e
     } catch (e: DaemonException) {

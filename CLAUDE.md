@@ -86,8 +86,11 @@ hook is missing.
   or persist the code or the token. A `MachineConfig` with `fp` talks pinned HTTPS for **all**
   REST and SSE and falls back across `addrs` via `Endpoints`; one without `fp` is a legacy
   `claude-usage configure pairing` row on plain HTTP and must keep working unchanged.
-  `MachineStore.pair` replaces the same machine (same `fp`, same addr+port, or a legacy row whose
-  addr is one of the new `addrs`).
+  `MachineStore.pair` replaces the same machine in place — same `fp`, same addr+port, or a legacy
+  row whose non-loopback addr is one of the new `addrs` (any port) — keeping that row's id and
+  name so escalations, alerts, burn history and renames survive. `InvitePairing` runs each redeem
+  on the graph's scope, one per code; a redeem moves to the next address only when the request
+  provably never left the phone (`neverSent`), otherwise it stops with `reply_lost`.
 - Single dark theme, colours and fonts from spec §11.6. Tabular numerals everywhere.
 - Commit after every task with a conventional-commit message ending in `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Never push.
 - No `TODO`/`FIXME` left in committed code. No test may be `@Ignore`d.

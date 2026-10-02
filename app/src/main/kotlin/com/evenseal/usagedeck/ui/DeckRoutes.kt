@@ -96,8 +96,7 @@ internal fun PairingRoute(graph: DeckGraph, onBack: () -> Unit) {
         onScanned = { scanned, report ->
             when (scanned) {
                 is ScannedPairing.Legacy -> {
-                    val config = scanned.payload.toConfig()
-                    graph.machineStore.pair(config)
+                    val config = graph.machineStore.pair(scanned.payload.toConfig())
                     report(PairingStatus("Saved ${config.name}. Checking the daemon…", busy = true))
                     scope.launch {
                         report(PairingStatus(probe(graph, config)))
