@@ -68,6 +68,10 @@ hook is missing.
 - Users are keyed by account **and** organisation (`accountUuid/organizationUuid`): team-plan limits are
   per org, and Alan's one account sits in two orgs. Display names are the deck's own renames
   (`Settings.userNames`, Settings › Users) falling back to the daemon's `displayName`, then the e-mail's local part.
+- Home lists rank by live rate, not by tokens: `core/model/ActivityOrder` (the iPhone app's rule) puts the
+  busiest project first and the busiest session first inside it; the landscape dock ranks every session
+  on its own. Rates are the ones the rows show (`DeckViewModel.rate`, 60 s) compared in bands of about
+  33 %, so near-equal rows do not swap every tick. `TeamState.projects` (by live tokens) is only the tie order.
 - Gesture grammar everywhere: tap = soft, hold 600 ms = hard, tap on paused = resume. Red styling only on hold actions.
 - Aging: fresh < 30 s since heartbeat, stale < 120 s, dead ≥ 120 s. Dead disables pause controls.
 - Escalation default 90 s; range 30 s–600 s or off; persisted across process death.
