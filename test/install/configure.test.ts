@@ -257,6 +257,15 @@ describe('scalar settings', () => {
     expect(b.out).toContain('re-pair every device');
   });
 
+  it('rotate-token restarts the service, so the running daemon stops accepting the old token', async () => {
+    const b = bed({ settings: 'settings-empty.json' });
+    await runInstall(['--yes'], b.io);
+    b.service.calls.length = 0;
+    b.io.randomToken = () => 'rotated-token';
+    expect(await b.configure(['rotate-token'])).toBe(0);
+    expect(b.service.calls).toEqual(['restart']);
+  });
+
   it('rejects an unknown setting', async () => {
     const b = bed();
     expect(await b.configure(['frobnicate', 'on'])).toBe(1);

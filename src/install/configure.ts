@@ -305,7 +305,9 @@ export async function runConfigure(argv: readonly string[], io: InstallIO): Prom
       }
     } else if (sub === 'rotate-token') {
       config.auth = { ...config.auth, token: (io.randomToken ?? generateToken)() };
-      changes.push('bearer token rotated — re-pair every device');
+      changes.push('bearer token rotated — re-pair every device: claude-usage pair');
+      // The daemon holds the token in memory; without a restart the old one keeps working.
+      restart = true;
     } else {
       io.stderr(`claude-usage configure: unknown setting "${sub}"\n`);
       io.stderr('  configure [service|hook|mcp|statusline|autoupdate|lan] <on|off>\n');
