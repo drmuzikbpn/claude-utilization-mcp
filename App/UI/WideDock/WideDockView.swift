@@ -23,22 +23,34 @@ struct WideDockView: View {
                     } else {
                         ListCaption(title: "Sessions · \(team.liveSessionCount)", trailing: "tok/min · 30m")
                         ScrollView {
-                            LazyVStack(spacing: 0) {
-                                let showDevice = team.devices.count > 1
-                                ForEach(team.projects.filter { !$0.sessions.isEmpty }) { project in
-                                    ForEach(project.sessions) { session in
-                                        SessionRow(
-                                            store: store,
-                                            deviceId: project.deviceId,
-                                            projectKey: project.key,
-                                            session: session,
-                                            headline: project.name,
-                                            deviceName: showDevice ? team.device(project.deviceId)?.displayName : nil,
-                                            compact: true
-                                        )
-                                    }
+                            let showDevice = team.devices.count > 1
+                            // Ranked by project slot then session slot, so a session arriving in one
+                            // project does not read as a move for every row below it.
+                            let rows = team.projects.filter { !$0.sessions.isEmpty }.enumerated().flatMap { index, project in
+                                project.sessions.enumerated().map { row, session in
+                                    (
+                                        key: "\(project.deviceId):\(session.id)",
+                                        project: project,
+                                        session: session,
+                                        rank: Reorder.rank(project: index, row: row)
+                                    )
                                 }
                             }
+                            LazyVStack(spacing: 0) {
+                                ForEach(rows, id: \.key) { item in
+                                    SessionRow(
+                                        store: store,
+                                        deviceId: item.project.deviceId,
+                                        projectKey: item.project.key,
+                                        session: item.session,
+                                        headline: item.project.name,
+                                        deviceName: showDevice ? team.device(item.project.deviceId)?.displayName : nil,
+                                        compact: true
+                                    )
+                                    .liftOnReorder(item.rank)
+                                }
+                            }
+                            .animation(Reorder.slide, value: rows.map(\.key))
                         }
                     }
                 }

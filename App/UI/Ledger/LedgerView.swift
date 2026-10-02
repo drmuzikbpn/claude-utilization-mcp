@@ -25,17 +25,23 @@ struct LedgerView: View {
             case nil:
                 ListCaption(title: "Sessions · \(team.liveSessionCount) live", trailing: "tokens/min · 30m")
                 ScrollView {
+                    let live = team.projects.filter { !$0.sessions.isEmpty }
                     LazyVStack(spacing: 0) {
-                        ForEach(team.projects.filter { !$0.sessions.isEmpty }) { project in
-                            ProjectHeader(store: store, project: project)
-                            if store.expanded.contains("\(project.deviceId)|\(project.key)") {
-                                ForEach(project.sessions) { session in
-                                    SessionRow(store: store, deviceId: project.deviceId, projectKey: project.key, session: session)
+                        ForEach(Array(live.enumerated()), id: \.element.id) { index, project in
+                            VStack(spacing: 0) {
+                                ProjectHeader(store: store, project: project)
+                                if store.expanded.contains("\(project.deviceId)|\(project.key)") {
+                                    ForEach(Array(project.sessions.enumerated()), id: \.element.id) { row, session in
+                                        SessionRow(store: store, deviceId: project.deviceId, projectKey: project.key, session: session)
+                                            .liftOnReorder(Reorder.rank(project: 0, row: row))
+                                    }
                                 }
+                                Divider().overlay(DeckColor.line)
                             }
-                            Divider().overlay(DeckColor.line)
+                            .liftOnReorder(Reorder.rank(project: index))
                         }
                     }
+                    .animation(Reorder.slide, value: live.map(\.id))
                 }
                 .frame(maxHeight: .infinity)
             }
