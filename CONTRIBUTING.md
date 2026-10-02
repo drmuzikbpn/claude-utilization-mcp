@@ -1,14 +1,14 @@
 # Contributing to Usage Deck
 
-Thanks for looking. This branch (`usage-deck`) is the Android kiosk; the `claude-usage` daemon it
+Thanks for looking. This branch (`usage-android`) is the Android kiosk; the `claude-usage` daemon it
 talks to lives on `main` of the same repository and has its own contributing notes.
 
 ## Ground rules
 
-- **Pull requests only.** `main` and `usage-deck` do not accept direct pushes. Fork, branch from
-  `usage-deck`, open a PR against `usage-deck`.
+- **Pull requests only.** `main` and `usage-android` do not accept direct pushes. Fork, branch from
+  `usage-android`, open a PR against `usage-android`.
 - **CI must be green.** ktlint, every JVM suite and the instrumented suite on an API 29 emulator run
-  on every PR. Releases are only cut from `usage-deck` itself, never from a PR.
+  on every PR. Releases are only cut from `usage-android` itself, never from a PR.
 - **Keep the contract.** The deck reads the daemon's `limits[]`, SSE stream and pause API exactly as
   the daemon spec describes them (see `docs/superpowers/specs/`). A change that needs a daemon
   change should say so and link the matching daemon PR.
