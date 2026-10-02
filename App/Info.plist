@@ -43,6 +43,17 @@
 	<string>Usage Deck uses the camera to scan the pairing code shown by `claude-usage pair`.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Usage Deck connects to the devices you pair on your local network to read Claude usage and pause sessions.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>barlow_condensed_500.ttf</string>
+		<string>barlow_condensed_600.ttf</string>
+		<string>barlow_condensed_700.ttf</string>
+		<string>ibm_plex_sans_400.ttf</string>
+		<string>ibm_plex_sans_500.ttf</string>
+		<string>ibm_plex_sans_600.ttf</string>
+		<string>ibm_plex_mono_400.ttf</string>
+		<string>ibm_plex_mono_500.ttf</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

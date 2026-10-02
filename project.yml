@@ -66,6 +66,15 @@ targets:
           - com.evenseal.usagedeck.refresh
         UIBackgroundModes:
           - fetch
+        UIAppFonts:
+          - barlow_condensed_500.ttf
+          - barlow_condensed_600.ttf
+          - barlow_condensed_700.ttf
+          - ibm_plex_sans_400.ttf
+          - ibm_plex_sans_500.ttf
+          - ibm_plex_sans_600.ttf
+          - ibm_plex_mono_400.ttf
+          - ibm_plex_mono_500.ttf
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.evenseal.usagedeck
