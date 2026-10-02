@@ -113,7 +113,11 @@ final class DeckStore {
         /// `-UsageDeckDemo`: made-up devices with no clients behind them (see `DemoData`).
         func seedDemo() {
             let at = Date()
-            let devices = DemoData.devices(now: at)
+            var devices = DemoData.devices(now: at)
+            if DemoData.needsRepair {
+                devices[0].repairReason = .tokenRejected
+                devices[0].lastError = DaemonError(code: "unauthorized").userMessage
+            }
             DemoData.seedBurn(burn, devices: devices, now: at)
             records = devices.map(\.record)
             for device in devices {

@@ -85,6 +85,20 @@ final class UsageDeckSmokeTests: XCTestCase {
         XCTAssertFalse(element(labelled: "BEGINSWITH 'Connecting to studio'").exists)
     }
 
+    /// `-UsageDeckDemoNeedsRepair`: studio's token was changed. Home says so and Re-pair opens
+    /// pairing in re-pair mode for that device.
+    @MainActor
+    func testLostPairingOffersARepair() {
+        relaunch(["-UsageDeckDemoNeedsRepair"])
+        XCTAssertTrue(app.staticTexts["studio no longer accepts this iPhone"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Its access token was changed."].exists)
+        snap("needs-repair")
+        app.buttons["Re-pair studio"].tap()
+        XCTAssertTrue(app.navigationBars["Re-pair"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Or paste the pairing link"].exists)
+        snap("re-pair")
+    }
+
     @MainActor
     func testWideDockInLandscape() {
         XCUIDevice.shared.orientation = .landscapeLeft

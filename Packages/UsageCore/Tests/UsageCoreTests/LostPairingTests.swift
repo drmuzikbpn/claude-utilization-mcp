@@ -188,6 +188,14 @@ struct LostPairingTests {
         }
     }
 
+    @Test func homeSaysRepairNotWaitingWhenEveryDeviceLostItsPairing() {
+        var lost = DeviceState(record: record(id: "m1", addrs: ["a"]))
+        lost.repairReason = .tokenRejected
+        #expect(HomeEmpty.of(TeamState(devices: [lost])) == .needsRepair)
+        let waiting = DeviceState(record: record(id: "m2", addrs: ["b"]))
+        #expect(HomeEmpty.of(TeamState(devices: [lost, waiting])) == .connecting)
+    }
+
     @Test func losingThePairingRaisesOneAlertForADeviceThatHadArrived() {
         var before = device("studio")
         let previous = TeamState(devices: [before])

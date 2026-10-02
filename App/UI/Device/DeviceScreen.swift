@@ -14,20 +14,11 @@ struct DeviceScreen: View {
         let device = store.team.device(id)
         List {
             if let device {
-                if device.needsRepair {
+                if let notice = RepairNotice(device) {
                     Section {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Label("Needs re-pair", systemImage: "exclamationmark.triangle.fill")
-                                .font(DeckFont.text(14, .semibold))
-                                .foregroundStyle(DeckColor.crit)
-                            Text(device.lastError ?? DaemonError.defaults["unauthorized"] ?? "")
-                                .font(DeckFont.text(12))
-                                .foregroundStyle(DeckColor.muted)
-                            Text("On the device run `claude-usage pair`, then tap Re-pair and scan the new code.")
-                                .font(DeckFont.text(12))
-                                .foregroundStyle(DeckColor.muted)
-                        }
-                        .listRowBackground(DeckColor.surface)
+                        RepairCard(store: store, notice: notice)
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
                     }
                 }
                 Section("Device") {
