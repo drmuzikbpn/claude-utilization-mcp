@@ -98,6 +98,8 @@ export const PAIR_PAGE_SCRIPT = `(() => {
   // Once the code is used, expired or the page server is gone, the QR and the link leave the
   // page entirely — not just hidden — so nothing on screen is worth photographing.
   let ended = false;
+  let poll;
+  let timer;
   const end = (state, title) => {
     if (ended) return;
     ended = true;
@@ -117,7 +119,7 @@ export const PAIR_PAGE_SCRIPT = `(() => {
     left.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
     if (s === 0) end('expired', 'Code expired · Usage Deck');
   };
-  const timer = setInterval(tick, 1000);
+  timer = setInterval(tick, 1000);
   tick();
 
   let misses = 0;
@@ -133,7 +135,7 @@ export const PAIR_PAGE_SCRIPT = `(() => {
       if (misses >= 3) end('closed', 'Pairing closed · Usage Deck');
     }
   };
-  const poll = setInterval(check, 1000);
+  poll = setInterval(check, 1000);
 })();`;
 
 export const PAIR_PAGE_CSP =
