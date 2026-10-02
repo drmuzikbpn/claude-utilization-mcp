@@ -425,3 +425,32 @@ describe('HTTPS listeners in the daemon (§23.45)', () => {
     expect(wantsTls('127.0.0.1', true)).toBe(true);
   });
 });
+
+describe('pairing end to end (§23.47)', () => {
+  it('mints over loopback HTTP with the bearer and redeems over HTTPS for the token', async () => {
+    const net = new FakeLanNetwork();
+    net.lan = '127.0.0.1';
+    net.local = 'studio.local';
+    const h = await start(['lan'], net, {
+      config: { ...defaultConfig(), bind: ['lan'], auth: { token: 'test-bearer-token' }, tls: { port: null, loopback: true } },
+    });
+    const minted = await rawRequest({ port: h.port, method: 'POST', path: '/v1/pair/code', headers: { authorization: 'Bearer test-bearer-token' } });
+    expect(minted.status).toBe(200);
+    const body = JSON.parse(minted.body) as { code: string; addrs: string[]; port: number; fp: string; link: string };
+    expect(body.addrs).toEqual(['127.0.0.1', 'studio.local']);
+    expect(body.port).toBe(h.tlsPort);
+    expect(body.fp).toBe(h.fingerprint);
+
+    const tlsPort = h.tlsPort as number;
+    const redeemed = await rawRequest({
+      port: tlsPort,
+      tls: true,
+      method: 'POST',
+      path: '/v1/pair',
+      headers: { host: `studio.local:${tlsPort}` },
+      body: JSON.stringify({ code: body.code }),
+    });
+    expect(redeemed.status).toBe(200);
+    expect(JSON.parse(redeemed.body)).toMatchObject({ token: 'test-bearer-token', fp: h.fingerprint });
+  });
+});

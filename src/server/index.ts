@@ -16,7 +16,8 @@ import {
 } from './events.js';
 import { sendError, sendJson } from './errors.js';
 import { createUserReader, defaultClaudeJsonPath } from './identity.js';
-import { buildHostPolicy, checkRequest, type HostPolicy } from './middleware.js';
+import { buildHostPolicy, checkRequest, isLoopbackRequest, isTlsRequest, normalizeAddress, PAIR_REDEEM_PATH, type HostPolicy } from './middleware.js';
+import { buildPairingLink, createPairingCodes, type PairingCodes } from './pairing.js';
 import { parseTokensQuery } from './query.js';
 import { healthBody, limitsBody, summaryBody, type SnapshotDeps, type UpdateStateProvider } from './snapshot.js';
 import { zeroTotals, type TokensSource } from './types.js';
@@ -29,6 +30,9 @@ export * from './query.js';
 export * from './identity.js';
 export * from './snapshot.js';
 export * from './events.js';
+export * from './pairing.js';
+
+export const PAIR_CODE_PATH = '/v1/pair/code';
 
 /** 5 s request timeout (§4). */
 export const REQUEST_TIMEOUT_MS = 5_000;
@@ -66,6 +70,10 @@ export interface ServerOptions {
   eventsTuning?: EventsTuning;
   /** §23.45: PEM key + certificate for HTTPS listeners; absent ⇒ `bind(…, { tls: true })` throws. */
   tls?: { key: string; cert: string } | null;
+  /** §23.47: what a pairing link offers — TLS addresses (best first), the TLS port and the pin. */
+  pairing?: { info(): { addrs: string[]; port: number | null; fp: string | null } };
+  /** Injected in tests; one is created when omitted. */
+  pairingCodes?: PairingCodes;
 }
 
 export interface BoundAddress {
@@ -128,6 +136,8 @@ const ROUTES: readonly RouteKey[] = [
   { method: 'POST', path: OBSERVE_PATH },
   { method: 'GET', path: '/v1/config' },
   { method: 'GET', path: EVENTS_PATH },
+  { method: 'POST', path: PAIR_CODE_PATH },
+  { method: 'POST', path: PAIR_REDEEM_PATH },
 ];
 
 function allowedMethodsFor(path: string): string[] {
@@ -241,6 +251,45 @@ export function createServer(opts: ServerOptions): UsageServer {
     sendJson(res, 200, { accepted: true });
   }
 
+  // --- §23.47: pairing -----------------------------------------------------------
+  const pairingCodes = opts.pairingCodes ?? createPairingCodes(opts.now === undefined ? {} : { now: opts.now });
+
+  /** Bearer already checked by the gate; minting is additionally loopback-only. */
+  function mintPairingCode(req: IncomingMessage, res: ServerResponse): void {
+    if (!isLoopbackRequest(req)) {
+      sendError(res, 403, 'forbidden', 'pairing codes are minted on this machine only', 'run `claude-usage pair` on the machine running the daemon');
+      return;
+    }
+    const info = opts.pairing?.info() ?? { addrs: [], port: null, fp: null };
+    if (info.addrs.length === 0 || info.port === null || info.fp === null) {
+      sendError(res, 409, 'conflict', 'no HTTPS listener to pair with', 'enable LAN access with `claude-usage configure lan on`');
+      return;
+    }
+    const { code, expiresAt } = pairingCodes.mint();
+    const parts = { name: opts.config.name, addrs: info.addrs, port: info.port, fp: info.fp, code };
+    sendJson(res, 200, { code, expiresAt, link: buildPairingLink(parts), name: parts.name, addrs: parts.addrs, port: parts.port, fp: parts.fp });
+  }
+
+  /** The one bearer-less mutating route: TLS only, single-use code, per-source limit. */
+  async function redeemPairingCode(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (!isTlsRequest(req)) {
+      sendError(res, 403, 'forbidden', 'pairing is only accepted over HTTPS', 'pair over https');
+      return;
+    }
+    const body = await readJsonBody(req);
+    const source = normalizeAddress(req.socket.remoteAddress) ?? 'unknown';
+    const outcome = pairingCodes.redeem(body?.['code'], source);
+    if (outcome === 'rate_limited') {
+      sendError(res, 429, 'rate_limited', 'too many failed pairing attempts', 'wait a minute, then run `claude-usage pair` again');
+      return;
+    }
+    if (outcome === 'invalid') {
+      sendError(res, 401, 'unauthorized', 'pairing code is invalid or expired', 'run `claude-usage pair` again');
+      return;
+    }
+    sendJson(res, 200, { token: opts.config.auth.token, name: opts.config.name, fp: opts.pairing?.info().fp ?? null });
+  }
+
   // --- request pipeline -----------------------------------------------------
 
   function handle(req: IncomingMessage, res: ServerResponse): void {
@@ -315,6 +364,12 @@ export function createServer(opts: ServerOptions): UsageServer {
         return;
       case EVENTS_PATH:
         events.handle(req, res);
+        return;
+      case PAIR_CODE_PATH:
+        mintPairingCode(req, res);
+        return;
+      case PAIR_REDEEM_PATH:
+        await redeemPairingCode(req, res);
         return;
       default:
         sendError(res, 404, 'not_found', `no route for ${path}`);

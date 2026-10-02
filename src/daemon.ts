@@ -12,6 +12,7 @@ import { isLoopbackAddress } from './server/middleware.js';
 import { startBusPublishers } from './server/events.js';
 import { createSessionsSubsystem, type SessionsSubsystem } from './sessions/index.js';
 import { createServer, type UsageServer } from './server/index.js';
+import { orderPairingAddrs } from './server/pairing.js';
 import type { TokensSource } from './server/types.js';
 import { createUpdater, defaultRestart, type UpdaterHandle } from './update/index.js';
 import { getVersion } from './version.js';
@@ -285,6 +286,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     sessions,
     extraHostNames: hostNames(),
     tls: tlsIdentity === null ? null : { key: tlsIdentity.key, cert: tlsIdentity.cert },
+    // §23.47: what `POST /v1/pair/code` offers. Read per request, so it follows rebinds.
+    pairing: {
+      info: () => ({
+        addrs: orderPairingAddrs([...tlsHosts], {
+          lan: keywordAddress.get(LAN_KEYWORD) ?? null,
+          tailnet: keywordAddress.get(TAILSCALE_KEYWORD) ?? null,
+          localHostName,
+        }),
+        port: server.tlsPort,
+        fp: tlsIdentity?.fingerprint ?? null,
+      }),
+    },
     // §19: SSE snapshot carries the live sessions + pause rules.
     ...(sessions ? { snapshots: { sessions: () => sessions.registry.list(), rules: () => sessions.rules.list() } } : {}),
   });

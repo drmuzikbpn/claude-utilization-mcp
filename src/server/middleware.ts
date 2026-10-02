@@ -129,6 +129,23 @@ export function requestPath(req: IncomingMessage): string {
   return path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
 }
 
+/**
+ * `POST /v1/pair` (§23.47) — the one documented exception to "every mutating request needs
+ * the bearer". It trades a single-use, five-minute, 128-bit code for the bearer, and the
+ * route itself refuses anything but TLS and rate-limits failures per source. Host and Origin
+ * checks still apply.
+ */
+export const PAIR_REDEEM_PATH = '/v1/pair';
+
+export function isPairRedeem(method: string, path: string): boolean {
+  return method === 'POST' && path === PAIR_REDEEM_PATH;
+}
+
+/** Did this request arrive on an HTTPS listener (§23.45)? */
+export function isTlsRequest(req: IncomingMessage): boolean {
+  return (req.socket as { encrypted?: boolean }).encrypted === true;
+}
+
 export function isLoopbackHookPost(method: string, path: string): boolean {
   if (method !== 'POST') return false;
   return LOOPBACK_HOOK_POSTS.some((re) => re.test(path));
@@ -176,6 +193,9 @@ export function checkRequest(req: IncomingMessage, policy: HostPolicy, token: st
 
   // Narrow exemption: the hook's own session bookkeeping, loopback only (see above).
   if (loopback && isLoopbackHookPost(method, requestPath(req))) return { ok: true, loopback };
+
+  // §23.47: the pairing code is the credential here; the route enforces TLS and the limits.
+  if (isPairRedeem(method, requestPath(req))) return { ok: true, loopback };
 
   if (!bearerMatches(req.headers.authorization, token)) {
     return {
