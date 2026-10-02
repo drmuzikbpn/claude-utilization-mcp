@@ -1,13 +1,14 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInstall } from '../../src/install/apply.js';
 import { runUninstall } from '../../src/install/uninstall.js';
 import type { InstallIO } from '../../src/install/context.js';
 import { MCP_KEY } from '../../src/install/claude-json.js';
+import { pathLinkFile } from '../../src/install/path-link.js';
 import { backupPathFor } from '../../src/install/settings-merge.js';
-import { claudeJsonPath, dataDir, settingsPath } from '../../src/paths.js';
+import { claudeJsonPath, currentBin, dataDir, settingsPath } from '../../src/paths.js';
 import { daemonFilePath } from '../../src/clients/http.js';
 import { cleanupAllTempHomes, fakeExec, fakePackage, FakeService, tempHome } from './helpers.js';
 
@@ -85,6 +86,15 @@ describe('install → uninstall round-trip (§23.12)', () => {
     await runUninstall([], b.io);
     expect(b.service.calls).toEqual(['stop', 'uninstall']);
     expect(existsSync(daemonFilePath(b.configDir))).toBe(false);
+  });
+
+  it('removes the PATH link it made (§23.51)', async () => {
+    const b = bed('settings-empty.json');
+    await runInstall(['--yes'], b.io);
+    expect(readlinkSync(pathLinkFile(b.env))).toBe(currentBin(b.env));
+    await runUninstall([], b.io);
+    expect(() => readlinkSync(pathLinkFile(b.env))).toThrow();
+    expect(b.out).toContain(`path:    removed ${pathLinkFile(b.env)}`);
   });
 
   it('removes the MCP entry', async () => {

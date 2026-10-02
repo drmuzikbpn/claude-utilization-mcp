@@ -549,6 +549,8 @@ QA from the Android dashboard, and two Macs in daily use.
 | §23.48 | `/health.install` and the `claude-usage pair` page (2026-10-01) |
 | §23.49 | Deferred (2026-10-01) |
 | §23.50 | A self-restart needs a witness that outlives it (2026-10-01) |
+| §23.51 | `claude-usage` on the PATH, and `pair` where you will see it (2026-10-02) |
+| §23.52 | The pair page: deck theme, copy link, "Pairing successful" (2026-10-02) |
 
 15 findings survived a 3-vote adversarial review (56 unique candidates). Where Part I
 conflicts with this section, this section wins.
@@ -1714,3 +1716,43 @@ exit is code 0, which `KeepAlive: { SuccessfulExit: false }` deliberately leaves
 - Verified live: SIGTERM'd job (exit 0, stays down) with the watchdog armed came back within one
   poll; without it, it stayed down.
 
+### §23.51 `claude-usage` on the PATH, and `pair` where you will see it (2026-10-02)
+
+After a normal install `claude-usage pair` failed with "command not found": the binary lives
+at `<data home>/claude-usage/current/bin/claude-usage` and nothing put it on the PATH.
+
+- `install` links `$XDG_BIN_HOME/claude-usage` (default `~/.local/bin/claude-usage`) to
+  `currentBin()` — the `current` symlink, so updates and rollbacks need no relink. It never
+  clobbers: a file or foreign link already there is left alone and reported with the full
+  path to use instead. When the directory is not on `PATH`, install prints the `export PATH=`
+  line to add.
+- `uninstall` removes the link only when it is ours.
+- `install` ends, and `status` ends, with how to pair a phone: `claude-usage pair` when a
+  non-loopback address is bound, else `claude-usage configure lan on, then claude-usage pair`
+  (`src/install/pair-hint.ts`, kept tiny because `status` imports it eagerly).
+
+**Test-first, per Part III:** `test/install/path-link.test.ts`, `test/install/install.test.ts`,
+`test/install/uninstall.test.ts`, `test/cli.test.ts`.
+
+### §23.52 The pair page: deck theme, copy link, "Pairing successful" (2026-10-02)
+
+- **Theme.** The page uses the app's palette (`SharedUI/Theme.swift` on `usage-ios`): ground
+  `#0E1013`, translucent surface cards, the green/indigo aurora, Barlow Condensed headings and
+  IBM Plex text when installed. Dark only. Nothing is loaded from anywhere.
+- **Copy link.** Under the QR, "or copy the pairing link" and a **Copy link** button with a
+  copy icon. The link lives only in the button's `data-link` attribute, never in page text;
+  the iPhone app's Pair screen accepts a pasted link.
+- **Script.** One static inline script (copy, expiry countdown, state polling), allowed by
+  its SHA-256 in the CSP: `script-src 'sha256-…'; connect-src 'self'` and otherwise
+  `default-src 'none'`.
+- **Pairing detected.** `GET /v1/pair/code` (loopback only) reports the latest code's state —
+  `none | pending | redeemed | expired`, never the code. `claude-usage pair` polls it every
+  second; the page polls its own server's `<path>/status` (loopback, repeatable, `no-store`)
+  every second. On `redeemed` the page **removes** the QR and the link from the DOM and shows
+  "Pairing successful ✓ — It is now safe to close this tab"; the command prints `paired ✓`,
+  keeps the page server up 3 s so the page sees it, and exits 0 without waiting for Enter. On
+  `expired` the page shows "This code has expired" and the command exits 1. When the page
+  server goes away (three failed polls) the page removes the QR and says pairing closed.
+  Status errors (a daemon older than this) are ignored and Enter still ends the command.
+
+**Test-first, per Part III:** `test/server/pairing.test.ts`, `test/install/pair.test.ts`.

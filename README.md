@@ -253,10 +253,18 @@ claude-usage pair                # opens a one-time QR page in your browser
 
 `claude-usage pair` asks the daemon for a **one-time pairing code** (valid 5 minutes, used
 once) and opens a page on this machine showing it as a QR code. Point the iPhone Camera at
-it and tap **Open in Usage Deck**. The app trades the code for the bearer token over HTTPS
-and pins the daemon's certificate, so the QR never carries the token itself. The page can be
-viewed once, from this machine only, and closes on Enter, Ctrl-C or after 5 minutes. If the
-QR was visible on a call or a screen share, run `claude-usage pair` again — that voids it.
+it and tap **Open in Usage Deck**, or press **Copy link** and paste it on the app's
+**Pair a device** screen. The app trades the code for the bearer token over HTTPS and pins
+the daemon's certificate, so the QR never carries the token itself. As soon as the phone has
+used the code, the QR and the link leave the page, it shows **Pairing successful**, and the
+command exits by itself. The page can be viewed once, from this machine only, and closes on
+Enter, Ctrl-C or after 5 minutes. If the QR was visible on a call or a screen share, run
+`claude-usage pair` again — that voids it.
+
+Pairing another phone, or re-pairing this one, is the same command any time:
+`claude-usage status` reminds you of it. `install` links `claude-usage` into
+`~/.local/bin` (or `$XDG_BIN_HOME`) so it is on your PATH; if that directory is not on your
+PATH yet, install says how to add it.
 
 How it works:
 
