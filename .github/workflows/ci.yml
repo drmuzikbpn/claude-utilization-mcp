@@ -1,7 +1,7 @@
 name: ci
-# The app lives on the `usage-deck` branch of the daemon's repo. Scoped to that branch on purpose
+# The app lives on the `usage-android` branch of the daemon's repo. Scoped to that branch on purpose
 # (no wildcard): the daemon's own release job runs on `main` and must never race this one.
-on: { push: { branches: [usage-deck] }, pull_request: {} }
+on: { push: { branches: [usage-android] }, pull_request: {} }
 permissions: { contents: write }
 jobs:
   build:
@@ -25,10 +25,10 @@ jobs:
           arch: x86_64
           target: default
           script: ./gradlew :app:connectedDebugAndroidTest
-      # Release only from usage-deck, and only once the signing secrets exist (see README › Releases);
+      # Release only from usage-android, and only once the signing secrets exist (see README › Releases);
       # without them the tests still gate the branch and nothing is published.
       - name: Signing available?
-        if: github.ref == 'refs/heads/usage-deck'
+        if: github.ref == 'refs/heads/usage-android'
         id: signing
         run: echo "ok=$([ -n "$SIGNING_KEYSTORE_B64" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
         env: { SIGNING_KEYSTORE_B64: "${{ secrets.SIGNING_KEYSTORE_B64 }}" }

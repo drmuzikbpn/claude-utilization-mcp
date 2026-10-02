@@ -9,7 +9,7 @@ Please **do not open a public issue** for a vulnerability. Use GitHub's private 
 reporting on this repository (*Security › Report a vulnerability*). You should hear back within a
 few days.
 
-In scope: the deck (`usage-deck` branch), the daemon (`main`), the pairing exchange between them,
+In scope: the deck (`usage-android` branch), the daemon (`main`), the pairing exchange between them,
 the self-update path, and the CI that signs releases.
 
 ## What we already assume

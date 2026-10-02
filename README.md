@@ -100,8 +100,8 @@ Before shipping a release that touches kiosk, wifi, pairing or update, run
 
 ## Releases
 
-The app lives on the `usage-deck` branch of the daemon's repo, `drmuzikbpn/claude-utilization-mcp`.
-CI runs ktlint, all JVM tests and the instrumented suite on an API 29 emulator. On `usage-deck`,
+The app lives on the `usage-android` branch of the daemon's repo, `drmuzikbpn/claude-utilization-mcp`.
+CI runs ktlint, all JVM tests and the instrumented suite on an API 29 emulator. On `usage-android`,
 once the signing secrets exist, it also assembles a signed release and publishes it under the
 namespace the two updaters agreed on (daemon spec §23.17): tag `deck-<version>`, assets
 `usage-deck.apk` and `usage-deck.apk.sha256`, always flagged pre-release so the daemon's
