@@ -31,6 +31,10 @@ targets:
     platform: iOS
     sources:
       - path: App
+      # The palette, ring and glass the watch and widgets draw with; the fonts are bundled in App.
+      - path: SharedUI/Theme.swift
+      - path: SharedUI/RingGauge.swift
+      - path: SharedUI/Materials.swift
     dependencies:
       - package: UsageCore
       - target: UsageWidgets

@@ -159,6 +159,7 @@ struct EndpointsTests {
     }
 
     @Test func everyCandidateWithTheWrongCertificateIsAPinningFailure() async {
+        PinRejections.shared.note()
         let endpoints = Endpoints([a, b])
         await #expect(throws: DaemonError(code: "pinning")) {
             try await endpoints.first { _ -> Int in throw URLError(.cancelled) }
@@ -170,6 +171,18 @@ struct EndpointsTests {
         await #expect(throws: DaemonError.network) {
             try await endpoints.first { url -> Int in throw URLError(url == a ? .cancelled : .timedOut) }
         }
+    }
+
+    @Test func aCancelledRequestIsOnlyAPinFailureRightAfterARefusedCertificate() {
+        // A stream being replaced or a scene going to the background also cancels requests; that
+        // marked a healthy device "Needs re-pair" (found on the simulator, 2026-10-01).
+        let ledger = PinRejections()
+        #expect(DaemonError.from(transport: URLError(.cancelled), rejections: ledger) == .network)
+        ledger.note()
+        #expect(DaemonError.from(transport: URLError(.cancelled), rejections: ledger) == DaemonError(code: "pinning"))
+        ledger.note(at: Date().addingTimeInterval(-PinRejections.window - 1))
+        #expect(DaemonError.from(transport: URLError(.cancelled), rejections: ledger) == .network)
+        #expect(DaemonError.from(transport: URLError(.serverCertificateUntrusted), rejections: ledger) == DaemonError(code: "pinning"))
     }
 
     @Test func recordBuildsHTTPSBaseURLsAndBracketsIPv6() {

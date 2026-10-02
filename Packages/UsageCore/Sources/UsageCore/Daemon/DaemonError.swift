@@ -64,10 +64,10 @@ public struct DaemonError: Error, Sendable, Equatable {
         return DaemonError(code: code(forStatus: status), httpStatus: status)
     }
 
-    /// Maps a transport failure. Callers must rule out their own task's cancellation first
-    /// (`Task.isCancelled`): after that, a `cancelled` URL error can only be PinnedTrust
-    /// refusing the server's certificate, which is a pin mismatch, not an outage.
-    public static func from(transport error: any Error) -> DaemonError {
+    /// Maps a transport failure. A `cancelled` URL error is a pin mismatch only when PinnedTrust
+    /// refused a certificate moments ago (`PinRejections`); any other cancellation is not the
+    /// device's fault and reads as an outage, never as "Needs re-pair".
+    public static func from(transport error: any Error, rejections: PinRejections = .shared) -> DaemonError {
         if let daemon = error as? DaemonError {
             return daemon
         }
@@ -75,7 +75,9 @@ public struct DaemonError: Error, Sendable, Equatable {
             return .network
         }
         switch url.code {
-        case .cancelled, .serverCertificateUntrusted, .serverCertificateHasBadDate,
+        case .cancelled:
+            return rejections.recent() ? DaemonError(code: "pinning") : .network
+        case .serverCertificateUntrusted, .serverCertificateHasBadDate,
              .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid:
             return DaemonError(code: "pinning")
         default:

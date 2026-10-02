@@ -56,7 +56,7 @@ struct DeviceScreen: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(DeckColor.bg)
+        .deckScreen()
         .font(DeckFont.text(14))
         .navigationTitle(device.map { Format.hostShort($0.displayName) } ?? "Device")
         .navigationBarTitleDisplayMode(.inline)

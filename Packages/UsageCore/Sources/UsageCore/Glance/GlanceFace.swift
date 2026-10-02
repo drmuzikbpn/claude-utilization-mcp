@@ -17,6 +17,14 @@ public struct RingFace: Sendable, Equatable {
         label = headline.map { String($0.percent) } ?? "—"
         status = headline?.status
     }
+
+    /// The same face from a limit window, for the iPhone's own rings.
+    public init(limit: Limit?) {
+        percent = limit?.percent
+        fraction = limit.map { Double(min(max($0.percent, 0), 100)) / 100 } ?? 0
+        label = limit.map { String($0.percent) } ?? "—"
+        status = limit?.status
+    }
 }
 
 public extension WatchSnapshot {

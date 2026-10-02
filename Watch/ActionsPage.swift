@@ -30,13 +30,14 @@ struct ActionsPage: View {
                     EscalationCountdown(escalation: escalation, prefix: "freeze in")
                 }
                 NavigationLink(value: Route.projects) {
-                    HStack {
-                        Text("Projects")
-                        Spacer()
-                        Text("\(snapshot.projects.count)")
-                            .font(Theme.numeral(17))
-                            .foregroundStyle(Theme.muted)
-                    }
+                    // Centred like Pause all; the count rides on the trailing edge.
+                    Text("Projects")
+                        .frame(maxWidth: .infinity)
+                        .overlay(alignment: .trailing) {
+                            Text("\(snapshot.projects.count)")
+                                .font(Theme.numeral(17))
+                                .foregroundStyle(Theme.muted)
+                        }
                 }
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                 ForEach(snapshot.devices.filter(\.needsRepair)) { device in

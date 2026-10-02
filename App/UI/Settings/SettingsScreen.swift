@@ -117,7 +117,7 @@ struct SettingsScreen: View {
             .listRowBackground(DeckColor.surface)
         }
         .scrollContentBackground(.hidden)
-        .background(DeckColor.bg)
+        .deckScreen()
         .tint(DeckColor.accent)
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)

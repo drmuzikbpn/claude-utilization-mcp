@@ -11,8 +11,19 @@ struct LedgerView: View {
         let empty = HomeEmpty.of(team)
         VStack(spacing: 0) {
             StatusBar(store: store)
-            ForEach(team.usersWithData) { user in
-                UserBlock(store: store, user: user) { renaming = user }
+            if !team.usersWithData.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(Array(team.usersWithData.enumerated()), id: \.element.id) { index, user in
+                        if index > 0 {
+                            Divider().overlay(DeckColor.line).padding(.leading, 24)
+                        }
+                        UserBlock(store: store, user: user) { renaming = user }
+                    }
+                }
+                .padding(.vertical, 2)
+                .deckCard(radius: 20)
+                .padding(.horizontal, 10)
+                .padding(.top, 4)
             }
             switch empty {
             case .noDevices, .connecting:
@@ -25,23 +36,37 @@ struct LedgerView: View {
             case nil:
                 ListCaption(title: "Sessions · \(team.liveSessionCount) live", trailing: "tokens/min · 30m")
                 ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(team.projects.filter { !$0.sessions.isEmpty }) { project in
-                            ProjectHeader(store: store, project: project)
-                            if store.expanded.contains("\(project.deviceId)|\(project.key)") {
-                                ForEach(project.sessions) { session in
-                                    SessionRow(store: store, deviceId: project.deviceId, projectKey: project.key, session: session)
+                    let live = store.liveProjects
+                    LazyVStack(spacing: 8) {
+                        ForEach(Array(live.enumerated()), id: \.element.id) { index, project in
+                            VStack(spacing: 0) {
+                                ProjectHeader(store: store, project: project)
+                                if store.expanded.contains("\(project.deviceId)|\(project.key)") {
+                                    ForEach(Array(project.sessions.enumerated()), id: \.element.id) { row, session in
+                                        SessionRow(store: store, deviceId: project.deviceId, projectKey: project.key, session: session)
+                                            .liftOnReorder(Reorder.rank(project: 0, row: row))
+                                            .transition(.move(edge: .top).combined(with: .opacity))
+                                    }
                                 }
                             }
-                            Divider().overlay(DeckColor.line)
+                            .padding(.vertical, 4)
+                            .deckCard()
+                            .zoomSource(deviceId: project.deviceId, key: project.key)
+                            .liftOnReorder(Reorder.rank(project: index))
                         }
                     }
+                    .padding(.horizontal, 10)
+                    .animation(Reorder.slide, value: live.map(\.id))
                 }
+                .scrollIndicators(.hidden)
                 .frame(maxHeight: .infinity)
             }
+        }
+        // The bar floats; the list scrolls on under its glass.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             BottomBar(store: store, navigation: homeNavigation(store: store, empty: empty))
         }
-        .background(DeckColor.bg)
+        .deckScreen()
         .renameAlert(store: store, user: $renaming)
     }
 }

@@ -43,8 +43,12 @@ public final class BurnHistory: Sendable {
         }
     }
 
+    /// How far back a row's rate looks. Five minutes, not one: a session thinking between tool
+    /// calls reads as busy rather than dropping to 0/min, and the rows ranked by it hold still.
+    public static let rateWindow: TimeInterval = 5 * 60
+
     /// Tokens per minute between the first and last sample inside `window` ending at `now`.
-    public func ratePerMinute(_ key: String, now: Date, window: TimeInterval = 60) -> Double {
+    public func ratePerMinute(_ key: String, now: Date, window: TimeInterval = rateWindow) -> Double {
         let from = now.addingTimeInterval(-window)
         let inWindow = snapshot(key).filter { $0.at >= from && $0.at <= now }
         guard let first = inWindow.first, let last = inWindow.last, inWindow.count >= 2 else { return 0 }
