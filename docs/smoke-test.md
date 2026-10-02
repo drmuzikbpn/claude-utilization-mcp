@@ -39,6 +39,9 @@ Tick each line, or write down what happened instead.
       keeping any pending escalation and showing the daemon's current name.
 - [ ] *Pairing → Scan QR* still reads a legacy QR from `claude-usage configure pairing` and the
       machine appears.
+- [ ] Rotating a paired Mac's token (`claude-usage configure rotate-token`) shows the amber "<name>
+      no longer accepts this deck" card within about 30 s, the Mac's sessions disappear and its
+      pause buttons are disabled; **Re-pair** → scan `claude-usage pair` restores it in the same row.
 - [ ] A QR from a daemon with a rotated token reports "Token rejected, re-run pairing on the Mac"
       and does not leave a broken machine behind.
 - [ ] A machine that is merely asleep is saved and shown unreachable rather than rejected.

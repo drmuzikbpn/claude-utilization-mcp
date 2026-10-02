@@ -31,7 +31,7 @@ export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
 
 scripts/emulator.sh                                             # start/create the deck29 AVD
 ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest
-scripts/fakedaemon.sh warnCrossing                              # idle | warnCrossing | freeze | machineDrop
+scripts/fakedaemon.sh warnCrossing                              # idle | warnCrossing | freeze | machineDrop | tokenRotated
 ```
 
 To see real numbers on the emulator, push this Mac's own pairing file (LAN address; the daemon
@@ -79,6 +79,14 @@ hook is missing.
   forgets the key so a real re-crossing still speaks. There is no perpetual critical repeat; it used
   to re-announce every 10 minutes, which meant a Monday crossing nagged until the reset.
 - Every error shown to the user comes from the daemon envelope: `hint` → `message` → per-code default.
+- A 401 `unauthorized` or a pin mismatch (`pinning`) from **any** request or the stream is a lost
+  pairing, never a network blip: `MachineClient` sets `MachineState.needsRepair`, stops SSE and
+  polling, drops the machine's sessions, keeps it DEAD (so pause controls are off) and probes
+  `/health` once a minute. Home and the machine screen show an amber `RepairCard` ("<name> no
+  longer accepts this deck" → Re-pair); re-pairing replaces the same row. Pause/resume go through
+  `MachineClient.api` so their 401s count too. Before this a rotated token looked "connected":
+  an open stream kept heartbeating, sessions stayed listed, and an account's health is the best of
+  its machines.
 - Pairing (daemon §23.45–§23.47): `claude-usage pair` is the preferred path. Its QR/link
   `usagedeck://pair?v=2&name&addrs&port&fp&code` carries no bearer; `core/pairing/PairingClient`
   redeems the single-use code with `POST /v1/pair` over HTTPS pinned by `core/daemon/PinnedTls`

@@ -68,7 +68,7 @@ ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest
 `fakedaemon` implements the daemon contract, so the app runs on an emulator with nothing else:
 
 ```bash
-scripts/fakedaemon.sh warnCrossing      # also: idle, freeze, machineDrop
+scripts/fakedaemon.sh warnCrossing      # also: idle, freeze, machineDrop, tokenRotated
 ```
 
 Pair the emulator against `10.0.2.2` on the port the script printed, with token `fake-token`.

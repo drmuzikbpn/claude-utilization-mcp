@@ -99,6 +99,7 @@ per-machine read-only mode in v1.
 | --- | --- |
 | Machine dot red, "has not checked in for 2 minutes" | Mac asleep, or the daemon stopped |
 | "Token rejected" | Token was rotated; re-run `claude-usage pair` |
+| Amber "<name> no longer accepts this deck" card | Token rotated or certificate changed; run `claude-usage pair` on that Mac and tap **Re-pair** |
 | "run `claude-usage pair` again" while pairing | The one-time code expired (five minutes) or was already used |
 | "This machine's certificate changed" | The daemon made a new TLS certificate; re-run `claude-usage pair` |
 | Machine unreachable but wifi is fine | `config.bind` is missing `"tailscale"`, or the node is not approved |
