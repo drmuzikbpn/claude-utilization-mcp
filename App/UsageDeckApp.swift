@@ -1,42 +1,41 @@
 import SwiftUI
 import UsageCore
 
-/// iPhone entry point. The screens (Ledger, WideDock, pairing, device detail, settings) arrive
-/// in later phases; this placeholder proves the target links UsageCore and handles pairing links.
-@main
-struct UsageDeckApp: App {
-    @State private var lastLink: String?
+/// The app's long-lived objects. Built once on the main actor; the background-refresh handler and
+/// the scene both reach the same store.
+@MainActor
+enum AppGraph {
+    static let notifier = AlertNotifier()
+    static let store = DeckStore(notifier: notifier)
+    static let bridge = WatchBridge()
 
-    var body: some Scene {
-        WindowGroup {
-            PlaceholderView(lastLink: lastLink)
-                .onOpenURL { url in
-                    lastLink = switch PairingLink.parse(url) {
-                    case let .success(.invite(invite)): "Pair with \(invite.name)"
-                    case .success(.legacy): "This is an old pairing code. Run `claude-usage pair` on the device."
-                    case let .failure(error): error.message
-                    }
-                }
-        }
+    static func boot() {
+        notifier.install()
+        bridge.attach(store)
     }
 }
 
-struct PlaceholderView: View {
-    let lastLink: String?
+@main
+struct UsageDeckApp: App {
+    @Environment(\.scenePhase) private var phase
 
-    var body: some View {
-        VStack(spacing: 12) {
-            Text("Usage Deck")
-                .font(.largeTitle.weight(.semibold))
-            Text("No paired devices")
-                .foregroundStyle(.secondary)
-            if let lastLink {
-                Text(lastLink)
-                    .font(.footnote)
-                    .multilineTextAlignment(.center)
+    init() {
+        BackgroundRefresh.register {
+            await AppGraph.store.backgroundRefresh()
+        }
+        AppGraph.boot()
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            RootView(store: AppGraph.store)
+                .onOpenURL { AppGraph.store.handle(url: $0) }
+        }
+        .onChange(of: phase) { _, phase in
+            AppGraph.store.setActive(phase == .active)
+            if phase == .background {
+                BackgroundRefresh.schedule()
             }
         }
-        .padding()
-        .preferredColorScheme(.dark)
     }
 }

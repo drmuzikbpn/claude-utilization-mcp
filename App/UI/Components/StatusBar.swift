@@ -1,0 +1,191 @@
+import SwiftUI
+import UsageCore
+
+/// The one-line header both home screens carry: the gear (landscape only), the alert chip, one
+/// chip per device (dot + short name; tap for the device), and the clock. Alerts appear here
+/// rather than as a banner so nothing reflows. While an alert is up the devices shrink to dots.
+struct StatusBar: View {
+    @Bindable var store: DeckStore
+    var showsGear = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if showsGear {
+                Chip(text: "⚙", dot: nil) { store.path.append(.settings) }
+                    .accessibilityLabel("Settings")
+            }
+            HStack(spacing: 6) {
+                Spacer(minLength: 0)
+                if let chip = store.alertChip {
+                    Chip(text: chip, dot: DeckColor.warn, tint: DeckColor.warn)
+                        .layoutPriority(1)
+                }
+                ForEach(store.team.devices, id: \.id) { device in
+                    let name = Format.hostShort(device.displayName)
+                    Chip(
+                        text: store.alertChip == nil ? (device.needsRepair ? "\(name) · re-pair" : name) : "",
+                        dot: DeckColor.dot(device.health, needsRepair: device.needsRepair)
+                    ) {
+                        store.path.append(.device(device.id))
+                    }
+                    .accessibilityLabel("device \(name), \(device.needsRepair ? "needs re-pair" : "\(device.health)")")
+                }
+            }
+            Text(Format.clock(store.now, use24h: store.settings.use24h))
+                .font(DeckFont.numeral(16, .medium))
+                .foregroundStyle(DeckColor.fg)
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(DeckColor.bg)
+    }
+}
+
+/// One row per paired device while it has not delivered anything: name, state, last error.
+struct DeviceWaitRow: View {
+    var device: DeviceState
+    var now: Date
+    var compact = false
+
+    var body: some View {
+        let label = compact ? Format.hostShort(device.displayName) : device.displayName
+        let status: String = if device.needsRepair {
+            "Needs re-pair"
+        } else if let error = device.lastError {
+            error
+        } else if device.lastHeartbeatAt == nil {
+            "connecting…"
+        } else if device.health == .dead {
+            "last heard \(Format.age(device.lastHeartbeatAt, now: now))"
+        } else {
+            "waiting for first snapshot…"
+        }
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(DeckFont.text(13, .medium))
+                    .foregroundStyle(DeckColor.fg)
+                    .lineLimit(1)
+                Text(status)
+                    .font(DeckFont.mono(11))
+                    .foregroundStyle(device.lastError != nil || device.needsRepair ? DeckColor.warn : DeckColor.muted)
+                    .lineLimit(compact ? 2 : nil)
+            }
+            Spacer(minLength: 8)
+            if !compact, let addr = device.activeAddr ?? device.record.addrs.first {
+                Text("\(addr):\(device.record.port)")
+                    .font(DeckFont.mono(10))
+                    .foregroundStyle(DeckColor.dim)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(DeckColor.surface, in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+/// The empty states both home screens share, decided by `HomeEmpty`.
+struct HomeEmptyView: View {
+    @Bindable var store: DeckStore
+    var empty: HomeEmpty
+    var compact = false
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                switch empty {
+                case .noDevices:
+                    NoDevicesView(store: store)
+                case .connecting:
+                    title(store.team.devices.count == 1 ? "Waiting for device" : "Waiting for devices")
+                    paragraph("Paired, but no data yet. Check the daemon is running and this iPhone is on the same network (or VPN).")
+                    VStack(spacing: 6) {
+                        ForEach(store.team.devices, id: \.id) { device in
+                            Button { store.path.append(.device(device.id)) } label: {
+                                DeviceWaitRow(device: device, now: store.now, compact: compact)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.top, 16)
+                case let .noSessions(names):
+                    title("No live sessions")
+                    paragraph("Start a Claude Code session on \(names.joined(separator: " or ")) and it appears here.")
+                }
+            }
+            .padding(.horizontal, compact ? 12 : 28)
+            .padding(.vertical, 24)
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func title(_ text: String) -> some View {
+        Text(text)
+            .font(DeckFont.numeral(26))
+            .foregroundStyle(DeckColor.fg)
+            .multilineTextAlignment(.center)
+    }
+
+    private func paragraph(_ text: String) -> some View {
+        Text(text)
+            .font(DeckFont.text(13))
+            .foregroundStyle(DeckColor.muted)
+            .multilineTextAlignment(.center)
+            .lineSpacing(4)
+            .padding(.top, 8)
+    }
+}
+
+/// Nothing paired (D13): how to get the daemon, and the way into pairing.
+struct NoDevicesView: View {
+    @Bindable var store: DeckStore
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("No paired devices")
+                .font(DeckFont.numeral(26))
+                .foregroundStyle(DeckColor.fg)
+            Text(
+                "Usage Deck reads your Claude usage from claude-usage, a small daemon on the computer where you run "
+                    + "Claude Code. Install it there, then run `claude-usage pair` and scan its QR code."
+            )
+            .font(DeckFont.text(13))
+            .foregroundStyle(DeckColor.muted)
+            .multilineTextAlignment(.center)
+            .lineSpacing(4)
+            Button { store.beginPairing() } label: {
+                Text("Pair a device")
+                    .font(DeckFont.text(14, .medium))
+                    .foregroundStyle(DeckColor.fg)
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 12)
+                    .background(DeckColor.surface, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(DeckColor.accent, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 8)
+            InstallLinks()
+        }
+    }
+}
+
+/// "Get the Mac app" and the install commands as a share sheet (D13).
+struct InstallLinks: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Link(destination: DeckLinks.project) {
+                Label("Get the Mac app", systemImage: "arrow.up.right.square")
+                    .font(DeckFont.text(13, .medium))
+            }
+            ShareLink(item: DeckLinks.installCommands, preview: SharePreview("Install claude-usage")) {
+                Label("Share install commands", systemImage: "square.and.arrow.up")
+                    .font(DeckFont.text(13, .medium))
+            }
+        }
+        .foregroundStyle(DeckColor.accent)
+        .labelStyle(.titleAndIcon)
+    }
+}
