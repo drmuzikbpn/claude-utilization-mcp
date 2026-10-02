@@ -19,7 +19,27 @@ xcodebuild -project UsageDeck.xcodeproj -scheme UsageDeck \
 xcodebuild -project UsageDeck.xcodeproj -scheme UsageDeckWatch \
   -destination 'generic/platform=watchOS Simulator' build
 swiftformat . && swiftlint lint --strict        # lefthook runs both + `swift build` on pre-commit
+TEST_RUNNER_WIDGET_SHOTS_DIR=<dir> xcodebuild -project UsageDeck.xcodeproj -scheme WidgetRender \
+  -destination 'platform=iOS Simulator,name=<iPhone>' test          # every widget family → PNG
+#   same with -scheme ComplicationRender on a watchOS simulator for the complications
+swift scripts/make-icon.swift App/Assets.xcassets/AppIcon.appiconset/icon-1024.png   # app icon
 ```
+
+## Releases (TestFlight only)
+
+- `.github/workflows/ci.yml`: lint + `swift test` + both builds on every push/PR to `usage-ios`;
+  a push to `usage-ios` also archives, exports and uploads to TestFlight. It never creates a
+  GitHub Release or tag (the daemon's updater reads `/releases/latest`, §23.17).
+- Build number = `git rev-list --count HEAD`; TestFlight rejects a non-increasing one, so never
+  force-push this branch shorter. Version = `MARKETING_VERSION` (`0.1`).
+- Signing: Debug automatic; Release manual — "Apple Distribution: Even Seal Productions LLC
+  (YTHBPWUU3Z)" + four App Store profiles named `UsageDeck AppStore`, `UsageWidgets AppStore`,
+  `UsageDeckWatch AppStore`, `UsageComplications AppStore` (all carry
+  `group.com.evenseal.usagedeck`). CI installs the profiles by name with `ci/asc.py profiles …`.
+- Secrets: 1Password `usagedeck/usage-ios-ci` is the source of truth (`.env.tmpl` lists the
+  references); GitHub secrets are loaded from it with `op read … | gh secret set NAME` (never as
+  an argument). Profiles and the certificate expire 2027-10-02.
+- App Store Connect app: "Usage Deck", id 6818383053, SKU `usagedeck-ios`.
 
 lefthook is installed (`lefthook install`); the git hooks dir is shared with the other worktrees
 of this repo and runs whichever `lefthook.yml` the committing worktree has. Never `--no-verify`.
