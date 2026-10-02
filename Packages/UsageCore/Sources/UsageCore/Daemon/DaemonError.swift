@@ -35,7 +35,15 @@ public struct DaemonError: Error, Sendable, Equatable {
 
     /// True when re-pairing, not retrying, is the fix.
     public var needsRepair: Bool {
-        code == "unauthorized" || code == "pinning"
+        repairReason != nil
+    }
+
+    public var repairReason: RepairReason? {
+        switch code {
+        case "unauthorized": .tokenRejected
+        case "pinning": .certificateChanged
+        default: nil
+        }
     }
 
     static func code(forStatus status: Int) -> String {

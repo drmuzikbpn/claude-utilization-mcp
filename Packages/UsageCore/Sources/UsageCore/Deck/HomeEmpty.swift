@@ -6,6 +6,8 @@ public enum HomeEmpty: Sendable, Equatable {
     case noDevices
     /// Paired, but no device has delivered anything yet.
     case connecting
+    /// Nothing delivered, and every device has stopped accepting this iPhone: re-pair, don't wait.
+    case needsRepair
     /// Data is flowing; nothing is running.
     case noSessions(deviceNames: [String])
 
@@ -14,7 +16,7 @@ public enum HomeEmpty: Sendable, Equatable {
             return .noDevices
         }
         if !team.devices.contains(where: \.hasSnapshot) {
-            return .connecting
+            return team.devices.allSatisfy(\.needsRepair) ? .needsRepair : .connecting
         }
         if team.liveSessionCount == 0 {
             return .noSessions(deviceNames: team.devices.map(\.displayName))

@@ -50,7 +50,7 @@ of this repo and runs whichever `lefthook.yml` the committing worktree has. Neve
 | Path | What lives there |
 | --- | --- |
 | `Packages/UsageCore/` | SwiftPM, no UI. `Daemon/` (DTOs, `DaemonAPI`, `EventStream`, `Endpoints`, errors), `Net/PinnedTrust`, `Pairing/`, `Device/` (`DeviceReducer` + `DeviceClient` actor), `Model/` (`TeamState`, `Aging`, `BurnHistory`, `Version`, `Highest`, `SetupCheck`, `UserNames`), `Pause/`, `Alerts/`, `Format/`, `Watch/` (`WatchSnapshot`, wire messages), `Storage/TokenStore`. Linked by all four targets. |
-| `App/` | iOS app `com.evenseal.usagedeck` (iOS 18). `Store/` (`DeckStore` — the one `@Observable` app model; `WatchBridge`, `AlertNotifier`, `BackgroundRefresh`, Debug-only `DemoData`), `UI/` (Ledger, WideDock, Project/Projects, Device, Settings, Pairing, shared `Components/`), `Theme/` (palette, `DeckBackdrop` aurora tinted by the worst limit, `deckCard`, zoom sources; bundled OFL fonts in `Resources/Fonts`). The app also compiles `SharedUI/Theme.swift`, `RingGauge.swift` and `Materials.swift` (`deckGlass`: Liquid Glass on iOS/watchOS 26, frosted material before) so phone and watch draw the same rings and glass. Home lists rank by live rate (`ActivityOrder`, 5-minute `BurnHistory.rateWindow`), not by tokens today. App logic that can be tested without UIKit lives in UsageCore `Deck/` (`DeckSettings`, `DeviceRegistry`, `InstallID`, `AddressMerge`, `PairingInput`, `PauseVisuals`, `HomeEmpty`, `DeckAlerts`, `SnapshotDiff`, `FirstLoad` — when a freshly paired device's first refresh has landed, so the "Connecting…" overlay never hands over to rows of "unknown"). |
+| `App/` | iOS app `com.evenseal.usagedeck` (iOS 18). `Store/` (`DeckStore` — the one `@Observable` app model; `WatchBridge`, `AlertNotifier`, `BackgroundRefresh`, Debug-only `DemoData`), `UI/` (Ledger, WideDock, Project/Projects, Device, Settings, Pairing, shared `Components/`), `Theme/` (palette, `DeckBackdrop` aurora tinted by the worst limit, `deckCard`, zoom sources; bundled OFL fonts in `Resources/Fonts`). The app also compiles `SharedUI/Theme.swift`, `RingGauge.swift` and `Materials.swift` (`deckGlass`: Liquid Glass on iOS/watchOS 26, frosted material before) so phone and watch draw the same rings and glass. Home lists rank by live rate (`ActivityOrder`, 5-minute `BurnHistory.rateWindow`), not by tokens today. App logic that can be tested without UIKit lives in UsageCore `Deck/` (`DeckSettings`, `DeviceRegistry`, `InstallID`, `AddressMerge`, `PairingInput`, `PauseVisuals`, `HomeEmpty`, `DeckAlerts`, `SnapshotDiff`, `FirstLoad` — when a freshly paired device's first refresh has landed, so the "Connecting…" overlay never hands over to rows of "unknown"; `ConnectTracker` — one attempt at a time, foreground-only timeout; `RepairNotice` — the copy for a lost pairing). |
 | `AppUITests/` | XCUITest smoke test: launches with `-UsageDeckDemo` (Debug only, made-up devices, no daemon) and walks every screen. |
 | `Watch/` | watchOS app `com.evenseal.usagedeck.watchkitapp` (watchOS 11), single target. |
 | `Widgets/` | iOS widget extension `.widgets`. |
@@ -96,6 +96,14 @@ fixture both sides must hash identically.
   relaunch, and is forgotten when the limit drops under the threshold.
 - `BurnHistory` is written from device actors and read on the main actor: every access locks.
 - Every user-facing error comes from the daemon envelope: hint → message → per-code default.
+- A lost pairing is never "waiting": a 401 sets `repairReason = .tokenRejected`, a pin mismatch
+  `.certificateChanged`. The client then stops polling and probes SSE once per `repairProbe`
+  (60 s); any answer clears it. Home and the device screen show a `RepairCard` whose Re-pair
+  reuses the same record (`beginPairing(replacing:)`), then runs the Connecting overlay; an
+  invite that is not plausibly that device (`RepairMatch`) asks "Replace <old> with <new>?".
+  The REPAIR notification comes from the persisted `RepairLedger` (known-good → lost, once,
+  1 h cooldown), never the in-memory evaluator; tapping it opens Re-pair. Only a device's
+  current `DeviceClient` may update its state (`ingest(_:from:)` checks identity).
 - User-facing copy says **"device"**, never "Mac" (the daemon runs on Linux too).
 - Paired `DeviceRecord`s live in `UserDefaults` (`DeviceRegistry`), escalations and the alert
   ledger in the App Group suite. `/health.install.listeners` TLS addresses are **merged into**

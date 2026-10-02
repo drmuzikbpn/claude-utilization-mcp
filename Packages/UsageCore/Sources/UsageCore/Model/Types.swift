@@ -348,6 +348,14 @@ public struct ProjectTokens: Codable, Sendable, Equatable {
     }
 }
 
+/// Why a paired device no longer accepts this iPhone.
+public enum RepairReason: String, Sendable, Equatable, Codable {
+    /// 401: its bearer token was rotated (or this pairing was revoked).
+    case tokenRejected
+    /// Its TLS certificate no longer hashes to the paired fingerprint (regenerated).
+    case certificateChanged
+}
+
 /// One paired device's live state, as `DeviceClient` maintains it.
 public struct DeviceState: Sendable, Equatable {
     public enum Transport: String, Sendable, Codable {
@@ -375,8 +383,8 @@ public struct DeviceState: Sendable, Equatable {
     /// answer, not the empty defaults (which may be the answer too, on a fresh install).
     public var summaryLoaded = false
     public var lastError: String?
-    /// The daemon rejected the token (401): the device needs re-pairing, not a retry.
-    public var needsRepair: Bool = false
+    /// Why the device stopped accepting this iPhone, when it has: re-pairing, not a retry, fixes it.
+    public var repairReason: RepairReason?
     public var transport: Transport = .disconnected
     /// The candidate address that answered last, if any.
     public var activeAddr: String?
@@ -387,6 +395,13 @@ public struct DeviceState: Sendable, Equatable {
 
     public var id: String {
         record.id
+    }
+
+    /// The device rejected the token (401) or its certificate no longer matches the pin.
+    /// Setting it without a reason means a rejected token.
+    public var needsRepair: Bool {
+        get { repairReason != nil }
+        set { repairReason = newValue ? (repairReason ?? .tokenRejected) : nil }
     }
 
     /// The daemon's own name for itself, else the name it was paired under.

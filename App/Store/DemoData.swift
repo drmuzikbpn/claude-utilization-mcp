@@ -12,6 +12,14 @@
         static let connectingArgument = "-UsageDeckDemoConnecting"
         static let connectingDelay: Duration = .seconds(3)
 
+        /// Also `-UsageDeckDemoNeedsRepair`: studio has stopped accepting this iPhone (its token
+        /// was changed), for the re-pair banner.
+        static let needsRepairArgument = "-UsageDeckDemoNeedsRepair"
+
+        static var needsRepair: Bool {
+            ProcessInfo.processInfo.arguments.contains(needsRepairArgument)
+        }
+
         static var isEnabled: Bool {
             ProcessInfo.processInfo.arguments.contains(launchArgument)
         }

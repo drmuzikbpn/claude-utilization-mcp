@@ -76,8 +76,10 @@ private struct ConfirmPairing: ViewModifier {
     var active: Bool
 
     func body(content: Content) -> some View {
-        content.alert(
-            "Pair \(store.pendingInvite?.name ?? "device")?",
+        let conflict = store.pendingInvite.flatMap(store.replacementConflict)
+        return content.alert(
+            conflict.map { "Replace \(Format.hostShort($0.name)) with \(store.pendingInvite?.name ?? "device")?" }
+                ?? "Pair \(store.pendingInvite?.name ?? "device")?",
             // Never over "Connecting to <name>…": a link that arrives then waits its turn.
             isPresented: Binding(get: { active && store.connecting == nil && store.pendingInvite != nil }, set: {
                 if !$0 {
@@ -88,10 +90,21 @@ private struct ConfirmPairing: ViewModifier {
         ) { invite in
             // Pass the presented invite: dismissing the alert runs the binding's setter, which
             // clears `pendingInvite`, before this action does.
-            Button("Pair") { Task { await store.confirmPairing(invite) } }
+            if conflict != nil {
+                Button("Replace") { Task { await store.confirmPairing(invite) } }
+                Button("Pair as new") { Task { await store.confirmPairing(invite, replace: false) } }
+            } else {
+                Button("Pair") { Task { await store.confirmPairing(invite) } }
+            }
             Button("Cancel", role: .cancel) { store.pendingInvite = nil }
         } message: { invite in
-            Text("Usage Deck will connect to \(invite.addrs.joined(separator: ", ")) over HTTPS pinned to this device's certificate.")
+            if let conflict {
+                let old = Format.hostShort(conflict.name)
+                Text("This code is from \(invite.name), not \(old). Replace keeps \(old)'s place and settings; "
+                    + "Pair as new adds \(invite.name) alongside it.")
+            } else {
+                Text("Usage Deck will connect to \(invite.addrs.joined(separator: ", ")) over HTTPS pinned to this device's certificate.")
+            }
         }
     }
 }

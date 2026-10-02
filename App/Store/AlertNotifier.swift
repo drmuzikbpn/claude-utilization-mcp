@@ -8,6 +8,9 @@ import UserNotifications
 @MainActor
 final class AlertNotifier: NSObject {
     private let center = UNUserNotificationCenter.current()
+    /// Tapping a lost-pairing notification: opens Re-pair for that device.
+    var onRepair: ((String) -> Void)?
+    private nonisolated static let repairKey = "repairDeviceId"
 
     /// Becomes the notification centre's delegate so a banner still shows while the app is open.
     func install() {
@@ -24,6 +27,9 @@ final class AlertNotifier: NSObject {
         content.title = alert.title
         content.body = alert.body
         content.threadIdentifier = alert.kind.rawValue
+        if alert.kind == .repair, let id = alert.key.split(separator: "|", maxSplits: 1).last {
+            content.userInfo = [Self.repairKey: String(id)]
+        }
         if quiet {
             content.interruptionLevel = .passive
         } else {
@@ -44,5 +50,18 @@ extension AlertNotifier: UNUserNotificationCenterDelegate {
     ) {
         let passive = notification.request.content.interruptionLevel == .passive
         completionHandler(passive ? [.list] : [.banner, .list, .sound])
+    }
+
+    nonisolated func userNotificationCenter(
+        _: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let id = response.notification.request.content.userInfo[Self.repairKey] as? String
+        completionHandler()
+        guard let id else { return }
+        Task { @MainActor in
+            self.onRepair?(id)
+        }
     }
 }

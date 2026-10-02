@@ -111,7 +111,8 @@ struct HomeEmptyView: View {
                     title(store.team.devices.count == 1 ? "Waiting for device" : "Waiting for devices")
                     paragraph("Paired, but no data yet. Check the daemon is running and this iPhone is on the same network (or VPN).")
                     VStack(spacing: 6) {
-                        ForEach(store.team.devices, id: \.id) { device in
+                        // Devices that lost their pairing have their own card above.
+                        ForEach(store.team.devices.filter { !$0.needsRepair }, id: \.id) { device in
                             Button { store.path.append(.device(device.id)) } label: {
                                 DeviceWaitRow(device: device, now: store.now, compact: compact)
                             }
@@ -119,6 +120,9 @@ struct HomeEmptyView: View {
                         }
                     }
                     .padding(.top, 16)
+                case .needsRepair:
+                    title(store.team.devices.count == 1 ? "Pairing lost" : "Pairings lost")
+                    paragraph("Re-pair above to see usage again. Nothing is lost on this iPhone: the device keeps its name and settings.")
                 case let .noSessions(names):
                     title("No live sessions")
                     paragraph("Start a Claude Code session on \(names.joined(separator: " or ")) and it appears here.")

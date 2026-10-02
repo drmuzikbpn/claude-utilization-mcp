@@ -5,6 +5,9 @@ public enum AlertKind: String, Codable, Sendable {
     case critical = "CRITICAL"
     case frozen = "FROZEN"
     case unreachable = "UNREACHABLE"
+    /// The device stopped accepting this iPhone (token rotated, certificate regenerated). Raised by
+    /// `RepairLedger`, not the evaluator: it must survive relaunches and background wakes.
+    case repair = "REPAIR"
 }
 
 /// `key` is the dedupe key: `"KIND|userKey|limitId"`, `"KIND|deviceId"` or `"KIND|deviceId|sessionId"`.

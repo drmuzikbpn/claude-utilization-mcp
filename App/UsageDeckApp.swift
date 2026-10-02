@@ -30,6 +30,7 @@ enum AppGraph {
 
     static func boot() {
         notifier.install()
+        notifier.onRepair = { store.beginPairing(replacing: $0) }
         bridge.attach(store)
     }
 }
