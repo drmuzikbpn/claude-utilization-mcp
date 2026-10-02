@@ -81,4 +81,65 @@ class MachineStoreTest {
         store.remove("nope")
         assertEquals(listOf(mbp), store.machines.value)
     }
+
+    private val pinned = MachineConfig(
+        "m3",
+        "studio",
+        "192.168.1.30",
+        47292,
+        "tok-3",
+        fp = "a".repeat(64),
+        addrs = listOf("192.168.1.30", "studio.local", "100.1.1.3")
+    )
+
+    @Test
+    fun `a pinned machine persists its fingerprint and addresses`() {
+        store.add(pinned)
+        val loaded = MachineStore.open(context).machines.value.single()
+        assertEquals(pinned, loaded)
+        assertEquals("https://192.168.1.30:47292", loaded.baseUrl)
+    }
+
+    @Test
+    fun `rows stored before v2 pairing still load, as plain http`() {
+        context.getSharedPreferences("legacy-rows", Context.MODE_PRIVATE).edit()
+            .putString("machines", """[{"id":"m1","name":"mbp","addr":"100.1.1.1","port":8787,"token":"t"}]""")
+            .commit()
+        val loaded = MachineStore(
+            context.getSharedPreferences("legacy-rows", Context.MODE_PRIVATE)
+        ).machines.value.single()
+        assertEquals(MachineConfig("m1", "mbp", "100.1.1.1", 8787, "t"), loaded)
+        assertEquals("http://100.1.1.1:8787", loaded.baseUrl)
+    }
+
+    @Test
+    fun `pairing the same key again replaces the row`() {
+        store.add(pinned)
+        store.pair(pinned.copy(id = "m4", addr = "100.1.1.3", token = "tok-new"))
+        assertEquals(listOf("m4"), store.machines.value.map { it.id })
+        assertEquals("tok-new", store.machines.value.single().token)
+    }
+
+    @Test
+    fun `pairing the same address and port again replaces the row`() {
+        store.add(mbp)
+        store.pair(mbp.copy(id = "m9", token = "tok-new"))
+        assertEquals(listOf("m9"), store.machines.value.map { it.id })
+    }
+
+    @Test
+    fun `a v2 pairing replaces the v1 row for one of its addresses`() {
+        val legacy = MachineConfig("old", "studio", "100.1.1.3", 47291, "tok-old")
+        store.add(legacy)
+        store.add(mini)
+        store.pair(pinned)
+        assertEquals(listOf("m2", "m3"), store.machines.value.map { it.id })
+    }
+
+    @Test
+    fun `pairing an unrelated machine adds a row`() {
+        store.add(mbp)
+        store.pair(pinned)
+        assertEquals(listOf("m1", "m3"), store.machines.value.map { it.id })
+    }
 }

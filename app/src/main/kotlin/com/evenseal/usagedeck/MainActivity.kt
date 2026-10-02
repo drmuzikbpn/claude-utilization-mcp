@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.evenseal.usagedeck.core.daemon.DaemonException
 import com.evenseal.usagedeck.kiosk.LockTaskReceiver
 import com.evenseal.usagedeck.kiosk.ScreenHold
 import com.evenseal.usagedeck.pairing.PairingImport
@@ -109,6 +110,14 @@ class MainActivity : ComponentActivity() {
         val dirs = listOfNotNull(filesDir, getExternalFilesDir(null))
         when (val imported = PairingImport(dirs, graph.machineStore).consume()) {
             is PairingImport.Result.Imported -> Log.i(TAG, "paired ${imported.name} from import file")
+            // Redeeming needs the network, so it runs on the graph's scope; only the name is logged.
+            is PairingImport.Result.Redeem -> graph.scope.launch {
+                try {
+                    Log.i(TAG, "paired ${graph.invitePairing.pair(imported.invite).name} from import file")
+                } catch (e: DaemonException) {
+                    Log.w(TAG, "pairing import of ${imported.invite.name} failed: ${e.userMessage()}")
+                }
+            }
             is PairingImport.Result.Rejected -> Log.w(TAG, "pairing import rejected: ${imported.reason}")
             PairingImport.Result.Nothing -> Unit
         }

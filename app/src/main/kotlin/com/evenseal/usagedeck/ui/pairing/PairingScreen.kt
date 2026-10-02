@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,27 +26,32 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.evenseal.usagedeck.pairing.PairingPayload
 import com.evenseal.usagedeck.pairing.QrScanActivity
+import com.evenseal.usagedeck.pairing.ScannedPairing
 import com.evenseal.usagedeck.ui.theme.DeckColors
 import com.evenseal.usagedeck.ui.theme.DeckType
 
+/** What the pairing screen shows under the button; [busy] while a redeem or probe is running. */
+data class PairingStatus(val message: String, val busy: Boolean = false)
+
 /**
- * Spec §6.3. The warning is the point of this screen: the QR is a bearer token, so it is scanned
- * off the Mac's own screen and rotated if it was ever photographed.
+ * Spec §6.3, daemon §23.47. The preferred QR comes from `claude-usage pair` and carries a one-time
+ * code that is redeemed over pinned HTTPS; the legacy `claude-usage configure pairing` QR is a
+ * bearer token, so it is scanned off the Mac's own screen and rotated if it was ever photographed.
  */
 @Composable
-fun PairingScreen(onPaired: (PairingPayload, onResult: (String) -> Unit) -> Unit, onBack: () -> Unit) {
+fun PairingScreen(onScanned: (ScannedPairing, report: (PairingStatus) -> Unit) -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
-    var message by remember { mutableStateOf<String?>(null) }
+    var status by remember { mutableStateOf<PairingStatus?>(null) }
 
     val scan = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
         val raw = result.data?.getStringExtra(QrScanActivity.EXTRA_PAYLOAD).orEmpty()
-        PairingPayload.parse(raw)
-            .onSuccess { payload -> onPaired(payload) { message = it } }
-            .onFailure { message = it.message ?: "That QR is not a pairing code." }
+        ScannedPairing.parse(raw)
+            .onSuccess { scanned -> onScanned(scanned) { status = it } }
+            .onFailure { status = PairingStatus(it.message ?: "That QR is not a pairing code.") }
     }
+    val busy = status?.busy == true
 
     Column(modifier = Modifier.fillMaxSize().background(DeckColors.bg)) {
         Row(
@@ -77,7 +83,7 @@ fun PairingScreen(onPaired: (PairingPayload, onResult: (String) -> Unit) -> Unit
 
         Text(
             modifier = Modifier.padding(horizontal = 10.dp),
-            text = "On the Mac: claude-usage configure pairing",
+            text = "On the Mac: claude-usage pair\n(older daemons: claude-usage configure pairing)",
             color = DeckColors.muted,
             fontFamily = DeckType.mono,
             fontSize = 12.sp
@@ -85,15 +91,24 @@ fun PairingScreen(onPaired: (PairingPayload, onResult: (String) -> Unit) -> Unit
 
         TextButton(
             modifier = Modifier.padding(6.dp),
+            enabled = !busy,
             onClick = { scan.launch(Intent(context, QrScanActivity::class.java)) }
         ) {
             Text("Scan QR", color = DeckColors.accent, fontFamily = DeckType.text, fontSize = 15.sp)
         }
 
-        message?.let {
+        if (busy) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                color = DeckColors.accent,
+                trackColor = DeckColors.surface
+            )
+        }
+
+        status?.let {
             Text(
                 modifier = Modifier.padding(10.dp),
-                text = it,
+                text = it.message,
                 color = DeckColors.fg,
                 fontFamily = DeckType.text,
                 fontSize = 13.sp

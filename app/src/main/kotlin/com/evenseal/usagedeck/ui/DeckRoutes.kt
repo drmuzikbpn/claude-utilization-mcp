@@ -9,10 +9,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evenseal.usagedeck.BuildConfig
 import com.evenseal.usagedeck.core.daemon.DaemonException
 import com.evenseal.usagedeck.core.daemon.OkHttpDaemonApi
+import com.evenseal.usagedeck.core.pairing.PairingInvite
+import com.evenseal.usagedeck.pairing.ScannedPairing
 import com.evenseal.usagedeck.service.DeckGraph
 import com.evenseal.usagedeck.ui.components.usersWithData
 import com.evenseal.usagedeck.ui.machine.MachineScreen
 import com.evenseal.usagedeck.ui.pairing.PairingScreen
+import com.evenseal.usagedeck.ui.pairing.PairingStatus
 import com.evenseal.usagedeck.ui.settings.SettingsScreen
 import com.evenseal.usagedeck.ui.wifi.WifiScreen
 import com.evenseal.usagedeck.wifi.CaptivePortalActivity
@@ -88,16 +91,36 @@ internal fun MachineRoute(graph: DeckGraph, vm: DeckViewModel, machineId: String
 internal fun PairingRoute(graph: DeckGraph, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     PairingScreen(
-        onPaired = { payload, report ->
-            val config = payload.toConfig()
-            graph.machineStore.add(config)
-            report("Saved ${config.name}. Checking the daemon…")
-            scope.launch {
-                report(probe(graph, config))
+        onScanned = { scanned, report ->
+            when (scanned) {
+                is ScannedPairing.Legacy -> {
+                    val config = scanned.payload.toConfig()
+                    graph.machineStore.pair(config)
+                    report(PairingStatus("Saved ${config.name}. Checking the daemon…", busy = true))
+                    scope.launch {
+                        report(PairingStatus(probe(graph, config)))
+                    }
+                }
+                is ScannedPairing.Invite -> {
+                    report(PairingStatus("Pairing with ${scanned.invite.name}…", busy = true))
+                    // The graph's scope, not the screen's: the code is single use, so a redeem
+                    // that has started must finish and store its token even if the screen closes.
+                    graph.scope.launch {
+                        val outcome = redeem(graph, scanned.invite)
+                        withContext(Dispatchers.Main) { report(PairingStatus(outcome)) }
+                    }
+                }
             }
         },
         onBack = onBack
     )
+}
+
+/** Daemon §23.47: the code buys the bearer over pinned HTTPS; errors are the daemon's own hints. */
+private suspend fun redeem(graph: DeckGraph, invite: PairingInvite): String = try {
+    "Paired ${graph.invitePairing.pair(invite).name}."
+} catch (e: DaemonException) {
+    e.userMessage()
 }
 
 /**

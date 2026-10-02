@@ -65,4 +65,22 @@ class PairingImportTest {
         assertTrue(store.machines.value.isEmpty())
         assertFalse(File(dir, PairingImport.FILE_NAME).exists())
     }
+
+    @Test
+    fun `a v2 link is handed back for redeeming, the file removed and nothing stored yet`() {
+        val fp = "eeeb5db71defbf5a8dcd133e886b617f68a2cdfb8853e0b46ac1da446bdc1a27"
+        drop("usagedeck://pair?v=2&name=mbp&addrs=192.168.1.20&port=47292&fp=$fp&code=AbCdEfGhIjKlMnOpQrSt_-\n")
+
+        val result = import.consume() as PairingImport.Result.Redeem
+
+        assertEquals("mbp", result.invite.name)
+        assertTrue(store.machines.value.isEmpty())
+        assertFalse(File(dir, PairingImport.FILE_NAME).exists())
+    }
+
+    @Test
+    fun `a malformed v2 link is rejected`() {
+        drop("usagedeck://pair?v=2&name=mbp")
+        assertTrue(import.consume() is PairingImport.Result.Rejected)
+    }
 }

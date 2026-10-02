@@ -17,7 +17,7 @@ import kotlinx.serialization.json.Json
 
 /**
  * The paired machines, held in `EncryptedSharedPreferences` because each row carries a live
- * daemon bearer token. Spec §6.3.
+ * daemon bearer token. Spec §6.3. v2 rows also carry the daemon's certificate pin and addresses.
  */
 class MachineStore(private val prefs: SharedPreferences) {
     private val _machines = MutableStateFlow(load())
@@ -25,6 +25,22 @@ class MachineStore(private val prefs: SharedPreferences) {
 
     fun add(config: MachineConfig) {
         mutate { current -> current.filterNot { it.id == config.id } + config }
+    }
+
+    /**
+     * Stores a freshly paired machine, replacing any row that is the same machine: the same
+     * certificate key, the same address and port, or — upgrading a v1 pairing to v2 — a row
+     * without a key whose address is one of the new pairing's addresses.
+     */
+    fun pair(config: MachineConfig) {
+        val addrs = config.candidates.map { it.lowercase() }.toSet()
+        mutate { current ->
+            current.filterNot { old ->
+                (config.fp != null && old.fp == config.fp) ||
+                    (old.addr.equals(config.addr, ignoreCase = true) && old.port == config.port) ||
+                    (config.fp != null && old.fp == null && old.addr.lowercase() in addrs)
+            } + config
+        }
     }
 
     fun remove(id: String) {
@@ -56,12 +72,15 @@ class MachineStore(private val prefs: SharedPreferences) {
         val name: String,
         val addr: String,
         val port: Int,
-        val token: String
+        val token: String,
+        // Absent on rows stored before v2 pairing, which keep talking plain HTTP.
+        val fp: String? = null,
+        val addrs: List<String> = emptyList()
     )
 
-    private fun MachineConfig.stored() = StoredMachine(id, name, addr, port, token)
+    private fun MachineConfig.stored() = StoredMachine(id, name, addr, port, token, fp, addrs)
 
-    private fun StoredMachine.config() = MachineConfig(id, name, addr, port, token)
+    private fun StoredMachine.config() = MachineConfig(id, name, addr, port, token, fp, addrs)
 
     companion object {
         const val PREFS_NAME = "machines"
