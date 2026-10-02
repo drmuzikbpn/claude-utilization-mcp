@@ -1,0 +1,5 @@
+{
+  "invalid_code": { "status": 401, "body": { "error": { "code": "unauthorized", "message": "pairing code is invalid or expired", "hint": "run `claude-usage pair` again" } } },
+  "rate_limited": { "status": 429, "body": { "error": { "code": "rate_limited", "message": "too many pairing attempts" } } },
+  "plain_http": { "status": 403, "body": { "error": { "code": "forbidden", "message": "pairing is only available over https", "hint": "pair over https" } } }
+}
