@@ -90,7 +90,9 @@ internal fun MachineRoute(graph: DeckGraph, vm: DeckViewModel, machineId: String
 @Composable
 internal fun PairingRoute(graph: DeckGraph, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val redeeming by graph.invitePairing.redeeming.collectAsStateWithLifecycle()
     PairingScreen(
+        redeeming = redeeming,
         onScanned = { scanned, report ->
             when (scanned) {
                 is ScannedPairing.Legacy -> {

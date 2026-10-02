@@ -76,7 +76,7 @@ class DeckGraph(private val app: Application) {
     val machineStore: MachineStore = MachineStore.open(app)
 
     /** v2 pairing: redeems a scanned or sideloaded invite over pinned HTTPS and stores the machine. */
-    val invitePairing: InvitePairing = InvitePairing({ PairingClient(http).redeem(it) }, machineStore)
+    val invitePairing: InvitePairing = InvitePairing({ PairingClient(http).redeem(it) }, machineStore, scope)
 
     val settings: SettingsStore = SettingsStore(app.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE))
 

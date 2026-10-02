@@ -40,7 +40,11 @@ data class PairingStatus(val message: String, val busy: Boolean = false)
  * bearer token, so it is scanned off the Mac's own screen and rotated if it was ever photographed.
  */
 @Composable
-fun PairingScreen(onScanned: (ScannedPairing, report: (PairingStatus) -> Unit) -> Unit, onBack: () -> Unit) {
+fun PairingScreen(
+    onScanned: (ScannedPairing, report: (PairingStatus) -> Unit) -> Unit,
+    onBack: () -> Unit,
+    redeeming: Boolean = false
+) {
     val context = LocalContext.current
     var status by remember { mutableStateOf<PairingStatus?>(null) }
 
@@ -51,7 +55,9 @@ fun PairingScreen(onScanned: (ScannedPairing, report: (PairingStatus) -> Unit) -
             .onSuccess { scanned -> onScanned(scanned) { status = it } }
             .onFailure { status = PairingStatus(it.message ?: "That QR is not a pairing code.") }
     }
-    val busy = status?.busy == true
+    // [redeeming] comes from the graph, so a rotated or re-entered screen still knows a code is
+    // being redeemed and cannot start a second one.
+    val busy = status?.busy == true || redeeming
 
     Column(modifier = Modifier.fillMaxSize().background(DeckColors.bg)) {
         Row(
