@@ -1,4 +1,5 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, truncateSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { launchAgentsDir, macLogDir } from '../paths.js';
 import {
@@ -76,6 +77,13 @@ const BOOTSTRAP_ATTEMPTS = 8;
 const BOOTSTRAP_RETRY_WAIT_MS = 500;
 
 /** macOS `launchctl` (per-user GUI domain) implementation of `ServiceManager`. */
+/** `child_process.spawn`, narrowed to what the restart watchdog needs (tests inject a fake). */
+export type WatchdogSpawn = (
+  file: string,
+  args: readonly string[],
+  options: { detached: boolean; stdio: 'ignore' },
+) => { unref(): void };
+
 export class LaunchdService implements ServiceManager {
   readonly kind = 'launchd' as const;
   readonly label: string;
@@ -216,6 +224,37 @@ export class LaunchdService implements ServiceManager {
 
   async restart(): Promise<void> {
     await this.run(['kickstart', '-k', this.target]);
+  }
+
+  /**
+   * §23.50: the auto-updater restarts the daemon by asking launchd to `kickstart -k` the very
+   * job it runs in. On 2026-10-01 the Studio's update to 0.1.107 got the SIGTERM and never came
+   * back (`last exit code = -9`, no new process) until a manual kickstart. The restart request
+   * dies with the job it is restarting, so it needs a witness that outlives the job: a detached
+   * shell, in its own session, that polls `launchctl print` and kickstarts the job (without
+   * `-k`, so a running daemon is never touched) once launchd shows no pid. It gives up after
+   * 90 s; a job that came back on its own is simply seen running and left alone.
+   */
+  armRestartWatchdog(spawnFn: WatchdogSpawn = spawn): void {
+    const script = [
+      'i=0',
+      'while [ "$i" -lt 45 ]; do',
+      '  sleep 2',
+      '  i=$((i + 1))',
+      '  if ! launchctl print "$1" 2>/dev/null | grep -Eq "^[[:space:]]*pid = [0-9]+"; then',
+      '    launchctl kickstart "$1" >/dev/null 2>&1',
+      '    exit 0',
+      '  fi',
+      'done',
+    ].join('\n');
+    try {
+      spawnFn('/bin/sh', ['-c', script, 'claude-usage-restart-watchdog', this.target], {
+        detached: true,
+        stdio: 'ignore',
+      }).unref();
+    } catch {
+      // Best effort: the restart request and the exit-75 fallback still stand.
+    }
   }
 
   async status(): Promise<ServiceState> {

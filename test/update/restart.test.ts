@@ -97,3 +97,35 @@ describe('restart policy (§23.18)', () => {
     }
   });
 });
+
+describe('defaultRestart arms the launchd watchdog before asking for the restart (§23.50)', () => {
+  it('calls armRestartWatchdog first, then restart', async () => {
+    const order: string[] = [];
+    vi.doMock('../../src/service/index.js', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../src/service/index.js')>();
+      return {
+        ...actual,
+        createServiceManager: async () => ({
+          kind: 'launchd',
+          armRestartWatchdog: () => order.push('arm'),
+          restart: async () => {
+            order.push('restart');
+          },
+        }),
+      };
+    });
+    vi.resetModules();
+    const { defaultRestart } = await import('../../src/update/index.js');
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${String(code)}`);
+    }) as never);
+    try {
+      await expect(defaultRestart({}, 1)).rejects.toThrow('exit:75');
+      expect(order).toEqual(['arm', 'restart']);
+    } finally {
+      exit.mockRestore();
+      vi.doUnmock('../../src/service/index.js');
+      vi.resetModules();
+    }
+  });
+});

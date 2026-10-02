@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Fixed
+- An auto-update could leave the daemon stopped on macOS: the restart is a `launchctl
+  kickstart -k` issued from inside the job being restarted. A detached watchdog now relaunches
+  the job if no process is running within 90 s (§23.50). If a Mac is down after updating to
+  0.1.107, run `launchctl kickstart gui/$(id -u)/com.github.drmuzikbpn.claude-usage`.
+
 ### Added
 - **iPhone app over Wi-Fi, no Tailscale needed.** A new `lan` bind keyword selects this
   machine's private Wi-Fi/Ethernet address and follows it across network changes. Turn it

@@ -264,3 +264,64 @@ describe('logs', () => {
     expect(tail[19]).toBe('line 29');
   });
 });
+
+describe('restart watchdog (§23.50)', () => {
+  it('spawns a detached shell that kickstarts the job (without -k) once launchd shows no pid', () => {
+    const h = tempHome();
+    const calls: Array<{ file: string; args: readonly string[]; detached: unknown; stdio: unknown }> = [];
+    let unrefed = false;
+    const svc = new LaunchdService({ env: h.env, exec: fakeExec().runner, uid: 501 });
+    svc.armRestartWatchdog((file, args, options) => {
+      calls.push({ file, args, detached: options.detached, stdio: options.stdio });
+      return { unref: () => { unrefed = true; } };
+    });
+
+    expect(calls).toHaveLength(1);
+    const call = calls[0]!;
+    expect(call.file).toBe('/bin/sh');
+    expect(call.detached).toBe(true);
+    expect(call.stdio).toBe('ignore');
+    expect(unrefed).toBe(true);
+    const script = call.args[1]!;
+    expect(call.args[0]).toBe('-c');
+    expect(call.args.at(-1)).toBe(`gui/501/${LAUNCHD_LABEL}`);
+    expect(script).toContain('launchctl print');
+    expect(script).toContain('launchctl kickstart "$1"');
+    expect(script).not.toContain('kickstart -k');
+  });
+
+  it('the watchdog script restarts a job with no pid and leaves a running one alone', async () => {
+    const { execFileSync } = await import('node:child_process');
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const h = tempHome();
+    let script = '';
+    const svc = new LaunchdService({ env: h.env, exec: fakeExec().runner, uid: 501 });
+    svc.armRestartWatchdog((_file, args) => {
+      script = args[1]!;
+      return { unref: () => {} };
+    });
+    // Run the real script against a fake `launchctl` on PATH, with the poll made instant.
+    const bin = mkdtempSync(join(tmpdir(), 'wd-'));
+    const log = join(bin, 'calls.txt');
+    const fake = (printOut: string) =>
+      writeFileSync(
+        join(bin, 'launchctl'),
+        `#!/bin/sh\necho "$@" >> ${log}\n[ "$1" = print ] && printf '%s\\n' '${printOut}'\nexit 0\n`,
+        { mode: 0o755 },
+      );
+    const run = () =>
+      execFileSync('/bin/sh', ['-c', script.replace(/sleep \d+/g, 'sleep 0'), 'watchdog', 'gui/501/x'], {
+        env: { PATH: `${bin}:/usr/bin:/bin` },
+      });
+
+    fake('\tstate = not running');
+    run();
+    expect(readFileSync(log, 'utf8')).toContain('kickstart gui/501/x');
+
+    writeFileSync(log, '');
+    fake('\tpid = 4242');
+    run();
+    expect(readFileSync(log, 'utf8')).not.toContain('kickstart');
+  });
+});
