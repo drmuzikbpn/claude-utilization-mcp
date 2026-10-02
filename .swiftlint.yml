@@ -3,6 +3,8 @@ included:
   - Watch
   - Widgets
   - Complications
+  - SharedUI
+  - WidgetShared
   - Packages/UsageCore/Sources
   - Packages/UsageCore/Tests
 excluded:
