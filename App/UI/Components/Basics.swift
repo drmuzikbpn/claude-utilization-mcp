@@ -1,7 +1,8 @@
 import SwiftUI
 import UsageCore
 
-/// A pill: 1 pt `line` border on `surface`, a 7 pt status dot, mono 11 pt text.
+/// A glass pill: a 7 pt status dot (glowing in its colour), mono 11 pt text. A tinted chip tints
+/// its glass.
 struct Chip: View {
     var text: String
     var dot: Color?
@@ -12,6 +13,7 @@ struct Chip: View {
         let label = HStack(spacing: 6) {
             if let dot {
                 Circle().fill(dot).frame(width: 7, height: 7)
+                    .shadow(color: dot.opacity(0.8), radius: 3)
             }
             if !text.isEmpty {
                 Text(text)
@@ -21,10 +23,9 @@ struct Chip: View {
                     .truncationMode(.tail)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(DeckColor.surface, in: Capsule())
-        .overlay(Capsule().strokeBorder(tint == DeckColor.fg ? DeckColor.line : tint.opacity(0.35), lineWidth: 1))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .deckGlass(in: Capsule(), tint: tint == DeckColor.fg ? nil : tint, interactive: action != nil)
 
         if let action {
             Button(action: action) { label }.buttonStyle(.plain)
@@ -70,15 +71,20 @@ struct LimitBar: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(DeckColor.surface2)
                     if let percent, percent > 0 {
-                        Capsule().fill(color).frame(width: geo.size.width * CGFloat(percent) / 100)
+                        Capsule()
+                            .fill(LinearGradient(colors: [color.opacity(0.55), color], startPoint: .leading, endPoint: .trailing))
+                            .frame(width: geo.size.width * CGFloat(percent) / 100)
+                            .shadow(color: color.opacity(0.5), radius: 4)
                     }
                 }
+                .animation(.smooth(duration: 0.6), value: percent)
             }
             .frame(height: 8)
             Text(percent.map { "\($0)%" } ?? "—")
                 .font(DeckFont.numeral(18, .medium))
                 .foregroundStyle(color)
                 .frame(width: 44, alignment: .trailing)
+                .rolling(percent)
             Text(limit == nil ? "—" : Format.resetsShort(limit?.resetsAt, now: now, use24h: use24h))
                 .font(DeckFont.mono(10))
                 .foregroundStyle(DeckColor.muted)
@@ -89,41 +95,67 @@ struct LimitBar: View {
     }
 }
 
-/// A burn trace: filled area, line, endpoint dot. Axis-free — the number beside it carries the
-/// magnitude, this only carries the shape.
+/// A burn trace: gradient-filled area, glowing line, endpoint dot. Axis-free — the number beside it
+/// carries the magnitude, this only carries the shape. It draws itself in from the left the first
+/// time it appears.
 struct Sparkline: View {
     var series: [Double]
     var color: Color = DeckColor.accent
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var drawn: CGFloat = 0
+
     var body: some View {
-        Canvas { context, size in
-            guard series.count >= 2, size.width > 0, size.height > 0,
-                  let high = series.max(), let low = series.min()
-            else { return }
-            let span = high - low > 0 ? high - low : 1
-            let step = size.width / CGFloat(series.count - 1)
-            let stroke: CGFloat = 1.5
-            let usable = max(size.height - stroke, 0)
-            let points = series.enumerated().map { index, value in
-                CGPoint(x: CGFloat(index) * step, y: stroke / 2 + (1 - CGFloat((value - low) / span)) * usable)
+        GeometryReader { geo in
+            let points = Self.points(series, in: geo.size)
+            if points.count >= 2, let end = points.last {
+                ZStack(alignment: .topLeading) {
+                    Self.area(points, height: geo.size.height)
+                        .fill(LinearGradient(colors: [color.opacity(0.38), color.opacity(0)], startPoint: .top, endPoint: .bottom))
+                        .mask(alignment: .leading) { Rectangle().frame(width: geo.size.width * drawn) }
+                    Path { $0.addLines(points) }
+                        .trim(from: 0, to: drawn)
+                        .stroke(color, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                        .shadow(color: color.opacity(0.7), radius: 2)
+                    Circle()
+                        .fill(color)
+                        .frame(width: 4, height: 4)
+                        .shadow(color: color, radius: 3)
+                        .position(end)
+                        .opacity(drawn)
+                }
             }
-            var area = Path()
-            area.move(to: CGPoint(x: points[0].x, y: size.height))
-            points.forEach { area.addLine(to: $0) }
-            area.addLine(to: CGPoint(x: points[points.count - 1].x, y: size.height))
-            area.closeSubpath()
-            context.fill(area, with: .color(color.opacity(0.18)))
-            var line = Path()
-            line.addLines(points)
-            context.stroke(line, with: .color(color), lineWidth: stroke)
-            let end = points[points.count - 1]
-            context.fill(Path(ellipseIn: CGRect(x: end.x - 2, y: end.y - 2, width: 4, height: 4)), with: .color(color))
+        }
+        .onAppear {
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.8)) { drawn = 1 }
         }
         .accessibilityHidden(true)
     }
+
+    private static func points(_ series: [Double], in size: CGSize) -> [CGPoint] {
+        guard series.count >= 2, size.width > 0, size.height > 0,
+              let high = series.max(), let low = series.min()
+        else { return [] }
+        let span = high - low > 0 ? high - low : 1
+        let step = size.width / CGFloat(series.count - 1)
+        let stroke: CGFloat = 1.5
+        let usable = max(size.height - stroke * 2, 0)
+        return series.enumerated().map { index, value in
+            CGPoint(x: CGFloat(index) * step, y: stroke + (1 - CGFloat((value - low) / span)) * usable)
+        }
+    }
+
+    private static func area(_ points: [CGPoint], height: CGFloat) -> Path {
+        Path { path in
+            path.move(to: CGPoint(x: points[0].x, y: height))
+            path.addLines(points)
+            path.addLine(to: CGPoint(x: points[points.count - 1].x, y: height))
+            path.closeSubpath()
+        }
+    }
 }
 
-/// A secondary (ghost) button: bordered, transparent, neutral text.
+/// A secondary button: a glass capsule with neutral text.
 struct DeckButton: View {
     var label: String
     var systemImage: String?
@@ -140,11 +172,11 @@ struct DeckButton: View {
                 }
             }
             .foregroundStyle(DeckColor.fg)
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 16)
             .padding(.vertical, padding)
             .frame(maxHeight: .infinity)
-            .overlay(DeckMetrics.buttonShape.strokeBorder(DeckColor.line, lineWidth: 1))
             .contentShape(DeckMetrics.buttonShape)
+            .deckGlass(in: DeckMetrics.buttonShape, interactive: true)
         }
         .buttonStyle(.plain)
         .fixedSize(horizontal: true, vertical: false)
@@ -160,16 +192,19 @@ struct ListCaption: View {
     var body: some View {
         HStack {
             Text(title)
-                .font(DeckFont.text(12, .medium))
+                .textCase(.uppercase)
+                .font(DeckFont.text(11, .semibold))
+                .tracking(1.1)
                 .foregroundStyle(DeckColor.muted)
+                .rolling(title)
             Spacer()
             Text(trailing)
-                .font(DeckFont.text(11))
+                .font(DeckFont.mono(10))
                 .foregroundStyle(DeckColor.dim)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .background(DeckColor.surface2)
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
     }
 }
 
@@ -182,10 +217,9 @@ struct ToastView: View {
             .font(DeckFont.text(13, .medium))
             .foregroundStyle(DeckColor.fg)
             .multilineTextAlignment(.center)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(DeckColor.surface2, in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DeckColor.crit.opacity(0.5), lineWidth: 1))
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .deckGlass(in: Capsule(), tint: DeckColor.crit)
             .padding(.horizontal, 16)
             .padding(.bottom, 72)
             .transition(.move(edge: .bottom).combined(with: .opacity))

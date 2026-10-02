@@ -6,6 +6,7 @@ import UsageCore
 struct RootView: View {
     @Bindable var store: DeckStore
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Namespace private var zoom
 
     var body: some View {
         NavigationStack(path: $store.path) {
@@ -20,13 +21,14 @@ struct RootView: View {
             .navigationDestination(for: DeckStore.Route.self) { route in
                 switch route {
                 case .projects: ProjectsScreen(store: store)
-                case let .project(deviceId, key): ProjectScreen(store: store, deviceId: deviceId, key: key)
+                case let .project(deviceId, key):
+                    ProjectScreen(store: store, deviceId: deviceId, key: key)
+                        .navigationTransition(.zoom(sourceID: ZoomSource.id(deviceId: deviceId, key: key), in: zoom))
                 case let .device(id): DeviceScreen(store: store, id: id)
                 case .settings: SettingsScreen(store: store)
                 }
             }
         }
-        .toolbarBackground(DeckColor.surface, for: .navigationBar)
         .sheet(isPresented: $store.showPairing, onDismiss: store.cancelPairing, content: { PairingScreen(store: store) })
         .confirmPairing(store: store, active: !store.showPairing)
         .overlay(alignment: .bottom) {
@@ -39,14 +41,23 @@ struct RootView: View {
             if store.pairingInFlight, !store.showPairing {
                 ProgressView("Pairing…")
                     .padding(20)
-                    .background(DeckColor.surface, in: RoundedRectangle(cornerRadius: 12))
+                    .deckGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             }
         }
         .animation(.snappy, value: store.toast)
         .sensoryFeedback(.error, trigger: store.toastSerial)
+        // A limit crossing into warn or critical is felt as well as seen.
+        .sensoryFeedback(trigger: store.worstStatus) { old, new in
+            // Not on the first reading after launch: only a change you could have missed.
+            guard let old, let new, new > old else { return nil }
+            return .warning
+        }
         .tint(DeckColor.accent)
         .preferredColorScheme(.dark)
-        .background(DeckColor.bg.ignoresSafeArea())
+        .background { DeckBackdrop() }
+        // Last, so the backdrop above and every pushed screen see them.
+        .environment(\.deckGlow, store.worstStatus.map(DeckColor.of) ?? DeckColor.accent)
+        .environment(\.deckZoom, zoom)
     }
 }
 
@@ -65,8 +76,10 @@ private struct ConfirmPairing: ViewModifier {
                 }
             }),
             presenting: store.pendingInvite
-        ) { _ in
-            Button("Pair") { Task { await store.confirmPairing() } }
+        ) { invite in
+            // Pass the presented invite: dismissing the alert runs the binding's setter, which
+            // clears `pendingInvite`, before this action does.
+            Button("Pair") { Task { await store.confirmPairing(invite) } }
             Button("Cancel", role: .cancel) { store.pendingInvite = nil }
         } message: { invite in
             Text("Usage Deck will connect to \(invite.addrs.joined(separator: ", ")) over HTTPS pinned to this device's certificate.")

@@ -24,12 +24,18 @@ struct AccountPage: View {
                     UnreachableBanner()
                 }
                 header(health: health, now: now)
-                HStack(alignment: .top, spacing: 8) {
-                    window(account.fiveHour, label: "5 h", size: .big, now: now)
-                    window(account.sevenDay, label: "7 d", size: .small, now: now)
+                // The rings take whatever the screen has left: the 5 h ring as large as fits beside
+                // the 7 d ring with room under both for their countdowns.
+                GeometryReader { proxy in
+                    let sizes = RingSize.fitting(proxy.size, showsText: !isLuminanceReduced)
+                    // Bottom-aligned like the phone's rail: both windows end on the same line.
+                    HStack(alignment: .bottom, spacing: RingSize.gap) {
+                        window(account.fiveHour, label: "5 h", size: sizes.big, now: now)
+                        window(account.sevenDay, label: "7 d", size: sizes.small, now: now)
+                    }
+                    .frame(width: proxy.size.width, height: proxy.size.height)
                 }
                 .opacity(faded ? Theme.staleFade : 1)
-                Spacer(minLength: 0)
             }
             .padding(.horizontal, 4)
         }
@@ -56,6 +62,8 @@ struct AccountPage: View {
                     .accessibilityLabel(health == .dead ? "no recent data" : "stale data")
             }
         }
+        // Clear of the vertical page dots on the trailing edge.
+        .padding(.trailing, 14)
     }
 
     private struct RingSize {
@@ -63,13 +71,31 @@ struct AccountPage: View {
         let line: CGFloat
         let numeral: CGFloat
 
-        static let big = RingSize(diameter: 92, line: 8, numeral: 40)
-        static let small = RingSize(diameter: 56, line: 5, numeral: 22)
+        static let gap: CGFloat = 6
+        /// The small ring is this fraction of the big one, as on the deck's rail.
+        static let ratio: CGFloat = 0.6
+        /// Two lines of countdown text under each ring.
+        static let textHeight: CGFloat = 32
+
+        init(diameter: CGFloat) {
+            self.diameter = diameter
+            line = max(4, diameter * 0.085)
+            numeral = diameter * 0.44
+        }
+
+        /// The largest pair that fits `space`: limited by width (both rings side by side) and by
+        /// height (the big ring plus its text).
+        static func fitting(_ space: CGSize, showsText: Bool) -> (big: RingSize, small: RingSize) {
+            let byWidth = (space.width - gap) / (1 + ratio)
+            let byHeight = space.height - (showsText ? textHeight : 0)
+            let big = max(40, min(byWidth, byHeight))
+            return (RingSize(diameter: big), RingSize(diameter: big * ratio))
+        }
     }
 
     private func window(_ headline: WatchSnapshot.Headline?, label: String, size: RingSize, now: Date) -> some View {
         VStack(spacing: 2) {
-            RingGauge(ring: RingFace(headline), lineWidth: size.line, numeralSize: size.numeral)
+            RingGauge(ring: RingFace(headline), lineWidth: size.line, numeralSize: size.numeral, lively: !isLuminanceReduced)
                 .frame(width: size.diameter, height: size.diameter)
             if !isLuminanceReduced {
                 Text("\(label) · \(Format.resetCountdown(headline?.resetsAt, now: now))")

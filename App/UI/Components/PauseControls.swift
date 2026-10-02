@@ -40,6 +40,8 @@ struct PauseGestureArea<Label: View>: View {
             } message: {
                 Text("Stops the running tool now and holds the next one; the session itself stays open.")
             }
+            // One element per control: the callers name it; the symbol and text inside stay silent.
+            .accessibilityElement(children: .ignore)
             .accessibilityAddTraits(.isButton)
             .accessibilityAction(named: "Freeze") {
                 if enabled {
@@ -49,8 +51,10 @@ struct PauseGestureArea<Label: View>: View {
     }
 }
 
-/// The round per-row control: `❚❚` idle, the escalation countdown (or `▶`) when soft-paused, the
-/// frozen time when hard, a spinner while a request is in flight.
+/// The round per-row control: a glass disc showing `pause` idle, the escalation countdown (or
+/// `play`) when soft-paused, the frozen time over a snowflake when hard, a spinner while a request
+/// is in flight. The glass takes the state's colour, and the symbol morphs and bounces as the
+/// state changes.
 struct PauseButton: View {
     var visual: PauseVisual
     var subject: String
@@ -62,28 +66,41 @@ struct PauseButton: View {
         let enabled = visual != .disabled && !isInFlight
         PauseGestureArea(enabled: enabled, subject: subject, onTap: onTap, onFreeze: onFreeze) { holding in
             ZStack {
-                Circle().fill(fill)
-                Circle().strokeBorder(holding ? DeckColor.crit : ring, lineWidth: holding ? 2.5 : 1.5)
                 if case let .inFlight(pausing) = visual {
                     ProgressView()
                         .controlSize(.small)
                         .tint(pausing ? DeckColor.warn : DeckColor.muted)
+                } else if let text {
+                    VStack(spacing: 0) {
+                        if case .frozen = visual {
+                            Image(systemName: "snowflake")
+                                .font(.system(size: size * 0.24, weight: .bold))
+                        }
+                        Text(text)
+                            .font(DeckFont.mono(10, .medium))
+                            .minimumScaleFactor(0.7)
+                            .lineLimit(1)
+                            .rolling(text)
+                    }
+                    .foregroundStyle(holding ? DeckColor.crit : labelColor(enabled))
+                    .transition(.scale.combined(with: .opacity))
                 } else {
-                    Text(label)
-                        .font(isGlyph ? DeckFont.text(13, .medium) : DeckFont.mono(10, .medium))
+                    Image(systemName: symbol)
+                        .font(.system(size: size * 0.36, weight: .bold))
                         .foregroundStyle(holding ? DeckColor.crit : labelColor(enabled))
-                        .minimumScaleFactor(0.7)
-                        .lineLimit(1)
+                        .contentTransition(.symbolEffect(.replace))
+                        .symbolEffect(.bounce, value: symbol)
                 }
             }
             .frame(width: size, height: size)
+            .deckGlass(in: Circle(), tint: holding ? DeckColor.crit : tint)
+            .overlay(Circle().strokeBorder(holding ? DeckColor.crit : ring, lineWidth: holding ? 2.5 : 1.2))
+            .scaleEffect(holding ? 1.12 : 1)
+            .animation(.snappy(duration: 0.25), value: holding)
         }
         .frame(width: max(size, 44), height: max(size, 44))
         .accessibilityLabel(accessibilityText)
     }
-
-    /// U+25B6 with the text variation selector, so it never renders as the emoji button.
-    private static let play = "\u{25B6}\u{FE0E}"
 
     private var isInFlight: Bool {
         if case .inFlight = visual {
@@ -92,32 +109,35 @@ struct PauseButton: View {
         return false
     }
 
-    private var label: String {
+    /// The countdown or frozen time, when there is one; otherwise a symbol.
+    private var text: String? {
         switch visual {
-        case let .soft(countdown): countdown ?? Self.play
+        case let .soft(countdown): countdown
         case let .frozen(elapsed): elapsed
-        default: "❚❚"
+        default: nil
         }
     }
 
-    private var isGlyph: Bool {
-        label == "❚❚" || label == Self.play
+    private var symbol: String {
+        if case .soft = visual {
+            return "play.fill"
+        }
+        return "pause.fill"
+    }
+
+    private var tint: Color? {
+        switch visual {
+        case .frozen: DeckColor.frozen
+        case .soft: DeckColor.warn
+        default: nil
+        }
     }
 
     private var ring: Color {
         switch visual {
-        case .frozen: DeckColor.frozen
-        case .soft: DeckColor.warn
-        case .disabled: DeckColor.line
-        default: DeckColor.dim
-        }
-    }
-
-    private var fill: Color {
-        switch visual {
-        case .frozen: DeckColor.frozen.opacity(0.12)
-        case .soft: DeckColor.warn.opacity(0.10)
-        default: DeckColor.surface
+        case .frozen: DeckColor.frozen.opacity(0.7)
+        case .soft: DeckColor.warn.opacity(0.6)
+        default: .clear
         }
     }
 
@@ -126,7 +146,7 @@ struct PauseButton: View {
         return switch visual {
         case .frozen: DeckColor.frozen
         case .soft: DeckColor.warn
-        default: DeckColor.muted
+        default: DeckColor.fg.opacity(0.8)
         }
     }
 
@@ -152,47 +172,54 @@ struct PauseAllButton: View {
     var body: some View {
         let enabled = visual != .disabled
         PauseGestureArea(enabled: enabled, subject: "all sessions", onTap: onTap, onFreeze: onFreeze) { holding in
+            let color = holding ? DeckColor.crit : (enabled ? DeckColor.warn : DeckColor.dim)
             HStack(spacing: 8) {
                 if case .inFlight = visual {
                     ProgressView().controlSize(.small).tint(DeckColor.warn)
+                } else {
+                    Image(systemName: visual.isPaused ? "play.fill" : "pause.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .contentTransition(.symbolEffect(.replace))
                 }
                 Text(visual.isPaused ? "Resume all" : "Pause all")
                     .font(DeckFont.text(14, .semibold))
-                    .foregroundStyle(holding ? DeckColor.crit : (enabled ? DeckColor.warn : DeckColor.dim))
+                    .contentTransition(.interpolate)
             }
+            .foregroundStyle(color)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: centered ? .center : .leading)
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 16)
             .padding(.vertical, padding)
-            .background(DeckColor.surface2, in: DeckMetrics.buttonShape)
-            .overlay(
-                DeckMetrics.buttonShape.strokeBorder(
-                    (holding ? DeckColor.crit : DeckColor.warn).opacity(holding ? 0.9 : 0.45),
-                    lineWidth: holding ? 2 : 1
-                )
-            )
+            .deckGlass(in: DeckMetrics.buttonShape, tint: enabled ? color : nil)
+            .overlay(DeckMetrics.buttonShape.strokeBorder(color.opacity(holding ? 0.9 : 0.35), lineWidth: holding ? 2 : 1))
+            .scaleEffect(holding ? 1.04 : 1)
+            .animation(.snappy(duration: 0.25), value: holding)
+            .animation(.snappy, value: visual.isPaused)
         }
         .accessibilityLabel(visual.isPaused ? "Resume all" : "Pause all")
     }
 }
 
-/// The portrait action strip: Pause all, then the navigation buttons.
+/// The portrait action strip, floating over the list: Pause all, then the navigation buttons, as
+/// one group of glass that melds where the buttons meet.
 struct BottomBar: View {
     @Bindable var store: DeckStore
     var navigation: (label: String, action: () -> Void)
 
     var body: some View {
-        HStack(spacing: 8) {
-            PauseAllButton(
-                visual: store.visual(.all),
-                onTap: { store.tap(.all) },
-                onFreeze: { store.freeze(.all) }
-            )
-            DeckButton(label: navigation.label, action: navigation.action)
-            DeckButton(label: "Settings", systemImage: "gearshape") { store.path.append(.settings) }
+        GlassGroup(spacing: 10) {
+            HStack(spacing: 8) {
+                PauseAllButton(
+                    visual: store.visual(.all),
+                    onTap: { store.tap(.all) },
+                    onFreeze: { store.freeze(.all) }
+                )
+                DeckButton(label: navigation.label, action: navigation.action)
+                DeckButton(label: "Settings", systemImage: "gearshape.fill") { store.path.append(.settings) }
+            }
         }
-        .frame(height: 44)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(DeckColor.surface)
+        .frame(height: 48)
+        .padding(.horizontal, 12)
+        .padding(.top, 6)
+        .padding(.bottom, 4)
     }
 }

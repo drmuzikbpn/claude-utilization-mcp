@@ -11,8 +11,16 @@ struct StatusBar: View {
     var body: some View {
         HStack(spacing: 6) {
             if showsGear {
-                Chip(text: "⚙", dot: nil) { store.path.append(.settings) }
-                    .accessibilityLabel("Settings")
+                Button { store.path.append(.settings) } label: {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(DeckColor.fg.opacity(0.85))
+                        .frame(width: 42, height: 42)
+                        .contentShape(Circle())
+                        .deckGlass(in: Circle(), interactive: true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Settings")
             }
             HStack(spacing: 6) {
                 Spacer(minLength: 0)
@@ -36,10 +44,10 @@ struct StatusBar: View {
                 .foregroundStyle(DeckColor.fg)
                 .lineLimit(1)
                 .fixedSize()
+                .rolling(Format.clock(store.now, use24h: store.settings.use24h))
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(DeckColor.bg)
     }
 }
 
@@ -83,7 +91,7 @@ struct DeviceWaitRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(DeckColor.surface, in: RoundedRectangle(cornerRadius: 10))
+        .deckCard(radius: 14)
     }
 }
 
@@ -145,6 +153,16 @@ struct NoDevicesView: View {
 
     var body: some View {
         VStack(spacing: 12) {
+            Image(systemName: "gauge.with.dots.needle.67percent")
+                .font(.system(size: 56, weight: .light))
+                .foregroundStyle(LinearGradient(
+                    colors: [DeckColor.accent, DeckColor.ok],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ))
+                .symbolEffect(.wiggle, options: .repeat(.periodic(delay: 4)))
+                .padding(.bottom, 4)
+                .accessibilityHidden(true)
             Text("No paired devices")
                 .font(DeckFont.numeral(26))
                 .foregroundStyle(DeckColor.fg)
@@ -157,13 +175,12 @@ struct NoDevicesView: View {
             .multilineTextAlignment(.center)
             .lineSpacing(4)
             Button { store.beginPairing() } label: {
-                Text("Pair a device")
-                    .font(DeckFont.text(14, .medium))
+                Label("Pair a device", systemImage: "qrcode.viewfinder")
+                    .font(DeckFont.text(15, .semibold))
                     .foregroundStyle(DeckColor.fg)
-                    .padding(.horizontal, 22)
-                    .padding(.vertical, 12)
-                    .background(DeckColor.surface, in: RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(DeckColor.accent, lineWidth: 1))
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 14)
+                    .deckGlass(in: Capsule(), tint: DeckColor.accent, interactive: true)
             }
             .buttonStyle(.plain)
             .padding(.top, 8)

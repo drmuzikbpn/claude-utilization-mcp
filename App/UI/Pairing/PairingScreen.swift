@@ -27,7 +27,7 @@ struct PairingScreen: View {
                 }
                 .padding(16)
             }
-            .background(DeckColor.bg)
+            .deckScreen()
             .navigationTitle(store.replacingDeviceId == nil ? "Pair a device" : "Re-pair")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
