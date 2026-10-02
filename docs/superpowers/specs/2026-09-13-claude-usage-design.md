@@ -1694,8 +1694,8 @@ shoulder surfing. The v2 pairing link carries a **one-time code** instead, redee
 
 Recorded so they are not mistaken for oversights: a push relay (APNs) for real-time alerts and
 complications; daemon-side `escalateAfter` (soft → hard after N s without a client awake);
-the Android deck accepting the v2 pairing link and HTTPS; `configure rotate-cert`; remote access
-without a VPN.
+`configure rotate-cert`; remote access without a VPN. (The Android deck accepting the v2
+pairing link over pinned HTTPS landed on `usage-android` on 2026-10-02.)
 
 ### §23.50 A self-restart needs a witness that outlives it (2026-10-01)
 

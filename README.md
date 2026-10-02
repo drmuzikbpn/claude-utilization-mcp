@@ -1,46 +1,99 @@
 # claude-usage
 
-A small local daemon that tells Claude Code sessions — and you — how close your Claude
-account is to its rate limits, and how many tokens the sessions on this machine have
-actually spent. It polls the same OAuth usage endpoint `/usage` uses, aggregates Claude
-Code's own transcript files, and serves both over HTTP on `127.0.0.1`. Sessions pick it
-up automatically through a `UserPromptSubmit` hook (a one-line nudge when a window gets
-tight) and on demand through an MCP server. It can also list live sessions and pause or
-freeze them, locally or from a phone over Tailscale.
+**See how close your Claude account is to its rate limits, how many tokens your Claude Code
+sessions are spending, and pause them, from your terminal, inside Claude Code itself, or
+from your phone and watch.**
 
-## The problem
+`claude-usage` is a small background service (a "daemon") for macOS and Linux. It reads the
+same usage numbers `/usage` shows and the token counts in Claude Code's own transcripts,
+and serves them on this machine only, unless you choose to let a phone in.
 
-Claude Code tells you nothing about your rate-limit headroom until you hit it, and
-`/usage` is a thing you have to remember to type. Meanwhile your token spend is sitting in
-`~/.claude/projects/**.jsonl` in a form nobody reads. `claude-usage` turns both into
-something a session can see mid-conversation ("5h window 84%, prefer lighter work") and
-something you can look at on a dashboard.
+## What you get
 
-- **Rate limits** — account-wide, from `GET https://api.anthropic.com/api/oauth/usage`.
-  Read-only. We never refresh tokens and never call any other Anthropic endpoint.
-- **Token spend** — per machine, aggregated from transcripts, including subagent
-  transcripts (roughly a third of real token use, and not copied into the parent file).
-- **Sessions** — which Claude Code processes are running, in which project and worktree,
-  what they have spent, and whether they are paused.
+| Where | What you see |
+| --- | --- |
+| **Inside Claude Code** | A one-line warning when a limit gets tight ("5h window 84%, prefer lighter work"), plus [MCP tools](#mcp-tools) a session can call itself. |
+| **Status line** *(optional)* | `5h 42% · 7d 61%`, amber or red as you approach a limit. |
+| **Terminal** | `claude-usage status`, `tokens`, `sessions`, `pause`, `resume`. |
+| **iPhone and Apple Watch** | The **Usage Deck** app: limit rings, live sessions, pause and resume. |
+| **Android** | The **Usage Deck** wall/kiosk dashboard. |
 
-Tokens, not dollars. Cost estimates are deliberately out of scope.
+Tokens, not dollars: cost estimates are deliberately out of scope.
 
-## Install (60 seconds)
+## Quick start
 
-```bash
-npm i -g @drmuzikbpn/claude-usage
-claude-usage install
-```
+You need **Node 20 or newer** and **Claude Code** signed in on this machine.
 
-From a checkout:
+**1. Install.**
 
 ```bash
+git clone https://github.com/drmuzikbpn/claude-utilization-mcp.git
+cd claude-utilization-mcp
 npm ci && npm run build
 node bin/claude-usage install
 ```
 
-`install` is interactive and confirms each item; `--yes` accepts the defaults (service
-**on**, hook **on**, MCP **on**, status line **off**). Flags:
+`install` asks before each change (answer **yes** to "LAN access for the iPhone app?" if you
+want to use a phone). It copies itself into `~/.local/share/claude-usage`, starts the
+background service, registers the Claude Code hook and MCP server, and puts `claude-usage`
+on your PATH. Afterwards you can delete the checkout: the service updates itself from the
+GitHub releases.
+
+**2. Check it is running.** Open a new terminal (so the PATH change applies) and run:
+
+```bash
+claude-usage status
+```
+
+You should see `daemon: running`, your limits and today's token totals. (On macOS, install
+triggers a Keychain prompt for `Claude Code-credentials`: allow it, or limits read
+`no_credentials`; see [Troubleshooting](#troubleshooting).)
+
+**3. Optional: pair your phone.**
+
+```bash
+claude-usage pair
+```
+
+A page opens in your browser with a QR code. Scan it with the phone (details in
+[Phone and watch](#phone-and-watch-iphone-apple-watch-android)). When the phone is in, the
+page says **Pairing successful** and you can close the tab.
+
+That is it. Run `claude-usage status` any time; it also reminds you how to pair another
+phone.
+
+### Contents
+
+- [What install changes on your machine](#what-install-changes-on-your-machine) ·
+  [Undoing it](#undoing-it)
+- [The hook nudge](#the-hook-nudge) · [MCP tools](#mcp-tools) · [Status line](#status-line)
+- [CLI](#cli): status, tokens, sessions, pause and resume
+- [Phone and watch](#phone-and-watch-iphone-apple-watch-android): get the app, pair,
+  away from home, security
+- [Configuration](#configuration) · [Auto-update](#auto-update) ·
+  [Platform support](#platform-support)
+- [Troubleshooting](#troubleshooting) · [Development](#development) · [Docs](#docs)
+
+## Why
+
+Claude Code tells you nothing about your rate-limit headroom until you hit it, and
+`/usage` is a thing you have to remember to type. Meanwhile your token spend is sitting in
+`~/.claude/projects/**.jsonl` in a form nobody reads. `claude-usage` turns both into
+something a session can see mid-conversation and something you can glance at on a phone.
+
+- **Rate limits** are account-wide, from `GET https://api.anthropic.com/api/oauth/usage`
+  and from Claude Code's own status-line data. Read-only: we never refresh tokens and never
+  call any other Anthropic endpoint.
+- **Token spend** is per machine, aggregated from transcripts, including subagent
+  transcripts (roughly a third of real token use, and not copied into the parent file).
+- **Sessions**: which Claude Code processes are running, in which project and worktree,
+  what they have spent, and whether they are paused.
+
+## Install options
+
+The [Quick start](#quick-start) is the whole install. `install` is interactive and confirms
+each item; `--yes` accepts the defaults (service **on**, hook **on**, MCP **on**, status
+line **off**, LAN **off**). Flags:
 
 | Flag | Effect |
 | --- | --- |
@@ -49,9 +102,11 @@ node bin/claude-usage install
 | `--no-hook` | do not register the Claude Code hooks |
 | `--no-mcp` | do not register the MCP server |
 | `--statusline` | also set `statusLine` (only if you do not already have one) |
+| `--lan` | add `"lan"` to `config.bind` so a phone on the same Wi-Fi can reach the daemon (an interactive install asks, default yes; `--yes` alone does not add it) |
 | `--tailscale` | add `"tailscale"` to `config.bind` so the daemon listens on the tailnet |
-| `--lan` | add `"lan"` to `config.bind` for the iPhone app on the same Wi-Fi (an interactive install asks, default yes; `--yes` alone does not add it) |
 | `--linger` | systemd only: `loginctl enable-linger` so the daemon survives logout |
+
+Re-running `install` is safe: it refreshes the installed copy and asks each question again.
 
 Uninstall: `claude-usage uninstall` (add `--purge` to delete config and state too).
 
@@ -62,6 +117,7 @@ Uninstall: `claude-usage uninstall` (add `--purge` to delete config and state to
 | `~/.config/claude-usage/` | config, state, bearer token | dir `0700`, files `0600` |
 | `~/.local/share/claude-usage/versions/<version>/` | a copy of the package | — |
 | `~/.local/share/claude-usage/current` | symlink → the active version; the unit runs out of this | — |
+| `~/.local/bin/claude-usage` | symlink → `current/bin/claude-usage`, so `claude-usage` is on your PATH (`$XDG_BIN_HOME` if set; never overwrites an existing file) | — |
 | `~/Library/LaunchAgents/com.github.drmuzikbpn.claude-usage.plist` (macOS) | LaunchAgent, `RunAtLoad`, `KeepAlive: { SuccessfulExit: false }` | `0644` |
 | `~/Library/Logs/claude-usage/daemon.{out,err}.log` (macOS) | daemon stdout/stderr | dir `0700` |
 | `~/.config/systemd/user/claude-usage.service` (Linux) | user unit, `Restart=on-failure`, `WantedBy=default.target`; logs go to the journal | `0644` |
@@ -69,7 +125,9 @@ Uninstall: `claude-usage uninstall` (add `--purge` to delete config and state to
 | `~/.claude/settings.json.claude-usage.bak` | one-time backup, written once and never overwritten | copies the source mode |
 | `~/.claude.json` | `mcpServers["claude-usage"]`, written by `claude mcp add --scope user` | `0600` |
 
-`XDG_CONFIG_HOME` and `XDG_DATA_HOME` are respected and are baked into the unit file.
+`XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_BIN_HOME` are respected; the first two are baked into the unit file.
+
+If `~/.local/bin` is not on your PATH, `install` prints the line to add to your shell profile.
 
 ### Exact hook groups
 
@@ -110,7 +168,7 @@ backup of a `0600` file would leak it.
 ### Undoing it
 
 ```bash
-claude-usage uninstall          # unit removed, hooks + MCP entry removed, config kept
+claude-usage uninstall          # unit, hooks, MCP entry and PATH link removed, config kept
 claude-usage uninstall --purge  # also deletes ~/.config/claude-usage and the versions dir
 ```
 
@@ -240,63 +298,91 @@ Whatever it would do next is stopped at the same gate soft pause uses.
 Other subcommands: `serve [--verbose]`, `install`, `configure`, `pair`, `uninstall`, `mcp`,
 `hook`, `statusline`, `observe`, `--version`, `help`.
 
-## Remote dashboard (iPhone, Apple Watch, Android)
+## Phone and watch (iPhone, Apple Watch, Android)
 
-A phone can watch your limits and pause sessions. The iPhone app (with its Apple Watch
-companion) talks to the daemon over your **Wi-Fi**, encrypted, with nothing else to install.
-Tailscale is optional — use it to reach the daemon when you are away from home.
+A phone can show your limits and live sessions and pause them. It talks to the daemon over
+your **Wi-Fi**, encrypted, with nothing else to install on the Mac. Tailscale is optional,
+for when you are away from home.
 
-```bash
-claude-usage install --lan       # or answer yes to "LAN access for the iPhone app?"
-claude-usage pair                # opens a one-time QR page in your browser
-```
+### Get the app
 
-`claude-usage pair` asks the daemon for a **one-time pairing code** (valid 5 minutes, used
-once) and opens a page on this machine showing it as a QR code. Point the iPhone Camera at
-it and tap **Open in Usage Deck**, or press **Copy link** and paste it on the app's
-**Pair a device** screen. The app trades the code for the bearer token over HTTPS and pins
-the daemon's certificate, so the QR never carries the token itself. As soon as the phone has
-used the code, the QR and the link leave the page, it shows **Pairing successful**, and the
-command exits by itself. The page can be viewed once, from this machine only, and closes on
-Enter, Ctrl-C or after 5 minutes. If the QR was visible on a call or a screen share, run
-`claude-usage pair` again — that voids it.
+- **iPhone + Apple Watch:** **Usage Deck**, in TestFlight (invite only for now; ask the
+  maintainer). The watch app installs with it.
+- **Android:** the **Usage Deck** dashboard, a kiosk build for a wall or desk phone. APKs are
+  the `deck-` [pre-releases](https://github.com/drmuzikbpn/claude-utilization-mcp/releases)
+  of this repo, and the app updates itself after that.
 
-Pairing another phone, or re-pairing this one, is the same command any time:
-`claude-usage status` reminds you of it. `install` links `claude-usage` into
-`~/.local/bin` (or `$XDG_BIN_HOME`) so it is on your PATH; if that directory is not on your
-PATH yet, install says how to add it.
+### Pair a phone
 
-How it works:
+1. **Turn on LAN access** if you did not during install:
+   `claude-usage configure lan on`. (`claude-usage status` tells you if this is needed.)
+2. **Put the phone on the same Wi-Fi** as this machine (or on your tailnet, see below).
+3. **Run `claude-usage pair`.** A page opens in your browser with a QR code that works
+   **once** and expires in **5 minutes**.
+4. **Scan it.**
+   - *iPhone:* point the Camera at it and tap **Open in Usage Deck**, or scan it from the
+     app's **Pair a device** screen. On the same Apple account you can also press
+     **Copy link** on the page and paste it on that screen.
+   - *Android deck:* scan it from the deck's pairing screen.
+5. **Done.** The page swaps the QR code for **Pairing successful — it is now safe to close
+   this tab**, and the command exits by itself.
+
+Pairing another phone, or **re-pairing** one (new phone, rotated token, "needs re-pair" in
+the app), is the same command. Each run makes a new code and voids the previous one.
+
+| If… | Then |
+| --- | --- |
+| `claude-usage: command not found` | open a new terminal; if it still fails, add `~/.local/bin` to your PATH (install printed the line), or run `~/.local/share/claude-usage/current/bin/claude-usage pair` |
+| `no HTTPS listener to pair with` | `claude-usage configure lan on`, then `claude-usage pair` again |
+| the phone says the code is invalid or expired | it was already used or more than 5 minutes passed: run `claude-usage pair` again |
+| the phone cannot reach the Mac | same Wi-Fi? Guest networks and some office Wi-Fi block devices from seeing each other; use Tailscale instead |
+| the QR code was visible on a call or screen share | run `claude-usage pair` again; that voids the old code |
+
+### How pairing stays safe
+
+The QR code never contains the daemon's token. It carries the machine's addresses, its
+certificate fingerprint and a **one-time code**. The phone connects over HTTPS, checks that
+the certificate matches the fingerprint (so nobody on the Wi-Fi can stand in for your Mac),
+and trades the code for the token. The code works once, for 5 minutes. The pairing page is
+served once, from this machine only, and removes the QR code as soon as the phone is in.
+
+Details:
 
 - **`lan`** in `config.bind` is this machine's private Wi-Fi/Ethernet address
   (`192.168.x`, `10.x`, `172.16–31.x`; never a VM bridge or VPN tunnel). The daemon notices
   when it changes, such as moving to another network, and rebinds within 30 seconds.
-  `claude-usage configure lan on|off` toggles it later.
+  `claude-usage configure lan on|off` toggles it.
 - **HTTPS.** Every non-loopback address also gets an HTTPS listener on `port + 1` (47292),
   with a self-signed certificate generated once and kept in the config directory. Apps pin
   its key fingerprint; the certificate's issuer and host name do not matter to them. Plain
-  HTTP stays on every address too, for the Android dashboard.
+  HTTP stays on every address too, for Android decks paired the legacy way.
 - **`<your-mac>.local`** is accepted as a `Host`, and the pairing link offers it next to the
   IP address.
 - **`/health.install`** tells the app whether the hooks, the status line and the MCP server
   are set up, so its setup check can name the fix.
 
-### Tailscale (optional)
+### Away from home: Tailscale (optional)
 
 ```bash
-claude-usage install --tailscale        # or: edit config.bind to ["127.0.0.1", "tailscale"]
-claude-usage configure pairing          # v1 pairing JSON + terminal QR (Android dashboard)
-claude-usage configure pairing --json   # JSON only
+claude-usage install --tailscale        # or: edit config.bind to ["127.0.0.1", "lan", "tailscale"]
 ```
 
 `bind` entries are IP literals or the keywords `tailscale` and `lan`. `tailscale` resolves to
 the first IPv4 interface address inside `100.64.0.0/10` (falling back to `tailscale ip -4`).
 An address that cannot be found gives a warning, and the daemon keeps retrying it.
 `SIGHUP` re-resolves without a restart. The tailnet address gets HTTPS too, so
-`claude-usage pair` lists it as a second address the iPhone can use when it is away from home.
+`claude-usage pair` lists it as another address the phone tries when the Wi-Fi one is out
+of reach. Pair once and it works both at home and away.
 
-The Android dashboard still pairs with `configure pairing`, whose v1 payload carries the
-bearer token itself. Treat that QR like a password:
+### Legacy pairing (older Android deck builds)
+
+```bash
+claude-usage configure pairing          # v1 pairing JSON + terminal QR
+claude-usage configure pairing --json   # JSON only
+```
+
+The v1 payload carries the bearer token itself, so treat that QR like a password, and
+prefer `claude-usage pair` on any deck that supports it:
 
 ```json
 { "v": 1, "name": "alans-mbp", "addr": "100.101.102.103", "port": 47291, "token": "…" }
@@ -362,7 +448,7 @@ load/save round-trip. An invalid value is an error naming the key.
 | `integrations.hook` | `true` | |
 | `integrations.mcp` | `true` | |
 | `integrations.statusline` | `false` | |
-| `autoUpdate.enabled` | `true` | auto-update on/off (lands in the next merge) |
+| `autoUpdate.enabled` | `true` | auto-update on/off |
 | `autoUpdate.intervalMs` | `600000` | release-check interval (1 000 – 86 400 000) |
 | `autoUpdate.repo` | `drmuzikbpn/claude-utilization-mcp` | release source; override for forks |
 | `events.maxClients` | `16` | concurrent SSE streams (1–4096) |
@@ -373,11 +459,13 @@ Scriptable edits:
 
 ```bash
 claude-usage configure                              # interactive menu
-claude-usage configure hook off                     # service | hook | mcp | statusline | autoupdate
+claude-usage configure hook off                     # on | off
 claude-usage configure thresholds --warn 75 --critical 90
 claude-usage configure port 47300                   # rewrites and restarts the unit
-claude-usage configure rotate-token
-claude-usage configure pairing [--json]
+claude-usage configure rotate-token                 # then re-pair every phone: claude-usage pair
+claude-usage configure lan on                       # lan | service | hook | mcp | statusline | autoupdate
+claude-usage pair                                   # pair a phone (QR page)
+claude-usage configure pairing [--json]             # legacy v1 pairing for older Android decks
 ```
 
 Two caveats worth knowing today: `hookDebounceMinutes` and `retentionDays` are validated
@@ -436,7 +524,8 @@ machines alike, which is why nothing else reveals it.
   service-manager interfaces exist so it can be added without touching the daemon.
 
 Node ≥ 20. The daemon itself has zero runtime dependencies — `@modelcontextprotocol/sdk`
-and `qrcode-terminal` are loaded lazily by `mcp` and `configure pairing` only.
+and `qrcode-terminal` are loaded lazily by `mcp` and `configure pairing` only, and the
+`pair` page's QR code comes from a vendored copy of the same generator.
 
 ## Troubleshooting
 
@@ -471,6 +560,9 @@ succeeds.
 **Nudges never appear.** They only appear at `warn` or above, and only once per
 debounce window per `(window, status)`. Check `claude-usage status` for the current
 `overall`, and check that the hook groups are in `~/.claude/settings.json`.
+
+**Pairing a phone does not work.** See the table under
+[Pair a phone](#pair-a-phone).
 
 **Sessions show `discovered: "transcript"`.** The daemon was down when they started, so
 they were back-filled from their transcripts and have no trusted pid. They can be
