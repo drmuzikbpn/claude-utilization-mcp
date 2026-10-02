@@ -41,7 +41,7 @@ struct ActionsPage: View {
                 }
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                 ForEach(snapshot.devices.filter(\.needsRepair)) { device in
-                    Label("\(Format.hostShort(device.name)) · Needs re-pair", systemImage: "exclamationmark.triangle.fill")
+                    Label("\(Format.hostShort(device.name)) · Re-pair on iPhone", systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundStyle(Theme.warn)
                         .frame(maxWidth: .infinity, alignment: .leading)

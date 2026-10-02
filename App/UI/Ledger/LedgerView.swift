@@ -11,6 +11,7 @@ struct LedgerView: View {
         let empty = HomeEmpty.of(team)
         VStack(spacing: 0) {
             StatusBar(store: store)
+            RepairBanners(store: store)
             if !team.usersWithData.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(Array(team.usersWithData.enumerated()), id: \.element.id) { index, user in
@@ -26,7 +27,7 @@ struct LedgerView: View {
                 .padding(.top, 4)
             }
             switch empty {
-            case .noDevices, .connecting:
+            case .noDevices, .connecting, .needsRepair:
                 HomeEmptyView(store: store, empty: empty ?? .noDevices)
                     .frame(maxHeight: .infinity)
             case .noSessions:
