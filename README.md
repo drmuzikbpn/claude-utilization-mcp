@@ -34,6 +34,9 @@ xcodegen generate
 xcodebuild -project UsageDeck.xcodeproj -scheme UsageDeck -destination 'generic/platform=iOS Simulator' build
 ```
 
+Launch a Debug build with the `-UsageDeckDemo` argument to see the app filled with made-up
+devices and no daemon; the UI smoke test (`xcodebuild ... test`) does exactly that.
+
 Requires Xcode with the iOS 18 and watchOS 11 SDKs or later. Design:
 [`docs/superpowers/specs/2026-10-01-usage-ios-design.md`](docs/superpowers/specs/2026-10-01-usage-ios-design.md).
 Privacy: [`PRIVACY.md`](PRIVACY.md).

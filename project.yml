@@ -80,6 +80,20 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.evenseal.usagedeck
         TARGETED_DEVICE_FAMILY: "1"
 
+  UsageDeckUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: AppUITests
+    dependencies:
+      - target: UsageDeck
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.evenseal.usagedeck.uitests
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_STRICT_CONCURRENCY: complete
+
   UsageDeckWatch:
     type: application
     platform: watchOS
@@ -168,6 +182,10 @@ schemes:
         UsageDeck: all
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - UsageDeckUITests
     archive:
       config: Release
   UsageDeckWatch:

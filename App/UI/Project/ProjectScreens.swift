@@ -171,10 +171,7 @@ private struct SessionDetailRow: View {
 
     var body: some View {
         let target = PauseTarget.session(deviceId: deviceId, sessionId: session.sessionId)
-        let since = session.startedAt.formatted(
-            Date.FormatStyle(date: .omitted, time: .shortened)
-                .hour(store.settings.use24h ? .twoDigits(amPM: .omitted) : .defaultDigits(amPM: .abbreviated))
-        )
+        let since = Format.clock(session.startedAt, use24h: store.settings.use24h)
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(session.title ?? Format.shortId(session.sessionId)) · since \(since)")
@@ -243,8 +240,8 @@ struct BurnChart: View {
         .chartYScale(domain: 0 ... top)
         .chartXAxis {
             AxisMarks(values: [-300, -150, 0]) { value in
-                AxisValueLabel {
-                    let minutes = value.as(Double.self) ?? 0
+                let minutes = value.as(Double.self) ?? 0
+                AxisValueLabel(anchor: minutes == 0 ? .topTrailing : minutes == -300 ? .topLeading : .top) {
                     Text(minutes == 0 ? "now" : minutes == -150 ? "−2h30" : "−5h")
                         .font(DeckFont.mono(10))
                         .foregroundStyle(DeckColor.dim)

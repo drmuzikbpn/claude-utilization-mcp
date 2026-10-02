@@ -148,10 +148,10 @@ struct NoDevicesView: View {
             Text("No paired devices")
                 .font(DeckFont.numeral(26))
                 .foregroundStyle(DeckColor.fg)
-            Text(
+            Text(LocalizedStringKey(
                 "Usage Deck reads your Claude usage from claude-usage, a small daemon on the computer where you run "
                     + "Claude Code. Install it there, then run `claude-usage pair` and scan its QR code."
-            )
+            ))
             .font(DeckFont.text(13))
             .foregroundStyle(DeckColor.muted)
             .multilineTextAlignment(.center)
