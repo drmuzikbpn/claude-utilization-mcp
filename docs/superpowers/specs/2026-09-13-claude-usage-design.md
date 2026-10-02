@@ -1563,8 +1563,9 @@ keyword, `lan`, next to `tailscale`.
 
 - **Resolution.** `lan` is the first non-internal RFC 1918 IPv4 address (`10/8`, `172.16/12`,
   `192.168/16`) in `os.networkInterfaces()` order, on an interface whose name does not match
-  `^(bridge|vmnet|docker|utun|awdl|llw|lo)` — those are VM bridges, VPN tunnels and Apple's
-  peer-to-peer links, never the network a phone is on. No subprocess. Nothing found ⇒ a warning
+  `^(bridge|br-|virbr|vmnet|vboxnet|docker|utun|tun|tap|wg|awdl|llw|lo)` — those are VM and
+  container bridges, VPN tunnels (incl. WireGuard) and Apple's peer-to-peer links, never the
+  network a phone is on. No subprocess. Nothing found ⇒ a warning
   and a skipped entry, never an error (§16's rule for `tailscale`).
 - **Automatic rebind.** §23.21's retry is generalised from `tailscale` to every keyword entry:
   while any wanted keyword address is missing or unbound, `reload()` re-runs on the backoff

@@ -14,8 +14,8 @@ import { defaultExec, type ExecFn, type InterfaceTable, type InterfacesFn } from
 
 export type { InterfaceTable, InterfacesFn } from './tailscale.js';
 
-/** VM bridges, VPN tunnels, Apple's peer-to-peer links and loopback — never the phone's network. */
-export const EXCLUDED_INTERFACE = /^(bridge|vmnet|docker|utun|awdl|llw|lo)/;
+/** VM/container bridges (Docker `br-`, libvirt, VirtualBox), VPN tunnels (utun, tun, tap, WireGuard), Apple's peer-to-peer links and loopback — never the phone's network. */
+export const EXCLUDED_INTERFACE = /^(bridge|br-|virbr|vmnet|vboxnet|docker|utun|tun|tap|wg|awdl|llw|lo)/;
 /** How long `scutil --get LocalHostName` is given (§23.46). */
 export const SCUTIL_TIMEOUT_MS = 2_000;
 

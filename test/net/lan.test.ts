@@ -33,7 +33,7 @@ describe('isPrivateIPv4 (§23.44)', () => {
 
 describe('isExcludedInterface (§23.44)', () => {
   it('skips VM bridges, VPN tunnels, AWDL and loopback', () => {
-    for (const n of ['bridge100', 'vmnet8', 'docker0', 'utun3', 'awdl0', 'llw0', 'lo0', 'lo']) {
+    for (const n of ['bridge100', 'vmnet8', 'docker0', 'utun3', 'awdl0', 'llw0', 'lo0', 'lo', 'br-3f2a9c1d', 'virbr0', 'vboxnet0', 'tun0', 'wg0', 'tap0']) {
       expect(isExcludedInterface(n)).toBe(true);
     }
   });
