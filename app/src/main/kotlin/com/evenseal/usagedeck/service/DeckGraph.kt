@@ -186,12 +186,10 @@ class DeckGraph(private val app: Application) {
         // One address memory per machine, shared so an SSE stream that finds the Mac on another
         // address steers REST there too.
         val endpoints = Endpoints(config.candidates)
-        val api = OkHttpDaemonApi(config, http, endpoints)
-        apis[config.id] = api
         val source = DaemonEventSource(config, http, endpoints)
-        return MachineClient(
+        val client = MachineClient(
             config = config,
-            api = api,
+            api = OkHttpDaemonApi(config, http, endpoints),
             eventSource = source::events,
             burn = burn,
             clock = clock,
@@ -199,6 +197,9 @@ class DeckGraph(private val app: Application) {
             screenOn = mode.screenOn,
             tickerMs = TICKER_MS
         )
+        // The client's watched API, so a 401 on a pause or resume also marks the machine lost.
+        apis[config.id] = client.api
+        return client
     }
 
     private companion object {

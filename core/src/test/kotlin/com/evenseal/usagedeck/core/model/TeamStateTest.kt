@@ -392,4 +392,15 @@ class TeamStateTest {
         }.orEmpty(),
         limitsFetchedAt = fetchedAt
     )
+
+    @Test
+    fun `lists the machines that need a re-pair, and they never keep an account looking fresh`() {
+        val adam = User("adam@example.com", "acct-1", "Adam")
+        val lost = machine("studio", adam, health = Health.DEAD)
+            .copy(needsRepair = RepairReason("unauthorized", "rotated"))
+        val team = TeamState(listOf(lost, machine("mbp", adam, health = Health.STALE)))
+
+        assertEquals(listOf("studio"), team.needsRepair.map { it.config.id })
+        assertEquals(Health.STALE, team.users.single().health)
+    }
 }

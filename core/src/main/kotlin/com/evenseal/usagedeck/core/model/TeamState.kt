@@ -55,6 +55,9 @@ data class TeamState(val machines: List<MachineState> = emptyList()) {
 
     val teamToday: Tokens get() = machines.fold(Tokens.ZERO) { a, m -> a + m.today }
 
+    /** Machines that rejected this deck (token rotated, certificate changed): the home card lists them. */
+    val needsRepair: List<MachineState> get() = machines.filter { it.needsRepair != null }
+
     fun machine(id: String): MachineState? = machines.firstOrNull { it.config.id == id }
 
     fun session(machineId: String, sessionId: String): Session? =

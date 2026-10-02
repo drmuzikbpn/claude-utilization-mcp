@@ -150,7 +150,16 @@ data class MachineState(
     val projectTokens: List<ProjectTokens> = emptyList(),
     val rev: Long = 0,
     val lastError: String? = null,
-    val transport: Transport = Transport.DISCONNECTED
+    val transport: Transport = Transport.DISCONNECTED,
+    /**
+     * Set when the daemon stopped accepting this deck: its bearer token was rejected (401), or a
+     * pinned machine presented a different certificate. Terminal until a re-pair or a slow probe
+     * succeeds; the machine is shown dead with its sessions dropped and its pause controls off.
+     */
+    val needsRepair: RepairReason? = null
 ) {
     enum class Transport { SSE, POLLING, DISCONNECTED }
 }
+
+/** Why a machine needs re-pairing. [code] is the daemon error code; [message] is shown on the card. */
+data class RepairReason(val code: String, val message: String)

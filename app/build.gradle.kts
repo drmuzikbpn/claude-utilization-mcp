@@ -85,6 +85,8 @@ dependencies {
     testImplementation(libs.coroutines.test)
     testImplementation(libs.turbine)
     testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(bom)
+    testImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(project(":fakedaemon"))
     androidTestImplementation(libs.okhttp.mockwebserver)
     androidTestImplementation(libs.androidx.test.ext)

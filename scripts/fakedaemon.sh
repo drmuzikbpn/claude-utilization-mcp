@@ -5,6 +5,7 @@
 #   scripts/fakedaemon.sh warnCrossing   # walks weekly_all past warn and critical
 #   scripts/fakedaemon.sh freeze         # hard-freezes the first session on step 3
 #   scripts/fakedaemon.sh machineDrop    # stops the heartbeat so the machine ages to DEAD
+#   scripts/fakedaemon.sh tokenRotated   # rejects the token from step 5: the deck shows Re-pair
 #
 # From the emulator the host is 10.0.2.2; from the phone use the Mac's tailnet address.
 set -euo pipefail

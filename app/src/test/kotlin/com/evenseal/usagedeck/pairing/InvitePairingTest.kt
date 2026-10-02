@@ -139,4 +139,15 @@ class InvitePairingTest {
         withTimeout(5_000) { pairing.redeeming.first { !it } }
         assertEquals(listOf(redeemed), store.machines.value)
     }
+
+    @Test
+    fun `a re-pair from the card replaces that row even when nothing else matches`() = runTest {
+        val lost = MachineConfig("lost", "mbp", "10.0.0.9", 47291, "old-token")
+        store.add(lost)
+
+        val paired = InvitePairing({ redeemed }, store, work).pair(invite, replacing = "lost")
+
+        assertEquals("lost", paired.id)
+        assertEquals(listOf(paired), store.machines.value)
+    }
 }

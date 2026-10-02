@@ -36,7 +36,16 @@ class MachineStore(private val prefs: SharedPreferences) {
      * The replacement keeps that row's id, so escalations, alerts and burn history survive a
      * re-pair, and takes the daemon's current name; any further matching rows are dropped.
      */
-    fun pair(config: MachineConfig): MachineConfig {
+    fun pair(config: MachineConfig): MachineConfig = store(config, replacing = null)
+
+    /**
+     * A re-pair started from a machine's Re-pair card: [config] replaces row [id] whatever it
+     * matches — when the certificate *and* the address both changed nothing else would — keeping
+     * that id, and any other row that is the same machine goes. If [id] is gone, this is [pair].
+     */
+    fun replace(id: String, config: MachineConfig): MachineConfig = store(config, replacing = id)
+
+    private fun store(config: MachineConfig, replacing: String?): MachineConfig {
         val addrs = config.candidates.filterNot(::isLoopback).map { it.lowercase() }.toSet()
         fun sameMachine(old: MachineConfig) = (config.fp != null && old.fp == config.fp) ||
             (old.addr.equals(config.addr, ignoreCase = true) && old.port == config.port) ||
@@ -44,14 +53,14 @@ class MachineStore(private val prefs: SharedPreferences) {
 
         var stored = config
         mutate(durable = true) { current ->
-            val first = current.firstOrNull(::sameMachine)
-            if (first == null) {
+            val target = current.firstOrNull { it.id == replacing } ?: current.firstOrNull(::sameMachine)
+            if (target == null) {
                 current + config
             } else {
-                stored = config.copy(id = first.id)
+                stored = config.copy(id = target.id)
                 current.mapNotNull { old ->
                     when {
-                        old === first -> stored
+                        old === target -> stored
                         sameMachine(old) -> null
                         else -> old
                     }

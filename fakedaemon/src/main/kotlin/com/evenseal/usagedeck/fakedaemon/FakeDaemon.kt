@@ -83,7 +83,9 @@ class FakeState(
     var update: UpdateDto = UpdateDto(current = "0.1.417+fake", state = "idle"),
     var projectGroups: List<TokensGroupDto> = defaultGroups(),
     var rev: Long = 1,
-    var heartbeats: Boolean = true
+    var heartbeats: Boolean = true,
+    /** `claude-usage configure rotate-token` happened: the deck's token is rejected from now on. */
+    var tokenRotated: Boolean = false
 ) {
     fun limit(id: String): LimitDto? = limits.firstOrNull { it.id == id }
 
@@ -524,6 +526,9 @@ class FakeDaemon(
 
     /** Loopback GETs are exempt; every other request needs the bearer token (daemon spec §16). */
     private fun authorized(call: ApplicationCall): Boolean {
+        // After a rotation nothing the deck holds is valid. Loopback too: the emulator reaches
+        // this server through 10.0.2.2, which arrives as loopback and would hide the rotation.
+        if (state.tokenRotated) return false
         val safe = call.request.httpMethod == HttpMethod.Get || call.request.httpMethod == HttpMethod.Head
         if (safe && isLoopback(call)) return true
         return call.request.headers["Authorization"] == "Bearer $token"

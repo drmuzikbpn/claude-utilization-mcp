@@ -118,10 +118,29 @@ object Scenarios {
         private val RECOVER_STEP = 95
     }
 
+    /**
+     * The bearer is rotated at step 5 and every request is refused with 401 from then on, while
+     * an already-open event stream stays open — what the deck saw in the field.
+     */
+    val tokenRotated: Scenario = object : Scenario {
+        override val name = "tokenRotated"
+
+        override fun init(s: FakeState) {
+            s.tokenRotated = false
+        }
+
+        override fun step(s: FakeState, n: Int, emit: (String, String) -> Unit) {
+            if (n >= ROTATE_STEP) s.tokenRotated = true
+        }
+
+        private val ROTATE_STEP = 5
+    }
+
     fun byName(n: String): Scenario = when (n) {
         warnCrossing.name -> warnCrossing
         freeze.name -> freeze
         machineDrop.name -> machineDrop
+        tokenRotated.name -> tokenRotated
         else -> idle
     }
 }
