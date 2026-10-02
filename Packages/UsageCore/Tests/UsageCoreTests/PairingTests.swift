@@ -232,10 +232,18 @@ struct PairingPatienceTests {
 
     @Test func givesUpOnceTheWindowIsSpent() async {
         answerAfter(.max)
-        await #expect(throws: DaemonError.network) {
-            try await redeem(PairingPatience(window: 0.05, pause: .milliseconds(20)))
+        // Every reading of the clock is a second later, so each failed attempt costs one second.
+        let ticks = Mutex(0.0)
+        let clock: @Sendable () -> Date = {
+            ticks.withLock { tick in
+                tick += 1
+                return Date(timeIntervalSince1970: tick)
+            }
         }
-        #expect(StubURLProtocol.recorded(host: host).count > 1)
+        await #expect(throws: DaemonError.network) {
+            try await redeem(PairingPatience(window: 3, pause: .zero, now: clock))
+        }
+        #expect(StubURLProtocol.recorded(host: host).count == 3)
     }
 
     /// However long the permission question stays up, the answer gets a fresh window.
