@@ -72,7 +72,10 @@ jobs:
       - name: Archive, export and upload
         if: steps.signing.outputs.ok == 'true'
         run: |
-          BUILD="$(git rev-list --count HEAD)"
+          # The workflow's run number (x10 + attempt, so a re-run gets its own) only ever goes up.
+          # The commit count does not: a squash merge shortens history, and build 28 went up
+          # after 29. Runs start at 70+, so every build is above anything uploaded before.
+          BUILD="$(( GITHUB_RUN_NUMBER * 10 + GITHUB_RUN_ATTEMPT ))"
           xcodegen generate
           xcodebuild -project UsageDeck.xcodeproj -scheme UsageDeck -configuration Release \
             -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/UsageDeck.xcarchive" \

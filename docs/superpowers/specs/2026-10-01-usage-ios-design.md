@@ -130,7 +130,7 @@ accessories. Timeline from App-Group snapshot; entries stepped so countdowns sta
 - Release on push to `usage-ios`: archive + upload via App Store Connect API key
   (`-allowProvisioningUpdates`). Secrets: **1Password first** (item `usage-ios-ci` in the project
   vault: key id, issuer id, `.p8`), then GitHub secrets. `CFBundleShortVersionString = 0.MINOR`,
-  build = commit count.
+  build = `GITHUB_RUN_NUMBER * 10 + GITHUB_RUN_ATTEMPT` (monotonic; the commit count was not).
 - External testing needs Beta App Review, feedback email, `PRIVACY.md` URL on GitHub (no data
   collected; talks only to your own devices). Check "Usage Deck" name availability in App Store Connect.
 
