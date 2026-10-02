@@ -2,6 +2,7 @@ package com.evenseal.usagedeck.service
 
 import android.app.Application
 import android.content.Context
+import android.util.Log
 import com.evenseal.usagedeck.BuildConfig
 import com.evenseal.usagedeck.UsageDeckApp
 import com.evenseal.usagedeck.alerts.AlertLedger
@@ -11,17 +12,20 @@ import com.evenseal.usagedeck.core.SystemClock
 import com.evenseal.usagedeck.core.alerts.AlertEvaluator
 import com.evenseal.usagedeck.core.daemon.DaemonApi
 import com.evenseal.usagedeck.core.daemon.DaemonEventSource
+import com.evenseal.usagedeck.core.daemon.Endpoints
 import com.evenseal.usagedeck.core.daemon.MachineClient
 import com.evenseal.usagedeck.core.daemon.OkHttpDaemonApi
 import com.evenseal.usagedeck.core.model.BurnHistory
 import com.evenseal.usagedeck.core.model.MachineConfig
 import com.evenseal.usagedeck.core.model.TeamState
+import com.evenseal.usagedeck.core.pairing.PairingClient
 import com.evenseal.usagedeck.core.pause.PauseController
 import com.evenseal.usagedeck.core.update.ReleaseChecker
 import com.evenseal.usagedeck.core.update.Version
 import com.evenseal.usagedeck.kiosk.ExitPin
 import com.evenseal.usagedeck.kiosk.KioskManager
 import com.evenseal.usagedeck.kiosk.ModeController
+import com.evenseal.usagedeck.pairing.InvitePairing
 import com.evenseal.usagedeck.pairing.MachineStore
 import com.evenseal.usagedeck.pairing.encryptedPrefs
 import com.evenseal.usagedeck.pause.PrefsEscalationStore
@@ -31,6 +35,7 @@ import com.evenseal.usagedeck.update.Updater
 import com.evenseal.usagedeck.wifi.WifiRepository
 import java.io.File
 import java.time.ZoneId
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -54,13 +59,24 @@ import okhttp3.OkHttpClient
 class DeckGraph(private val app: Application) {
     val clock: Clock = SystemClock
 
-    val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /**
+     * Long-lived work (clients, redeems, updates). A last-resort handler logs anything that
+     * escapes a launch rather than letting it take the kiosk process down.
+     */
+    val scope: CoroutineScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e ->
+            Log.e(TAG, "uncaught failure in background work", e)
+        }
+    )
 
     val http: OkHttpClient = OkHttpClient.Builder().build()
 
     val installId: String = UsageDeckApp.installIdOf(app)
 
     val machineStore: MachineStore = MachineStore.open(app)
+
+    /** v2 pairing: redeems a scanned or sideloaded invite over pinned HTTPS and stores the machine. */
+    val invitePairing: InvitePairing = InvitePairing({ PairingClient(http).redeem(it) }, machineStore, scope)
 
     val settings: SettingsStore = SettingsStore(app.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE))
 
@@ -167,9 +183,12 @@ class DeckGraph(private val app: Application) {
     }
 
     private fun newClient(config: MachineConfig): MachineClient {
-        val api = OkHttpDaemonApi(config, http)
+        // One address memory per machine, shared so an SSE stream that finds the Mac on another
+        // address steers REST there too.
+        val endpoints = Endpoints(config.candidates)
+        val api = OkHttpDaemonApi(config, http, endpoints)
         apis[config.id] = api
-        val source = DaemonEventSource(config, http)
+        val source = DaemonEventSource(config, http, endpoints)
         return MachineClient(
             config = config,
             api = api,
@@ -188,5 +207,6 @@ class DeckGraph(private val app: Application) {
         const val ALERT_PREFS = "alerts"
         const val PIN_PREFS = "exit_pin"
         const val TICKER_MS = 1_000L
+        const val TAG = "UsageDeckGraph"
     }
 }

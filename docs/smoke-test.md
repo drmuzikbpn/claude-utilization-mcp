@@ -31,8 +31,14 @@ Tick each line, or write down what happened instead.
 
 ## Pairing
 
-- [ ] *Pairing → Scan QR* reads the QR from `claude-usage configure pairing` and the machine
-      appears.
+- [ ] *Pairing → Scan QR* reads the QR from `claude-usage pair`, shows a progress bar while it
+      redeems, and the machine appears, its data arriving over HTTPS.
+- [ ] Scanning the same `claude-usage pair` QR a second time reports the daemon's "run
+      `claude-usage pair` again" and leaves the machine paired.
+- [ ] Re-pairing a Mac that was paired the legacy way replaces its row rather than adding a second,
+      keeping any pending escalation and showing the daemon's current name.
+- [ ] *Pairing → Scan QR* still reads a legacy QR from `claude-usage configure pairing` and the
+      machine appears.
 - [ ] A QR from a daemon with a rotated token reports "Token rejected, re-run pairing on the Mac"
       and does not leave a broken machine behind.
 - [ ] A machine that is merely asleep is saved and shown unreachable rather than rejected.

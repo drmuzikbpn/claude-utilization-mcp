@@ -18,7 +18,7 @@ export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
 
 | Path | What lives there |
 | --- | --- |
-| `core/` | Pure Kotlin/JVM. `model/`, `daemon/` (REST + SSE + `MachineClient`), `pause/`, `alerts/`, `update/`, `Clock.kt`. No Android APIs. |
+| `core/` | Pure Kotlin/JVM. `model/`, `daemon/` (REST + SSE + `MachineClient` + `PinnedTls`/`Endpoints`), `pairing/` (v2 link + redeem), `pause/`, `alerts/`, `update/`, `Clock.kt`. No Android APIs. |
 | `app/` | Android. `kiosk/`, `wifi/`, `pairing/`, `service/` (`DeckGraph`, `DeckService`), `settings/`, `update/`, `ui/` (`theme/`, `components/`, one package per screen). |
 | `fakedaemon/` | Ktor server implementing the daemon contract with scripted scenarios. |
 
@@ -38,7 +38,9 @@ To see real numbers on the emulator, push this Mac's own pairing file (LAN addre
 rejects the emulator's `10.0.2.2` loopback with "Host header is not an address this daemon is bound to"):
 `adb -s emulator-5554 push ~/.config/claude-usage/pairing.json /sdcard/Android/data/com.evenseal.usagedeck/files/pairing-import.json`.
 Never print that file: it holds the bearer token. `connectedDebugAndroidTest` wipes the pairing, so
-push it again afterwards. Landscape is `adb -s emulator-5554 emu rotate`. Show UI changes there and
+push it again afterwards. That JSON is the legacy v1 pairing (plain HTTP); the same
+`pairing-import.json` may instead hold the `usagedeck://pair?...` line `claude-usage pair` prints,
+which the deck redeems over pinned HTTPS within the code's five minutes. Landscape is `adb -s emulator-5554 emu rotate`. Show UI changes there and
 wait for Alan's OK before pushing a release.
 
 Android 11 check: an API 30 AVD (`deck30`, same Nexus 5X profile, image `system-images;android-30;default;arm64-v8a`)
@@ -77,6 +79,18 @@ hook is missing.
   forgets the key so a real re-crossing still speaks. There is no perpetual critical repeat; it used
   to re-announce every 10 minutes, which meant a Monday crossing nagged until the reset.
 - Every error shown to the user comes from the daemon envelope: `hint` → `message` → per-code default.
+- Pairing (daemon §23.45–§23.47): `claude-usage pair` is the preferred path. Its QR/link
+  `usagedeck://pair?v=2&name&addrs&port&fp&code` carries no bearer; `core/pairing/PairingClient`
+  redeems the single-use code with `POST /v1/pair` over HTTPS pinned by `core/daemon/PinnedTls`
+  (SHA-256 of the leaf's SPKI must equal `fp`; host names are deliberately not checked). Never log
+  or persist the code or the token. A `MachineConfig` with `fp` talks pinned HTTPS for **all**
+  REST and SSE and falls back across `addrs` via `Endpoints`; one without `fp` is a legacy
+  `claude-usage configure pairing` row on plain HTTP and must keep working unchanged.
+  `MachineStore.pair` replaces the same machine in place — same `fp`, same addr+port, or a legacy
+  row whose non-loopback addr is one of the new `addrs` (any port) — keeping that row's id (so
+  escalations, alerts and burn history survive) and taking the daemon's current name. `InvitePairing` runs each redeem
+  on the graph's scope, one per code; a redeem moves to the next address only when the request
+  provably never left the phone (`neverSent`), otherwise it stops with `reply_lost`.
 - Single dark theme, colours and fonts from spec §11.6. Tabular numerals everywhere.
 - Commit after every task with a conventional-commit message ending in `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Never push.
 - No `TODO`/`FIXME` left in committed code. No test may be `@Ignore`d.

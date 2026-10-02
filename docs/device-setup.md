@@ -130,13 +130,23 @@ shows whether it stuck.
 
 ## 9. Pair each machine
 
-On the Mac, `claude-usage configure pairing` prints a QR. In the deck: *Projects → Pairing → Scan
-QR*, held up to the Mac's screen.
+On the Mac, `claude-usage pair` prints a QR. In the deck: *Projects → Pairing → Scan QR*, held up
+to the Mac's screen. The deck redeems the QR's one-time code over HTTPS pinned to the daemon's
+certificate and shows "Paired <name>." — or the daemon's own hint, e.g. "run `claude-usage pair`
+again" when the five-minute code has expired or was already used.
 
-The QR is a **live bearer token**. Scan it off the Mac's own screen — never off a photo or a
-shared screen — and run `claude-usage configure rotate-token` if it was ever exposed.
+The `claude-usage pair` QR carries no token, but scan it off the Mac's own screen anyway. The
+legacy `claude-usage configure pairing` QR (for daemons that predate `pair`) is a **live bearer
+token**: never scan it off a photo or a shared screen, and run `claude-usage configure
+rotate-token` if it was ever exposed.
 
-Verify from the Mac that the daemon answers on the tailnet address the QR carried:
+To pair without the camera, sideload the link instead: put the `usagedeck://pair?...` line that
+`claude-usage pair` prints into `pairing-import.json` and push it as for the legacy JSON (see
+`CLAUDE.md`). The deck consumes and deletes the file on its next resume and redeems the code; the
+code still expires five minutes after it was minted.
+
+For a legacy pairing, verify from the Mac that the daemon answers on the tailnet address the QR
+carried:
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" http://100.x.y.z:47291/health

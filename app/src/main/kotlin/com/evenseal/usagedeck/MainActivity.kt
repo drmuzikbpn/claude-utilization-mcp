@@ -12,9 +12,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.evenseal.usagedeck.core.daemon.DaemonException
 import com.evenseal.usagedeck.kiosk.LockTaskReceiver
 import com.evenseal.usagedeck.kiosk.ScreenHold
 import com.evenseal.usagedeck.pairing.PairingImport
+import com.evenseal.usagedeck.pairing.PairingImport.Companion.loggable
 import com.evenseal.usagedeck.service.DeckService
 import com.evenseal.usagedeck.ui.DeckNav
 import com.evenseal.usagedeck.ui.alerts.AlertOverlay
@@ -108,8 +110,19 @@ class MainActivity : ComponentActivity() {
     private fun consumePairingImport() {
         val dirs = listOfNotNull(filesDir, getExternalFilesDir(null))
         when (val imported = PairingImport(dirs, graph.machineStore).consume()) {
-            is PairingImport.Result.Imported -> Log.i(TAG, "paired ${imported.name} from import file")
-            is PairingImport.Result.Rejected -> Log.w(TAG, "pairing import rejected: ${imported.reason}")
+            is PairingImport.Result.Imported -> Log.i(TAG, "paired ${loggable(imported.name)} from import file")
+            // Redeeming needs the network, so it runs on the graph's scope; only the name is logged.
+            is PairingImport.Result.Redeem -> graph.scope.launch {
+                try {
+                    Log.i(TAG, "paired ${loggable(graph.invitePairing.pair(imported.invite).name)} from import file")
+                } catch (e: DaemonException) {
+                    Log.w(
+                        TAG,
+                        "pairing import of ${loggable(imported.invite.name)} failed: ${loggable(e.userMessage())}"
+                    )
+                }
+            }
+            is PairingImport.Result.Rejected -> Log.w(TAG, "pairing import rejected: ${loggable(imported.reason)}")
             PairingImport.Result.Nothing -> Unit
         }
     }
