@@ -33,8 +33,8 @@ class MachineStore(private val prefs: SharedPreferences) {
      * machine is replaced in place: the same certificate key, the same address and port, or —
      * upgrading a v1 pairing to v2 — a keyless row whose (non-loopback) address is one of the new
      * pairing's addresses, whatever its port (v1 rows sit on the HTTP port, v2 on the TLS one).
-     * The replacement keeps that row's id and name, so escalations, alerts, burn history and a
-     * deck-side rename survive a re-pair; any further matching rows are dropped.
+     * The replacement keeps that row's id, so escalations, alerts and burn history survive a
+     * re-pair, and takes the daemon's current name; any further matching rows are dropped.
      */
     fun pair(config: MachineConfig): MachineConfig {
         val addrs = config.candidates.filterNot(::isLoopback).map { it.lowercase() }.toSet()
@@ -48,7 +48,7 @@ class MachineStore(private val prefs: SharedPreferences) {
             if (first == null) {
                 current + config
             } else {
-                stored = config.copy(id = first.id, name = first.name)
+                stored = config.copy(id = first.id)
                 current.mapNotNull { old ->
                     when {
                         old === first -> stored

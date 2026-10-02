@@ -36,7 +36,7 @@ Tick each line, or write down what happened instead.
 - [ ] Scanning the same `claude-usage pair` QR a second time reports the daemon's "run
       `claude-usage pair` again" and leaves the machine paired.
 - [ ] Re-pairing a Mac that was paired the legacy way replaces its row rather than adding a second,
-      keeping its name and any pending escalation.
+      keeping any pending escalation and showing the daemon's current name.
 - [ ] *Pairing → Scan QR* still reads a legacy QR from `claude-usage configure pairing` and the
       machine appears.
 - [ ] A QR from a daemon with a rotated token reports "Token rejected, re-run pairing on the Mac"

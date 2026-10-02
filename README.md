@@ -93,7 +93,7 @@ Daemons without `claude-usage pair` still work with the legacy path, `claude-usa
 pairing`, whose QR **is** a live bearer token for plain HTTP: scan it off the Mac's own display,
 never a photo or a shared screen, and run `claude-usage configure rotate-token` if it is ever
 exposed. Re-pairing a Mac with `claude-usage pair` replaces its legacy row in place, keeping the
-row's identity and name, so its pause escalations and history carry over. Repeat for each Mac; the deck merges them into one view. The full walkthrough, including
+row's identity, so its pause escalations and history carry over; the name is the daemon's current one. Repeat for each Mac; the deck merges them into one view. The full walkthrough, including
 Tailscale and what "Token rejected" means, is in
 [docs/teammate-onboarding.md](docs/teammate-onboarding.md).
 

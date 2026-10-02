@@ -113,19 +113,19 @@ class MachineStoreTest {
     }
 
     @Test
-    fun `pairing the same key again replaces the row, keeping its id and deck-side name`() {
+    fun `pairing the same key again replaces the row, keeping its id but taking the daemon's name`() {
         store.add(mbp)
         store.add(pinned)
         store.add(mini)
         store.rename("m3", "Studio upstairs")
 
-        val stored = store.pair(pinned.copy(id = "m4", name = "studio", addr = "100.1.1.3", token = "tok-new"))
+        val stored = store.pair(pinned.copy(id = "m4", name = "studio-renamed", addr = "100.1.1.3", token = "tok-new"))
 
         assertEquals(listOf("m1", "m3", "m2"), store.machines.value.map { it.id })
         assertEquals(stored, store.machines.value[1])
         assertEquals("tok-new", stored.token)
         assertEquals("100.1.1.3", stored.addr)
-        assertEquals("Studio upstairs", stored.name)
+        assertEquals("studio-renamed", stored.name)
         assertEquals("m3", stored.id)
     }
 
