@@ -101,11 +101,17 @@ class AlertEvaluator(
         next.machines.mapNotNull { machine ->
             val was = prev?.machine(machine.config.id)?.health
             if (machine.health == Health.DEAD && (was == Health.FRESH || was == Health.STALE)) {
+                val lost = machine.needsRepair != null
                 Alert(
                     kind = AlertKind.UNREACHABLE,
                     key = "${AlertKind.UNREACHABLE}|${machine.config.id}",
-                    title = "Machine unreachable",
-                    body = "${nameOf(machine)} has not checked in for 2 minutes"
+                    // A lost pairing goes dead at once, not after two quiet minutes.
+                    title = if (lost) "Pairing lost" else "Machine unreachable",
+                    body = if (lost) {
+                        "${nameOf(machine)} no longer accepts this deck. Tap Re-pair on the home screen."
+                    } else {
+                        "${nameOf(machine)} has not checked in for 2 minutes"
+                    }
                 )
             } else {
                 null

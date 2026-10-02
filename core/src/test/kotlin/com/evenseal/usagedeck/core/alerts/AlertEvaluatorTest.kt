@@ -8,6 +8,7 @@ import com.evenseal.usagedeck.core.model.MachineConfig
 import com.evenseal.usagedeck.core.model.MachineState
 import com.evenseal.usagedeck.core.model.PauseMode
 import com.evenseal.usagedeck.core.model.PauseState
+import com.evenseal.usagedeck.core.model.RepairReason
 import com.evenseal.usagedeck.core.model.Session
 import com.evenseal.usagedeck.core.model.TeamState
 import com.evenseal.usagedeck.core.model.Tokens
@@ -179,6 +180,18 @@ class AlertEvaluatorTest {
         assertTrue(alert.body.contains("alans-mbp"))
 
         assertTrue(evaluator.evaluate(after, after).isEmpty())
+    }
+
+    @Test
+    fun `a machine that lost its pairing says so instead of claiming two quiet minutes`() {
+        val before = team(machine(health = Health.FRESH))
+        val after = team(
+            machine(health = Health.DEAD).copy(needsRepair = RepairReason("unauthorized", "rotated"))
+        )
+        val alert = evaluator.evaluate(before, after).single()
+        assertEquals("Pairing lost", alert.title)
+        assertTrue(alert.body.contains("no longer accepts this deck"))
+        assertTrue(!alert.body.contains("2 minutes"))
     }
 
     @Test
