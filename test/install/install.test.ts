@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readlinkSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readlinkSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInstall } from '../../src/install/apply.js';
@@ -80,22 +80,23 @@ function settings(b: Bed): Record<string, unknown> {
 }
 
 describe('--yes accepts the defaults', () => {
-  it('installs the service, hooks and MCP but not the status line', async () => {
+  it('installs the service, hooks and MCP, and never edits an existing status line', async () => {
     const b = bed({ settings: 'settings-populated.json' });
     expect(await b.run(['--yes'])).toBe(0);
 
     expect(b.service.calls).toContain('install');
     const cfg = config(b);
-    expect(cfg['integrations']).toEqual({ service: true, hook: true, mcp: true, statusline: false });
+    expect(cfg['integrations']).toEqual({ service: true, hook: true, mcp: true, statusline: true });
 
     const hooks = settings(b)['hooks'] as Record<string, unknown[]>;
     expect(JSON.stringify(hooks)).toContain(hookCommand(currentBin(b.env)));
     expect(hooks['UserPromptSubmit']).toHaveLength(1);
 
     expect(b.exec.lines()).toContain(`claude mcp add --scope user ${MCP_KEY} -- ${currentBin(b.env)} mcp`);
-    // statusline defaults to off, so the user's own statusLine is untouched
+    // the user's own statusLine is never edited; install prints the one line to add (§23.54)
     expect(settings(b)['statusLine']).toMatchObject({ command: '/home/example/.claude/statusline.sh' });
-    expect(config(b)['integrations']).toMatchObject({ statusline: false });
+    expect(b.out).toContain(`| ${currentBin(b.env)} observe >/dev/null 2>&1 &`);
+    expect(b.out).toMatch(/limits\s+needs one line in your own status line/);
   });
 
   it('mints a 32-byte bearer token into a 0600 config inside a 0700 directory', async () => {
@@ -166,16 +167,46 @@ describe('--yes accepts the defaults', () => {
 });
 
 describe('opt-outs', () => {
-  it('--no-service --no-hook --no-mcp leaves every integration alone', async () => {
+  it('--no-service --no-hook --no-mcp --no-statusline leaves every integration alone', async () => {
     const b = bed({ settings: 'settings-populated.json' });
     const before = readFileSync(settingsPath(b.env), 'utf8');
-    expect(await b.run(['--yes', '--no-service', '--no-hook', '--no-mcp'])).toBe(0);
+    expect(await b.run(['--yes', '--no-service', '--no-hook', '--no-mcp', '--no-statusline'])).toBe(0);
 
     expect(b.service.calls).toEqual([]);
     expect(b.exec.lines()).toEqual([]);
     expect(readFileSync(settingsPath(b.env), 'utf8')).toBe(before);
     expect(config(b)['integrations']).toEqual({ service: false, hook: false, mcp: false, statusline: false });
     expect(b.out).toContain('run `claude-usage serve` yourself');
+  });
+
+  it('wires the silent limits feed when there is no statusLine (§23.54)', async () => {
+    const b = bed({ settings: 'settings-empty.json' });
+    await b.run(['--yes']);
+    expect(settings(b)['statusLine']).toEqual({ type: 'command', command: `${currentBin(b.env)} observe` });
+    expect(b.out).toMatch(/limits\s+live, from Claude Code/);
+    // and a re-run changes nothing
+    const before = readFileSync(settingsPath(b.env), 'utf8');
+    await b.run(['--yes']);
+    expect(readFileSync(settingsPath(b.env), 'utf8')).toBe(before);
+  });
+
+  it('leaves a statusLine that already forwards to us alone, and says so', async () => {
+    const b = bed({ settings: 'settings-empty.json' });
+    const file = settingsPath(b.env);
+    const mine = { statusLine: { type: 'command', command: "bash -c 'tee >(claude-usage observe) | mine'" } };
+    writeFileSync(file, JSON.stringify(mine));
+    await b.run(['--yes']);
+    expect(settings(b)['statusLine']).toEqual(mine.statusLine);
+    expect(b.out).toMatch(/limits\s+live, from Claude Code/);
+    expect(b.out).not.toContain('needs one line');
+  });
+
+  it('--no-statusline never touches statusLine', async () => {
+    const b = bed({ settings: 'settings-empty.json' });
+    await b.run(['--yes', '--no-statusline']);
+    expect(settings(b)['statusLine']).toBeUndefined();
+    expect(config(b)['integrations']).toMatchObject({ statusline: false });
+    expect(b.out).toMatch(/limits\s+off/);
   });
 
   it('--statusline sets statusLine when there is none', async () => {
@@ -188,8 +219,8 @@ describe('opt-outs', () => {
     const b = bed({ settings: 'settings-populated.json' });
     await b.run(['--yes', '--statusline']);
     expect(settings(b)['statusLine']).toMatchObject({ command: '/home/example/.claude/statusline.sh' });
-    expect(b.out).toContain(`${currentBin(b.env)} statusline`);
-    expect(b.out).toContain('append this to your own script');
+    expect(b.out).toContain(`| ${currentBin(b.env)} observe >/dev/null 2>&1 &`);
+    expect(b.out).toContain('add this line to your own status line script');
   });
 
   it('--lan appends the bind entry once (§23.44)', async () => {
@@ -237,7 +268,7 @@ describe('confirmation', () => {
       'background service?',
       'Claude Code hooks?',
       'MCP server?',
-      'status line?',
+      'live limits?',
       'LAN access for the iPhone app?',
       'Open the pairing page now?',
     ]);

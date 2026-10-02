@@ -22,7 +22,8 @@ import {
 import { preflight, renderPreflight } from './preflight.js';
 import { readlinePrompter } from './plan.js';
 import { isLoopbackAddress } from '../server/middleware.js';
-import { applySettings } from './settings-merge.js';
+import { applySettings, type StatusLineOutcome } from './settings-merge.js';
+import { readInstallFiles } from '../server/install-state.js';
 import { installVersion } from './versions.js';
 import { ensureRuntimeDeps } from './deps.js';
 import { describePathLink, linkOnPath } from './path-link.js';
@@ -59,6 +60,8 @@ export async function runInstall(argv: readonly string[], io: InstallIO): Promis
     claudeJsonFile: ctx.claudeJsonFile,
     binPath: ctx.binPath,
     versionDir: versionDir(ctx.version, ctx.env),
+    // §23.54: look at what statusLine holds before planning, so the plan says what will happen.
+    statusline: readInstallFiles({ settingsFile: ctx.settingsFile, claudeJsonFile: ctx.claudeJsonFile, binPath: ctx.binPath }).statusline,
   };
   const items = buildPlan(flags, planCtx);
   io.stdout(`\n${renderPlan(items, planCtx)}\n`);
@@ -129,23 +132,29 @@ export async function runInstall(argv: readonly string[], io: InstallIO): Promis
     }
   }
 
+  let feed: StatusLineOutcome | null = null;
   if (chosen.hook || chosen.statusline) {
     const result = applySettings({
       file: ctx.settingsFile,
       binPath: ctx.binPath,
       hook: chosen.hook,
       statusline: chosen.statusline,
+      statuslineMode: flags.statusline ? 'line' : 'feed',
     });
+    feed = result.statusLine?.outcome ?? null;
     if (chosen.hook) {
       io.stdout(
         `hooks:   ${result.hooksAdded.length > 0 ? `registered ${result.hooksAdded.join(', ')}` : 'already registered'}\n`,
       );
     }
     if (result.backupPath !== null) notes.push(`backup written once: ${result.backupPath}`);
-    if (result.statusLine?.outcome === 'set') io.stdout('status:  statusLine set\n');
+    if (feed === 'set') {
+      io.stdout(flags.statusline ? 'status:  statusLine set\n' : 'limits:  statusLine forwards rate limits to the daemon (prints nothing)\n');
+    }
     if (result.statusLine?.outcome === 'other-exists') {
       notes.push(
-        `you already have a statusLine — append this to your own script instead:\n    ${result.statusLine.snippet}`,
+        'live limits need one line in your own status line, which install never edits — ' +
+          `add this line to your own status line script, after it reads stdin into $input:\n    ${result.statusLine.snippet}`,
       );
     }
   }
@@ -187,7 +196,7 @@ export async function runInstall(argv: readonly string[], io: InstallIO): Promis
     notes.push('no service installed — run `claude-usage serve` yourself, or re-run install without --no-service');
   }
 
-  io.stdout(`\n${await renderStatusTable(ctx, chosen, healthy, config.port)}`);
+  io.stdout(`\n${await renderStatusTable(ctx, chosen, healthy, config.port, feed)}`);
   for (const note of notes) io.stdout(`\nnote: ${note}\n`);
 
   // §23.48: offer the pairing page — only when there is something a phone could reach.
@@ -207,6 +216,7 @@ async function renderStatusTable(
   chosen: Record<string, boolean>,
   healthy: boolean,
   port: number,
+  feed: StatusLineOutcome | null,
 ): Promise<string> {
   const state = await ctx.service.status();
   const rows: Array<[string, string]> = [
@@ -214,7 +224,7 @@ async function renderStatusTable(
     ['daemon', healthy ? `healthy on port ${String(port)}` : chosen['service'] === true ? 'not answering' : 'not started'],
     ['hooks', chosen['hook'] === true ? 'on' : 'off'],
     ['mcp', chosen['mcp'] === true ? 'on' : 'off'],
-    ['statusline', chosen['statusline'] === true ? 'on' : 'off'],
+    ['limits', feed === null ? 'off' : feed === 'other-exists' ? 'needs one line in your own status line (see note)' : 'live, from Claude Code'],
     ['config', ctx.configDir],
   ];
   const width = Math.max(...rows.map((r) => r[0].length));

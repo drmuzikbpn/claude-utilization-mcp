@@ -101,11 +101,27 @@ describe('populated settings.json', () => {
     expect(hooks['UserPromptSubmit']?.length).toBe(1);
   });
 
+  it('the feed is the silent forwarder, and asking for the visible line upgrades it', () => {
+    const b = bed('settings-empty.json');
+    const feed = applySettings({ file: b.file, binPath: BIN, hook: false, statusline: true, statuslineMode: 'feed' });
+    expect(feed.statusLine?.outcome).toBe('set');
+    expect(read(b.file)['statusLine']).toEqual({ type: 'command', command: `${BIN} observe` });
+
+    const line = applySettings({ file: b.file, binPath: BIN, hook: false, statusline: true, statuslineMode: 'line' });
+    expect(line.statusLine?.outcome).toBe('set');
+    expect(read(b.file)['statusLine']).toEqual({ type: 'command', command: statuslineCommand(BIN) });
+
+    // the feed never takes a visible line away
+    const again = applySettings({ file: b.file, binPath: BIN, hook: false, statusline: true, statuslineMode: 'feed' });
+    expect(again.statusLine?.outcome).toBe('already-ours');
+    expect(again.changed).toBe(false);
+  });
+
   it('reports the snippet instead of overwriting an existing statusLine', () => {
     const b = bed('settings-populated.json');
     const r = applySettings({ file: b.file, binPath: BIN, hook: true, statusline: true });
     expect(r.statusLine?.outcome).toBe('other-exists');
-    expect(r.statusLine?.snippet).toBe(`${BIN} statusline`);
+    expect(r.statusLine?.snippet).toBe(`printf '%s' "$input" | ${BIN} observe >/dev/null 2>&1 &`);
   });
 
   it('is idempotent on re-run', () => {

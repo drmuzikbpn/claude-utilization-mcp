@@ -1,4 +1,5 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname } from 'node:path';
 import { writeFileAtomic } from '../config.js';
 
@@ -48,6 +49,44 @@ export function hookCommand(binPath: string): string {
 
 export function statuslineCommand(binPath: string): string {
   return `${binPath} statusline`;
+}
+
+/** The silent limits feed (§23.54): forwards `rate_limits` to the local daemon, prints nothing. */
+export function observeCommand(binPath: string): string {
+  return `${binPath} observe`;
+}
+
+/** The one line a user adds to their own statusline script, after it has read stdin into `$input`. */
+export function observeSnippet(binPath: string): string {
+  return `printf '%s' "$input" | ${observeCommand(binPath)} >/dev/null 2>&1 &`;
+}
+
+const OUR_NAME = 'claude-usage';
+/** A statusLine script larger than this is not read. */
+const SCRIPT_MAX_BYTES = 64 * 1024;
+/** At most this many words of the command are checked for a script path. */
+const MAX_SCRIPT_CANDIDATES = 4;
+
+/** Does any script the command names — `/path/x.sh`, `bash "/path/x.sh"`, `~/x.sh` — mention us? */
+function scriptMentionsUs(command: string): boolean {
+  const words = command.trim().split(/\s+/).slice(0, MAX_SCRIPT_CANDIDATES);
+  return words.some((word) => {
+    const bare = word.replace(/^["']|["']$/g, '');
+    const file = bare.startsWith('~/') ? `${homedir()}${bare.slice(1)}` : bare;
+    if (!file.startsWith('/')) return false;
+    try {
+      const st = statSync(file);
+      if (!st.isFile() || st.size > SCRIPT_MAX_BYTES) return false;
+      return readFileSync(file, 'utf8').includes(OUR_NAME);
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** A user's own statusLine that already pipes to us — inline, or in the script it runs (§7.3). */
+export function commandForwardsToUs(command: string): boolean {
+  return command.includes(OUR_NAME) || scriptMentionsUs(command);
 }
 
 export function backupPathFor(settingsFile: string): string {
@@ -171,25 +210,42 @@ export function removeHookGroups(json: Record<string, unknown>, binPath: string)
   return removed;
 }
 
-export type StatusLineOutcome = 'set' | 'already-ours' | 'other-exists';
+export type StatusLineOutcome = 'set' | 'already-ours' | 'already-forwarding' | 'other-exists';
+
+/**
+ * `feed` — the silent forwarder (`observe`), what install wires by default (§23.54).
+ * `line` — the visible `5h 42% · 7d 61%` line, which forwards too (§7.3).
+ */
+export type StatusLineMode = 'feed' | 'line';
 
 export interface StatusLineResult {
   outcome: StatusLineOutcome;
-  /** Printed for the user to paste into their own script when one already exists (§7.3). */
+  /** Printed for the user to add to their own script when one already exists (§7.3). */
   snippet: string;
 }
 
-/** Set `statusLine` only when absent; otherwise report the snippet (§7.3). */
-export function addStatusLine(json: Record<string, unknown>, binPath: string): StatusLineResult {
-  const snippet = statuslineCommand(binPath);
+/**
+ * Set `statusLine` only when absent; a user's own is never edited — we report the line to add
+ * (§7.3, §23.54). Ours is only ever changed upwards: asking for the line replaces the feed,
+ * asking for the feed never removes a line.
+ */
+export function addStatusLine(json: Record<string, unknown>, binPath: string, mode: StatusLineMode = 'line'): StatusLineResult {
+  const snippet = observeSnippet(binPath);
+  const wanted = mode === 'line' ? statuslineCommand(binPath) : observeCommand(binPath);
   const existing = asRecord(json['statusLine']);
   if (existing === null && json['statusLine'] === undefined) {
-    json['statusLine'] = { type: 'command', command: snippet };
+    json['statusLine'] = { type: 'command', command: wanted };
     return { outcome: 'set', snippet };
   }
-  if (existing !== null && commandTargetsBin(existing['command'], binPath)) {
+  const command = existing?.['command'];
+  if (existing !== null && commandTargetsBin(command, binPath)) {
+    if (mode === 'line' && typeof command === 'string' && command.trim() !== wanted) {
+      existing['command'] = wanted;
+      return { outcome: 'set', snippet };
+    }
     return { outcome: 'already-ours', snippet };
   }
+  if (typeof command === 'string' && commandForwardsToUs(command)) return { outcome: 'already-forwarding', snippet };
   return { outcome: 'other-exists', snippet };
 }
 
@@ -206,6 +262,8 @@ export interface SettingsApplyOptions {
   binPath: string;
   hook: boolean;
   statusline: boolean;
+  /** Default `line`, what `configure statusline on` and `install --statusline` ask for. */
+  statuslineMode?: StatusLineMode;
 }
 
 export interface SettingsApplyResult {
@@ -222,7 +280,7 @@ export function applySettings(opts: SettingsApplyOptions): SettingsApplyResult {
   const before = JSON.stringify(json);
 
   const hookResult = opts.hook ? addHookGroups(json, opts.binPath) : { added: [], alreadyPresent: [] };
-  const statusLine = opts.statusline ? addStatusLine(json, opts.binPath) : null;
+  const statusLine = opts.statusline ? addStatusLine(json, opts.binPath, opts.statuslineMode ?? 'line') : null;
 
   const changed = JSON.stringify(json) !== before;
   let backupPath: string | null = null;
