@@ -54,6 +54,7 @@ import com.evenseal.usagedeck.ui.components.HomeEmptyBody
 import com.evenseal.usagedeck.ui.components.MachineWaitRow
 import com.evenseal.usagedeck.ui.components.PrimaryButton
 import com.evenseal.usagedeck.ui.components.REORDER_SLIDE
+import com.evenseal.usagedeck.ui.components.RepairCard
 import com.evenseal.usagedeck.ui.components.SessionRow
 import com.evenseal.usagedeck.ui.components.StatusBar
 import com.evenseal.usagedeck.ui.components.liftOnReorder
@@ -108,6 +109,9 @@ fun WideDockScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
             }
 
             Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                team.needsRepair.forEach { machine ->
+                    RepairCard(machine = machine, onRepair = { id -> onOpen(Route.Repair(id)) })
+                }
                 if (empty != null) {
                     HomeEmptyBody(
                         empty = empty,

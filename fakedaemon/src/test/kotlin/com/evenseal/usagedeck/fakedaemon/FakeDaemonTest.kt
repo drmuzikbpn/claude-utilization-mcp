@@ -289,11 +289,34 @@ class FakeDaemonTest {
     }
 
     @Test
+    fun `tokenRotated starts rejecting the old token, even on loopback`() {
+        val p = ServerSocket(0).use { it.localPort }
+        val d = FakeDaemon(port = p, scenario = Scenarios.tokenRotated)
+        d.start()
+        try {
+            val summary = {
+                Request.Builder().url(
+                    "http://127.0.0.1:$p/v1/summary"
+                ).header("Authorization", "Bearer ${d.token}").build()
+            }
+            client.newCall(summary()).execute().use { assertEquals(200, it.code) }
+            repeat(5) { d.tick() }
+            client.newCall(summary()).execute().use { r ->
+                assertEquals(401, r.code)
+                assertTrue(r.body!!.string().contains("unauthorized"))
+            }
+        } finally {
+            d.stop()
+        }
+    }
+
+    @Test
     fun `scenarios resolve by name and default to idle`() {
         assertEquals("idle", Scenarios.byName("idle").name)
         assertEquals("warnCrossing", Scenarios.byName("warnCrossing").name)
         assertEquals("freeze", Scenarios.byName("freeze").name)
         assertEquals("machineDrop", Scenarios.byName("machineDrop").name)
+        assertEquals("tokenRotated", Scenarios.byName("tokenRotated").name)
         assertEquals("idle", Scenarios.byName("nonsense").name)
     }
 

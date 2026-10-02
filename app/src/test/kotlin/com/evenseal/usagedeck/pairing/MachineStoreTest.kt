@@ -193,4 +193,39 @@ class MachineStoreTest {
         store.pair(pinned)
         assertEquals(listOf("m1", "m3"), store.machines.value.map { it.id })
     }
+
+    @Test
+    fun `replace swaps the given row even when the key and address both changed`() {
+        store.add(mbp)
+        store.add(pinned)
+        val rekeyed = pinned.copy(
+            id = "new",
+            addr = "192.168.1.99",
+            addrs = listOf("192.168.1.99"),
+            fp = "b".repeat(64)
+        )
+
+        val stored = store.replace("m3", rekeyed)
+
+        assertEquals(listOf("m1", "m3"), store.machines.value.map { it.id })
+        assertEquals("b".repeat(64), stored.fp)
+        assertEquals(stored, store.machines.value[1])
+    }
+
+    @Test
+    fun `replace also drops a different row that is the same machine`() {
+        store.add(pinned)
+        store.add(mini)
+        store.replace("m2", pinned.copy(id = "new", token = "tok-new"))
+
+        assertEquals(listOf("m2"), store.machines.value.map { it.id })
+        assertEquals("tok-new", store.machines.value.single().token)
+    }
+
+    @Test
+    fun `replace of a row that is gone pairs normally`() {
+        store.add(mbp)
+        store.replace("vanished", pinned)
+        assertEquals(listOf("m1", "m3"), store.machines.value.map { it.id })
+    }
 }

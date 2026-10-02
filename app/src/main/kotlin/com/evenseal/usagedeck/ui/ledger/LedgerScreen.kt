@@ -49,6 +49,7 @@ import com.evenseal.usagedeck.ui.components.LimitBar
 import com.evenseal.usagedeck.ui.components.PauseButton
 import com.evenseal.usagedeck.ui.components.REORDER_SLIDE
 import com.evenseal.usagedeck.ui.components.RenameDialog
+import com.evenseal.usagedeck.ui.components.RepairCard
 import com.evenseal.usagedeck.ui.components.SessionRow
 import com.evenseal.usagedeck.ui.components.Sparkline
 import com.evenseal.usagedeck.ui.components.StatusBar
@@ -84,6 +85,14 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
 
         val empty = HomeEmpty.of(team)
 
+        // A machine that rejected this deck is the first thing to see, above the quotas.
+        team.needsRepair.forEach { machine ->
+            RepairCard(
+                machine = machine,
+                onRepair = { id -> onOpen(Route.Repair(id)) }
+            )
+        }
+
         var renaming by remember { mutableStateOf<UserView?>(null) }
         renaming?.let { user ->
             RenameDialog(
@@ -108,7 +117,7 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
             )
         }
 
-        if (empty is HomeEmpty.NoMachines || empty is HomeEmpty.Connecting) {
+        if (empty is HomeEmpty.NoMachines || empty is HomeEmpty.Connecting || empty is HomeEmpty.AllNeedRepair) {
             HomeEmptyBody(
                 empty = empty,
                 now = now,

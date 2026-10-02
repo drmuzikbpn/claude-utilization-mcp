@@ -1,5 +1,6 @@
 package com.evenseal.usagedeck.core.daemon
 
+import com.evenseal.usagedeck.core.model.RepairReason
 import java.io.IOException
 import kotlinx.serialization.decodeFromString
 import okhttp3.Response
@@ -27,6 +28,16 @@ class DaemonException(
             "internal" to "Pairing failed unexpectedly. Run `claude-usage pair` again."
         )
     }
+}
+
+/**
+ * Whether this error means the machine no longer accepts this deck at all — retrying cannot fix
+ * it, only a re-pair (or the old token coming back) can.
+ */
+fun DaemonException.repairReason(): RepairReason? = when (code) {
+    "unauthorized" -> RepairReason(code, "It rejected this deck's token — it was probably rotated.")
+    "pinning" -> RepairReason(code, "Its certificate changed, so this deck can no longer verify it.")
+    else -> null
 }
 
 internal fun codeForStatus(status: Int): String = when (status) {
