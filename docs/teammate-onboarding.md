@@ -45,18 +45,27 @@ curl -H "Authorization: Bearer $(claude-usage configure show-token)" \
 ## 4. Pair the phone
 
 ```bash
-claude-usage configure pairing
+claude-usage pair
 ```
 
 That prints a QR. On the deck: **Projects → Pairing → Scan QR**, and hold the phone up to your
-screen.
+screen. The QR holds a one-time code (valid five minutes, usable once) plus your daemon's
+certificate pin; the deck trades the code for the token over HTTPS pinned to that certificate,
+so the QR itself is worthless once used. If the deck says the code is invalid or expired, run
+`claude-usage pair` again.
 
-> The QR is a **live credential** — it carries a bearer token for your daemon. Show it from your
+**Legacy fallback** — on a daemon that has no `claude-usage pair` yet:
+
+```bash
+claude-usage configure pairing
+```
+
+> That QR is a **live credential** — it carries a bearer token for your daemon. Show it from your
 > own screen only. Never put it in a slide, a screenshot, or a shared doc. If it is ever exposed,
 > run `claude-usage configure rotate-token` and pair again.
 
-The deck immediately calls `/health` with the token: you will see either your machine appear, or
-"Token rejected, re-run pairing on the Mac".
+After a legacy pairing the deck immediately calls `/health` with the token: you will see either
+your machine appear, or "Token rejected, re-run pairing on the Mac".
 
 ## 5. What the deck can do to your sessions
 
@@ -89,6 +98,8 @@ per-machine read-only mode in v1.
 | What you see on the deck | What it usually means |
 | --- | --- |
 | Machine dot red, "has not checked in for 2 minutes" | Mac asleep, or the daemon stopped |
-| "Token rejected" | Token was rotated; re-run `claude-usage configure pairing` |
+| "Token rejected" | Token was rotated; re-run `claude-usage pair` |
+| "run `claude-usage pair` again" while pairing | The one-time code expired (five minutes) or was already used |
+| "This machine's certificate changed" | The daemon made a new TLS certificate; re-run `claude-usage pair` |
 | Machine unreachable but wifi is fine | `config.bind` is missing `"tailscale"`, or the node is not approved |
 | All machines unreachable at once | Tailscale on the phone is down — the deck offers a button to open it |
