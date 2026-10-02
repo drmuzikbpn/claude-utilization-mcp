@@ -5,7 +5,8 @@ public enum AlertKind: String, Codable, Sendable {
     case critical = "CRITICAL"
     case frozen = "FROZEN"
     case unreachable = "UNREACHABLE"
-    /// The device stopped accepting this iPhone (token rotated, certificate regenerated).
+    /// The device stopped accepting this iPhone (token rotated, certificate regenerated). Raised by
+    /// `RepairLedger`, not the evaluator: it must survive relaunches and background wakes.
     case repair = "REPAIR"
 }
 
@@ -59,7 +60,6 @@ public struct AlertEvaluator: Sendable {
 
     public func evaluate(previous: TeamState?, next: TeamState) -> [Alert] {
         limitAlerts(previous, next) + frozenAlerts(previous, next) + unreachableAlerts(previous, next)
-            + repairAlerts(previous, next)
     }
 
     /// Limits that are now under the warn threshold: their ledger keys should be forgotten so a
@@ -147,18 +147,6 @@ public struct AlertEvaluator: Sendable {
                         body: "\(session.projectName) on \(device.displayName) is hard-frozen"
                     )
                 }
-        }
-    }
-
-    private func repairAlerts(_ previous: TeamState?, _ next: TeamState) -> [Alert] {
-        next.devices.compactMap { device in
-            guard let notice = RepairNotice(device), previous?.device(device.id)?.needsRepair == false else { return nil }
-            return Alert(
-                kind: .repair,
-                key: "\(AlertKind.repair.rawValue)|\(device.id)",
-                title: "Re-pair \(notice.name)",
-                body: "\(notice.title). \(notice.reason)"
-            )
         }
     }
 

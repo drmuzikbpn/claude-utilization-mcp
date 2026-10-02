@@ -34,6 +34,8 @@ public actor DeviceClient {
     private var reducer: DeviceReducer
     private var tasks: [Task<Void, Never>] = []
     private var pollTask: Task<Void, Never>?
+    /// Which `startPolling` the running poller belongs to, so an old one can never end a newer one.
+    private var pollGeneration = 0
     private var foreground = true
     private var observers: [UUID: AsyncStream<DeviceState>.Continuation] = [:]
 
@@ -200,13 +202,15 @@ public actor DeviceClient {
 
     private func startPolling() {
         guard pollTask == nil else { return }
+        pollGeneration += 1
+        let generation = pollGeneration
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
                 await poll()
                 if await reducer.state.needsRepair {
                     // The connection loop's slow probe takes over from here.
-                    await pollEnded()
+                    await pollEnded(generation)
                     return
                 }
                 let interval = await pollInterval
@@ -220,7 +224,8 @@ public actor DeviceClient {
         foreground ? timing.pollForeground : timing.pollBackground
     }
 
-    private func pollEnded() {
+    private func pollEnded(_ generation: Int) {
+        guard generation == pollGeneration, !Task.isCancelled else { return }
         pollTask = nil
         mutate { $0.setTransport(.disconnected) }
     }

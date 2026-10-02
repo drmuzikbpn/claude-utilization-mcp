@@ -348,7 +348,6 @@ public struct ProjectTokens: Codable, Sendable, Equatable {
     }
 }
 
-/// One paired device's live state, as `DeviceClient` maintains it.
 /// Why a paired device no longer accepts this iPhone.
 public enum RepairReason: String, Sendable, Equatable, Codable {
     /// 401: its bearer token was rotated (or this pairing was revoked).
@@ -357,6 +356,7 @@ public enum RepairReason: String, Sendable, Equatable, Codable {
     case certificateChanged
 }
 
+/// One paired device's live state, as `DeviceClient` maintains it.
 public struct DeviceState: Sendable, Equatable {
     public enum Transport: String, Sendable, Codable {
         case sse

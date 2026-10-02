@@ -54,9 +54,12 @@ public struct DeviceReducer: Sendable {
     }
 
     public mutating func fail(_ error: DaemonError) {
-        state.lastError = error.userMessage
         if let reason = error.repairReason {
             state.repairReason = reason
+            state.lastError = error.userMessage
+        } else if state.repairReason == nil {
+            // While the pairing is lost, that is the message that matters, not a later outage.
+            state.lastError = error.userMessage
         }
     }
 
