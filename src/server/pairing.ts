@@ -18,11 +18,16 @@ export const PAIR_LINK_SCHEME = 'usagedeck://pair';
 
 export type RedeemOutcome = 'ok' | 'invalid' | 'rate_limited';
 
+/** What became of the most recently minted code (§23.52) — never the code itself. */
+export type PairCodeState = 'none' | 'pending' | 'redeemed' | 'expired';
+
 export interface PairingCodes {
   /** Mint a fresh code, voiding any unused one. */
   mint(): { code: string; expiresAt: string };
   /** Redeem `code` on behalf of `source` (the normalized remote address). */
   redeem(code: unknown, source: string): RedeemOutcome;
+  /** The latest code's fate, so `claude-usage pair` can tell its page the phone is in. */
+  status(): { state: PairCodeState; expiresAt: string | null };
 }
 
 function digest(value: string): Buffer {
@@ -36,6 +41,8 @@ export function createPairingCodes(opts: { now?: () => number; random?: (n: numb
   const now = opts.now ?? Date.now;
   const random = opts.random ?? randomBytes;
   let current: { digest: Buffer; expiresAt: number } | null = null;
+  /** The latest mint, kept after it is burned so its fate can be reported. */
+  let latest: { expiresAt: number; redeemed: boolean } | null = null;
   const failures = new Map<string, number[]>();
 
   const recentFailures = (source: string, t: number): number[] => {
@@ -53,6 +60,7 @@ export function createPairingCodes(opts: { now?: () => number; random?: (n: numb
       const code = random(16).toString('base64url');
       const expiresAt = now() + PAIR_CODE_TTL_MS;
       current = { digest: digest(code), expiresAt };
+      latest = { expiresAt, redeemed: false };
       return { code, expiresAt: new Date(expiresAt).toISOString() };
     },
     redeem(code, source) {
@@ -66,10 +74,17 @@ export function createPairingCodes(opts: { now?: () => number; random?: (n: numb
       const matches = timingSafeEqual(digest(typeof code === 'string' ? code : ''), expected);
       if (matches && live && typeof code === 'string') {
         current = null; // burned
+        if (latest !== null) latest.redeemed = true;
         return 'ok';
       }
       failures.set(source, [...recent, t]);
       return 'invalid';
+    },
+    status() {
+      if (latest === null) return { state: 'none', expiresAt: null };
+      const expiresAt = new Date(latest.expiresAt).toISOString();
+      if (latest.redeemed) return { state: 'redeemed', expiresAt };
+      return { state: now() < latest.expiresAt ? 'pending' : 'expired', expiresAt };
     },
   };
 }

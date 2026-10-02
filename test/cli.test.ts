@@ -78,6 +78,7 @@ describe('status', () => {
     const r = await cli(['status'], d.configDir);
     expect(r.code).toBe(0);
     expect(r.out).toContain('daemon: running');
+    expect(r.out).toContain('pair a phone: claude-usage configure lan on, then claude-usage pair');
     expect(r.out).toContain(`port ${d.port}`);
     expect(r.out).toContain('overall: warn');
     expect(r.out).toMatch(/session\s+84%\s+warn/);

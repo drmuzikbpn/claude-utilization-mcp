@@ -1,5 +1,6 @@
 import { DaemonClient, DaemonUnreachable, isPidAlive, readDaemonInfo } from './clients/http.js';
 import { loadConfig, resolveConfigDir } from './config.js';
+import { pairingHint } from './install/pair-hint.js';
 import { serve } from './daemon.js';
 import { runHook, readStdin } from './hook.js';
 import { runStatusline } from './statusline.js';
@@ -136,6 +137,7 @@ async function cmdStatus(io: Required<Pick<CliIO, 'stdout' | 'stderr'>> & CliIO)
   } else {
     io.stdout('today: scanning transcripts…\n');
   }
+  io.stdout(`${pairingHint(loadConfig(configDir).bind)}\n`);
   return 0;
 }
 

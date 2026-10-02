@@ -4,6 +4,7 @@ import { daemonFilePath } from '../clients/http.js';
 import { dataDir, macLogDir } from '../paths.js';
 import { removeMcpServer } from './claude-json.js';
 import { resolveContext, type InstallIO } from './context.js';
+import { unlinkFromPath, pathLinkFile } from './path-link.js';
 import { removeSettings } from './settings-merge.js';
 
 /** `claude-usage uninstall [--purge]` (§8). Reverses install; never touches linger or the `.bak`. */
@@ -69,6 +70,8 @@ export async function runUninstall(argv: readonly string[], io: InstallIO): Prom
     ...(ctx.exec === undefined ? {} : { exec: ctx.exec }),
   });
   io.stdout(`mcp:     ${mcp.changed ? 'removed' : 'nothing registered'}\n`);
+
+  if (unlinkFromPath(ctx.env)) io.stdout(`path:    removed ${pathLinkFile(ctx.env)}\n`);
 
   rmSync(daemonFilePath(ctx.configDir), { force: true });
 

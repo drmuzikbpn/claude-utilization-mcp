@@ -23,7 +23,7 @@ sharing one handler.
 - [`GET /v1/sessions`](#get-v1sessions)
 - [Session lifecycle endpoints](#session-lifecycle-endpoints)
 - [Pause and resume](#pause-and-resume)
-- [Pairing — `POST /v1/pair/code`, `POST /v1/pair`](#pairing)
+- [Pairing — `POST /v1/pair/code`, `GET /v1/pair/code`, `POST /v1/pair`](#pairing)
 - [`GET /v1/events` (SSE)](#get-v1events-sse)
 - [`limits[]` normalization](#limits-normalization)
 - [`since` and `groupBy`](#since-and-groupby)
@@ -529,6 +529,19 @@ loopback last. The link's query parameters always come in this order: `v=2`, the
 and `addrs` (both percent-encoded), `port` (the TLS port), `fp` (64 hex), `code` (22
 base64url chars). It never contains the bearer. No HTTPS listener at all ⇒
 `409 conflict`, hint ``enable LAN access with `claude-usage configure lan on` ``.
+
+### `GET /v1/pair/code`
+
+Auth: loopback only (`403 forbidden` from anywhere else; like every loopback `GET`, no bearer
+needed). What became of the most recently minted code, so `claude-usage pair` can tell its
+page the phone is in (§23.52). Never the code itself.
+
+```json
+{ "state": "redeemed", "expiresAt": "2026-10-01T18:05:00.000Z" }
+```
+
+`state` is `none` (nothing minted since the daemon started), `pending`, `redeemed` (stays so
+after the expiry passes) or `expired`. A new mint starts over at `pending`.
 
 ### `POST /v1/pair`
 

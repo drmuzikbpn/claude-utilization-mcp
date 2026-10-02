@@ -63,8 +63,13 @@ endpoint that works that way, so its rules are strict:
   minute, even with the correct code. Codes are compared in constant time. The Host
   allowlist and the Origin refusal still apply.
 - The code and the token are never logged or printed. `claude-usage pair` puts the code
-  only inside the QR's modules, on a page served once from `127.0.0.1` at a random 128-bit
-  path with `Cache-Control: no-store`. That URL never goes on a command line or to the
+  only inside the QR's modules and the **Copy link** button's attribute (never page text),
+  on a page served once from `127.0.0.1` at a random 128-bit path with
+  `Cache-Control: no-store`. The page's only script is allowed by hash and may talk to its
+  own origin only. Once the code is used or expires, or the page server goes away, the
+  script removes the QR and the link from the page (§23.52). A copied link sits in the
+  clipboard (and Universal Clipboard) until something replaces it; it is single-use and
+  dies with the code after 5 minutes. That URL never goes on a command line or to the
   terminal: the browser is pointed at a `0600` redirect file in a fresh `0700` temp directory,
   deleted when the page closes.
 

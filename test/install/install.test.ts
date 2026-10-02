@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readlinkSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInstall } from '../../src/install/apply.js';
@@ -271,6 +271,22 @@ describe('confirmation', () => {
     expect(config(b)['bind']).toEqual(['127.0.0.1']);
     expect(scripted.questions).not.toContain('Open the pairing page now?');
     expect(paired).toBe(0);
+  });
+
+  it('links claude-usage onto the PATH and says how to pair later (§23.51)', async () => {
+    const b = bed({ settings: 'settings-empty.json' });
+    expect(await b.run(['--yes'])).toBe(0);
+    const link = join(b.home, '.local', 'bin', 'claude-usage');
+    expect(readlinkSync(link)).toBe(currentBin(b.env));
+    expect(b.out).toContain(`path:    linked ${link}`);
+    expect(b.out).toContain('is not on your PATH'); // the test PATH is /usr/bin:/bin
+    expect(b.out).toContain('pair a phone: claude-usage configure lan on, then claude-usage pair');
+  });
+
+  it('with --lan the closing hint is just `claude-usage pair`', async () => {
+    const b = bed({ settings: 'settings-empty.json' });
+    expect(await b.run(['--yes', '--lan'])).toBe(0);
+    expect(b.out.trimEnd().endsWith('pair a phone: claude-usage pair')).toBe(true);
   });
 
   it('fails on a non-TTY without --yes, and changes nothing', async () => {
