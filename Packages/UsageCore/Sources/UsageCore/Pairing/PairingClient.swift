@@ -12,10 +12,18 @@ public struct PairingPatience: Sendable {
     /// Awaited after each failed attempt. Returns once the app is active again, and true when
     /// that took a wait (a system alert was up): the window then starts over.
     public var ready: @Sendable () async -> Bool
+    /// The clock attempts are timed with; tests step it by hand.
+    public var now: @Sendable () -> Date
 
-    public init(window: TimeInterval, pause: Duration = .seconds(1), ready: @escaping @Sendable () async -> Bool = { false }) {
+    public init(
+        window: TimeInterval,
+        pause: Duration = .seconds(1),
+        ready: @escaping @Sendable () async -> Bool = { false },
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.window = window
         self.pause = pause
+        self.now = now
         self.ready = ready
     }
 
@@ -51,13 +59,13 @@ public struct PairingClient: Sendable {
         var attempt = 1
         DiagLog.shared.log(.pairing, "redeeming for \(invite.name), \(invite.addrs.count) address(es)")
         while true {
-            let began = Date()
+            let began = patience.now()
             do {
                 let config = try await redeemOnce(invite, id: id)
                 DiagLog.shared.log(.pairing, "redeemed on attempt \(attempt)")
                 return config
             } catch let error as DaemonError where error.isTransport {
-                spent += Date().timeIntervalSince(began)
+                spent += patience.now().timeIntervalSince(began)
                 if await patience.ready() {
                     DiagLog.shared.log(.pairing, "attempt \(attempt) was interrupted (app left the foreground); trying again")
                     spent = 0
