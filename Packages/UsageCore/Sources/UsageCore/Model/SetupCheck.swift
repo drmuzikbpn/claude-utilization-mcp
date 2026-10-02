@@ -67,7 +67,7 @@ public struct SetupCheck: Sendable, Equatable {
             id: "statusline",
             title: "Status line",
             status: statusline,
-            fix: statusline == .failing ? "claude-usage install --statusline" : nil
+            fix: statusline == .failing ? "claude-usage install" : nil
         ))
         let mcp: Status = install.mcp == true ? .ok : install.mcp == false ? .failing : .neutral
         items.append(Item(id: "mcp", title: "MCP server", status: mcp, fix: mcp == .failing ? "claude-usage install" : nil))
