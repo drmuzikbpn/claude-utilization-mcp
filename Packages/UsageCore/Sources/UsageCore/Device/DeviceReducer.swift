@@ -55,8 +55,8 @@ public struct DeviceReducer: Sendable {
 
     public mutating func fail(_ error: DaemonError) {
         state.lastError = error.userMessage
-        if error.needsRepair {
-            state.needsRepair = true
+        if let reason = error.repairReason {
+            state.repairReason = reason
         }
     }
 

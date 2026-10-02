@@ -6,7 +6,9 @@ import Foundation
 /// also polls REST (2 s in the foreground, 30 s otherwise) until SSE opens again. A ticker
 /// re-derives health from the last heartbeat, and per-project token totals refresh every 30 s.
 /// `refresh()` is the one-shot REST bootstrap for background refresh and the watch's `{refresh}`.
-/// Errors never escape; they land in `state.lastError` (and `needsRepair` on a 401 / pin mismatch).
+/// Errors never escape; they land in `state.lastError` (and `repairReason` on a 401 / pin mismatch).
+/// A device that rejects this iPhone is not hammered: polling stops and SSE drops to one probe
+/// every `repairProbe`, so a restored token or a re-pair brings it back.
 public actor DeviceClient {
     public struct Timing: Sendable {
         public var backoffMin: Duration = .seconds(3)
@@ -16,6 +18,8 @@ public actor DeviceClient {
         public var pollBackground: Duration = .seconds(30)
         public var projectTokens: Duration = .seconds(30)
         public var ticker: Duration = .seconds(1)
+        /// How often a device that needs re-pairing is tried again.
+        public var repairProbe: Duration = .seconds(60)
 
         public init() {}
     }
@@ -164,6 +168,12 @@ public actor DeviceClient {
             } else {
                 failures += 1
             }
+            if reducer.state.needsRepair {
+                // Retrying faster cannot help: only a re-pair (or a restored token) can.
+                stopPolling()
+                try? await Task.sleep(for: timing.repairProbe)
+                continue
+            }
             if failures >= timing.failuresBeforePolling {
                 startPolling()
             }
@@ -181,7 +191,9 @@ public actor DeviceClient {
 
     private func projectTokensLoop() async {
         while !Task.isCancelled {
-            await refreshProjectTokens()
+            if !reducer.state.needsRepair {
+                await refreshProjectTokens()
+            }
             try? await Task.sleep(for: timing.projectTokens)
         }
     }
@@ -192,6 +204,11 @@ public actor DeviceClient {
             while !Task.isCancelled {
                 guard let self else { return }
                 await poll()
+                if await reducer.state.needsRepair {
+                    // The connection loop's slow probe takes over from here.
+                    await pollEnded()
+                    return
+                }
                 let interval = await pollInterval
                 try? await Task.sleep(for: interval)
             }
@@ -201,6 +218,11 @@ public actor DeviceClient {
 
     private var pollInterval: Duration {
         foreground ? timing.pollForeground : timing.pollBackground
+    }
+
+    private func pollEnded() {
+        pollTask = nil
+        mutate { $0.setTransport(.disconnected) }
     }
 
     private func stopPolling() {

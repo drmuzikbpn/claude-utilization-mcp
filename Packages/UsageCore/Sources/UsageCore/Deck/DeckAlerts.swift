@@ -3,13 +3,14 @@ import Foundation
 /// The app-side gate in front of `AlertEvaluator`.
 public enum DeckAlerts {
     /// A device's first state after launch (or a background wake) is not news: a session that was
-    /// already frozen must not announce itself every time the app starts. Frozen alerts therefore
-    /// pass only for devices that had already arrived in `previous`. Limit alerts always pass
+    /// already frozen, or a pairing already lost, must not announce itself every time the app
+    /// starts. Frozen and repair alerts therefore pass only for devices that had already arrived
+    /// in `previous`. Limit alerts always pass
     /// here — `AlertLedger` makes them once per window — and unreachable ones already need a
     /// previous health.
     public static func admissible(_ alerts: [Alert], previous: TeamState?) -> [Alert] {
         alerts.filter { alert in
-            guard alert.kind == .frozen else { return true }
+            guard alert.kind == .frozen || alert.kind == .repair else { return true }
             let parts = alert.key.split(separator: "|", omittingEmptySubsequences: false)
             guard parts.count >= 2 else { return false }
             return previous?.device(String(parts[1]))?.hasSnapshot == true
