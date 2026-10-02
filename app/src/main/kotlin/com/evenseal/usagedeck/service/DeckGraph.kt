@@ -2,6 +2,7 @@ package com.evenseal.usagedeck.service
 
 import android.app.Application
 import android.content.Context
+import android.util.Log
 import com.evenseal.usagedeck.BuildConfig
 import com.evenseal.usagedeck.UsageDeckApp
 import com.evenseal.usagedeck.alerts.AlertLedger
@@ -34,6 +35,7 @@ import com.evenseal.usagedeck.update.Updater
 import com.evenseal.usagedeck.wifi.WifiRepository
 import java.io.File
 import java.time.ZoneId
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -57,7 +59,15 @@ import okhttp3.OkHttpClient
 class DeckGraph(private val app: Application) {
     val clock: Clock = SystemClock
 
-    val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /**
+     * Long-lived work (clients, redeems, updates). A last-resort handler logs anything that
+     * escapes a launch rather than letting it take the kiosk process down.
+     */
+    val scope: CoroutineScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e ->
+            Log.e(TAG, "uncaught failure in background work", e)
+        }
+    )
 
     val http: OkHttpClient = OkHttpClient.Builder().build()
 
@@ -197,5 +207,6 @@ class DeckGraph(private val app: Application) {
         const val ALERT_PREFS = "alerts"
         const val PIN_PREFS = "exit_pin"
         const val TICKER_MS = 1_000L
+        const val TAG = "UsageDeckGraph"
     }
 }

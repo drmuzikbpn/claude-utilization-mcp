@@ -1,10 +1,12 @@
 package com.evenseal.usagedeck.pairing
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
 import com.evenseal.usagedeck.core.daemon.DaemonException
 import com.evenseal.usagedeck.core.model.MachineConfig
 import com.evenseal.usagedeck.core.pairing.PairingInvite
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -41,5 +43,36 @@ class InvitePairingTest {
 
         assertEquals("run `claude-usage pair` again", e.userMessage())
         assertTrue(store.machines.value.isEmpty())
+    }
+
+    @Test
+    fun `an unexpected failure in the redeem becomes a daemon error instead of escaping`() {
+        val pairing = InvitePairing({ throw IllegalArgumentException("boom") }, store)
+
+        val e = assertThrows(DaemonException::class.java) { runBlocking { pairing.pair(invite) } }
+
+        assertEquals("internal", e.code)
+        assertTrue(e.userMessage().contains("claude-usage pair"))
+        assertTrue(store.machines.value.isEmpty())
+    }
+
+    @Test
+    fun `a failure writing the store becomes a daemon error instead of escaping`() {
+        val real = context.getSharedPreferences("invite-test-broken", Context.MODE_PRIVATE)
+        val broken = object : SharedPreferences by real {
+            override fun edit(): SharedPreferences.Editor = throw IllegalStateException("keystore gone")
+        }
+        val pairing = InvitePairing({ redeemed }, MachineStore(broken))
+
+        val e = assertThrows(DaemonException::class.java) { runBlocking { pairing.pair(invite) } }
+
+        assertEquals("internal", e.code)
+    }
+
+    @Test
+    fun `cancellation is not swallowed`() {
+        val pairing = InvitePairing({ throw CancellationException("gone") }, store)
+
+        assertThrows(CancellationException::class.java) { runBlocking { pairing.pair(invite) } }
     }
 }
