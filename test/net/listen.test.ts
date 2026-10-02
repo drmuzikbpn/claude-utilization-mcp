@@ -186,7 +186,7 @@ describe('non-loopback authentication (§16)', () => {
     expect(gate.status).toBe(401);
     expect(gate.code).toBe('unauthorized');
     expect(gate.message).toBe('a valid Authorization: Bearer token is required');
-    expect(gate.hint).toContain('claude-usage configure pairing');
+    expect(gate.hint).toBe('this device is not paired, or its token was changed — on that machine run `claude-usage pair` and pair again');
   });
 
   it('keeps the loopback hint for a tokenless mutating request', () => {

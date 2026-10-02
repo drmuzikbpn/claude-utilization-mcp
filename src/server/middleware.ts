@@ -205,7 +205,7 @@ export function checkRequest(req: IncomingMessage, policy: HostPolicy, token: st
       message: 'a valid Authorization: Bearer token is required',
       hint: loopback
         ? 'mutating requests need the token even from loopback'
-        : 'pair this device with `claude-usage configure pairing`',
+        : 'this device is not paired, or its token was changed — on that machine run `claude-usage pair` and pair again',
     };
   }
   return { ok: true, loopback };
