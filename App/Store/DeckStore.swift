@@ -46,6 +46,16 @@ final class DeckStore {
     private(set) var pairingInFlight = false
     /// Set by "Re-pair" on a device: the next redeemed invite replaces that device's token.
     private(set) var replacingDeviceId: String?
+    /// A device just paired: "Connecting to <name>…" shows until its first full load is in.
+    private(set) var connecting: Connecting?
+
+    struct Connecting: Equatable {
+        let deviceId: String
+        let name: String
+        let startedAt: Date
+        /// The bootstrap pass (one REST refresh, then the setup check) has finished.
+        var settled = false
+    }
 
     let pause: PauseController
 
@@ -112,6 +122,28 @@ final class DeckStore {
                 states[device.id] = device
             }
             fold()
+            if DemoData.opensConnecting, let studio = devices.first {
+                seedConnecting(studio)
+            }
+        }
+
+        /// Plays a pairing's first load for `studio`: nothing in hand, then all of it at once.
+        private func seedConnecting(_ studio: DeviceState) {
+            var waiting = studio
+            waiting.summaryLoaded = false
+            states[studio.id] = waiting
+            connecting = Connecting(deviceId: studio.id, name: studio.record.name, startedAt: Date())
+            fold()
+            Task { [weak self] in
+                try? await Task.sleep(for: DemoData.connectingDelay)
+                guard let self else { return }
+                var arrived = studio
+                arrived.summaryLoaded = true
+                states[studio.id] = arrived
+                setupChecks[studio.id] = SetupCheck.evaluate(health: DemoData.health(studio), error: nil, limitsFresh: true)
+                connecting?.settled = true
+                fold()
+            }
         }
     #endif
 
@@ -132,7 +164,8 @@ final class DeckStore {
             }
             pause.start()
             startTicker()
-            for record in records {
+            // A device still connecting gets its check from `bootstrap`, after its first refresh.
+            for record in records where record.id != connecting?.deviceId {
                 Task { await runSetupCheck(record.id, quietly: true) }
             }
         } else {
@@ -491,18 +524,56 @@ final class DeckStore {
                 records.append(record)
             }
             registry.save(records)
+            setupChecks[record.id] = nil
             connect(record)
             fold()
             replacingDeviceId = nil
             showPairing = false
             pairingError = nil
-            path = [.device(record.id)]
-            notifier.requestAuthorization()
-            await runSetupCheck(record.id)
+            connecting = Connecting(deviceId: record.id, name: record.name, startedAt: Date())
+            pairingInFlight = false
+            await bootstrap(record.id)
         } catch {
             pairingError = DaemonError.from(transport: error).userMessage
             showPairing = true
         }
+    }
+
+    /// Where the connecting overlay stands; nil when it is not showing.
+    var connectingPhase: FirstLoad.Phase? {
+        connecting.map {
+            FirstLoad.phase(
+                state: team.device($0.deviceId),
+                check: setupChecks[$0.deviceId],
+                settled: $0.settled,
+                elapsed: now.timeIntervalSince($0.startedAt)
+            )
+        }
+    }
+
+    /// One REST pass and then the setup check, in that order, so the checklist's "Usage limits"
+    /// row sees the limits the pass brought in.
+    private func bootstrap(_ id: String) async {
+        if let client = clients[id] {
+            await client.refresh()
+            await ingest(client.state)
+        }
+        await runSetupCheck(id, quietly: true)
+        if connecting?.deviceId == id {
+            connecting?.settled = true
+        }
+    }
+
+    /// Closes the connecting overlay onto the device screen (also its Skip button). `message`
+    /// is the reason it stopped waiting, shown as a toast.
+    func finishConnecting(message: String? = nil) {
+        guard let done = connecting else { return }
+        connecting = nil
+        path = [.device(done.deviceId)]
+        if let message {
+            showToast(message)
+        }
+        notifier.requestAuthorization()
     }
 }
 

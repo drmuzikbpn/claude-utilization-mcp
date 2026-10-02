@@ -7,8 +7,28 @@
     enum DemoData {
         static let launchArgument = "-UsageDeckDemo"
 
+        /// Also `-UsageDeckDemoConnecting`: open on "Connecting to studio…", which lands after
+        /// `connectingDelay` (the post-pairing overlay, for the smoke test and screenshots).
+        static let connectingArgument = "-UsageDeckDemoConnecting"
+        static let connectingDelay: Duration = .seconds(3)
+
         static var isEnabled: Bool {
             ProcessInfo.processInfo.arguments.contains(launchArgument)
+        }
+
+        static var opensConnecting: Bool {
+            ProcessInfo.processInfo.arguments.contains(connectingArgument)
+        }
+
+        /// What studio's `/health` would say once it answers: everything installed.
+        static func health(_ device: DeviceState) -> HealthDTO {
+            HealthDTO(
+                version: device.version ?? "",
+                name: device.name,
+                user: UserDTO(emailAddress: device.user?.emailAddress, accountUuid: device.user?.accountUuid),
+                stats: HealthStatsDTO(spendReady: true),
+                install: InstallDTO(hooks: true, statusline: "ours", mcp: true)
+            )
         }
 
         static func devices(now: Date) -> [DeviceState] {

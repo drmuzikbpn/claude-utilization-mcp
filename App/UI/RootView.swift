@@ -6,6 +6,7 @@ import UsageCore
 struct RootView: View {
     @Bindable var store: DeckStore
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var zoom
 
     var body: some View {
@@ -44,7 +45,14 @@ struct RootView: View {
                     .deckGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             }
         }
+        .overlay {
+            if let connecting = store.connecting {
+                ConnectingOverlay(store: store, connecting: connecting)
+                    .transition(.opacity)
+            }
+        }
         .animation(.snappy, value: store.toast)
+        .animation(reduceMotion ? nil : .smooth, value: store.connecting?.deviceId)
         .sensoryFeedback(.error, trigger: store.toastSerial)
         // A limit crossing into warn or critical is felt as well as seen.
         .sensoryFeedback(trigger: store.worstStatus) { old, new in
