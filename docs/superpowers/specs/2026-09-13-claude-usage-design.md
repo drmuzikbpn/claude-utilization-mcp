@@ -548,6 +548,7 @@ QA from the Android dashboard, and two Macs in daily use.
 | §23.47 | One-time pairing code: `POST /v1/pair/code`, `POST /v1/pair` (2026-10-01) |
 | §23.48 | `/health.install` and the `claude-usage pair` page (2026-10-01) |
 | §23.49 | Deferred (2026-10-01) |
+| §23.50 | A self-restart needs a witness that outlives it (2026-10-01) |
 
 15 findings survived a 3-vote adversarial review (56 unique candidates). Where Part I
 conflicts with this section, this section wins.
@@ -1693,3 +1694,23 @@ Recorded so they are not mistaken for oversights: a push relay (APNs) for real-t
 complications; daemon-side `escalateAfter` (soft → hard after N s without a client awake);
 the Android deck accepting the v2 pairing link and HTTPS; `configure rotate-cert`; remote access
 without a VPN.
+
+### §23.50 A self-restart needs a witness that outlives it (2026-10-01)
+
+The Studio auto-updated 0.1.106 → 0.1.107, logged `SIGTERM received, shutting down`, and stayed
+down: `launchctl print` showed `last exit code = -9` and no process until a manual
+`launchctl kickstart`. The restart (§23.18) is a `launchctl kickstart -k` issued *from inside the
+job it restarts*, so whatever goes wrong mid-restart has nobody left to notice. A clean SIGTERM
+exit is code 0, which `KeepAlive: { SuccessfulExit: false }` deliberately leaves down (§20).
+
+- Before asking for the restart, the updater arms a **restart watchdog**
+  (`LaunchdService.armRestartWatchdog`): a detached `/bin/sh` in its own session that polls
+  `launchctl print <target>` every 2 s for up to 90 s and, the first time no `pid` is shown,
+  runs `launchctl kickstart <target>` — without `-k`, so a daemon that came back on its own is
+  never touched. Spawn failures are swallowed; the request and the exit-75 fallback still stand.
+- systemd needs none: `Restart=on-failure` plus `systemctl restart` run by the manager, not the
+  unit.
+- The fix runs in the *old* process, so it protects updates out of the release that ships it.
+- Verified live: SIGTERM'd job (exit 0, stays down) with the watchdog armed came back within one
+  poll; without it, it stayed down.
+
