@@ -25,6 +25,8 @@ import { isLoopbackAddress } from '../server/middleware.js';
 import { applySettings } from './settings-merge.js';
 import { installVersion } from './versions.js';
 import { ensureRuntimeDeps } from './deps.js';
+import { describePathLink, linkOnPath } from './path-link.js';
+import { pairingHint } from './pair-hint.js';
 
 /** `claude-usage install` (§8). Returns the process exit code; never calls `process.exit`. */
 export async function runInstall(argv: readonly string[], io: InstallIO): Promise<number> {
@@ -104,8 +106,13 @@ export async function runInstall(argv: readonly string[], io: InstallIO): Promis
       `current: ${version.currentLink} -> ${version.versionDir}\n`,
   );
 
-  // 5. Apply.
+  // §23.51: `claude-usage` on the PATH, so `claude-usage pair` works in the next terminal.
   const notes: string[] = [];
+  const path = describePathLink(linkOnPath(ctx.env), ctx.env);
+  io.stdout(path.line);
+  if (path.note !== null) notes.push(path.note);
+
+  // 5. Apply.
   if (chosen.service) {
     await ctx.service.install(buildUnit({ nodePath: ctx.nodePath, binPath: ctx.binPath, env: ctx.env }));
     io.stdout(`service: ${ctx.service.kind} ${ctx.service.unitPath}\n`);
@@ -191,6 +198,7 @@ export async function runInstall(argv: readonly string[], io: InstallIO): Promis
       await pair();
     }
   }
+  io.stdout(`\n${pairingHint(config.bind)}\n`);
   return 0;
 }
 
@@ -212,3 +220,4 @@ async function renderStatusTable(
   const width = Math.max(...rows.map((r) => r[0].length));
   return `installed\n${rows.map(([k, v]) => `  ${k.padEnd(width)}  ${v}`).join('\n')}\n`;
 }
+
