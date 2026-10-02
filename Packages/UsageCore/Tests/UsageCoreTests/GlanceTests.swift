@@ -238,6 +238,24 @@ struct WatchPresentationTests {
     }
 }
 
+struct PauseStateLookupTests {
+    @Test func readsThePauseOnEachKindOfTarget() {
+        let sample = WatchSnapshot.sample(now: t0)
+        #expect(sample.pauseMode(for: .session(deviceId: "studio", sessionId: "b81e0d44-sample")) == .soft)
+        #expect(sample.pauseMode(for: .session(deviceId: "laptop", sessionId: "c0ffee12-sample")) == .hard)
+        #expect(sample.pauseMode(for: .session(deviceId: "laptop", sessionId: "b81e0d44-sample")) == nil, "same id, other device")
+        #expect(sample.pauseMode(for: .project(deviceId: "studio", projectKey: "/code/usage/.git")) == nil)
+        #expect(sample.pauseMode(for: .all) == nil)
+        var paused = sample
+        paused.devices[0].pausedAll = true
+        #expect(paused.pauseMode(for: .all) == .soft)
+        #expect(paused.reflects(.hard, on: .all), "all compares paused-ness only")
+        #expect(!paused.reflects(nil, on: .all))
+        #expect(sample.reflects(.soft, on: .session(deviceId: "studio", sessionId: "b81e0d44-sample")))
+        #expect(!sample.reflects(.hard, on: .session(deviceId: "studio", sessionId: "b81e0d44-sample")))
+    }
+}
+
 struct PauseGrammarTests {
     let target = PauseTarget.session(deviceId: "m1", sessionId: "s1")
 

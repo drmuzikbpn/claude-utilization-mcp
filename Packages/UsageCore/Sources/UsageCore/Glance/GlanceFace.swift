@@ -153,6 +153,11 @@ public enum GlanceTimeline {
     public struct Moment: Sendable, Equatable {
         public var date: Date
         public var face: GlanceFace
+
+        public init(date: Date, face: GlanceFace) {
+            self.date = date
+            self.face = face
+        }
     }
 
     public static func moments(
