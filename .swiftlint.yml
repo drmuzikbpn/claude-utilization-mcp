@@ -5,6 +5,7 @@ included:
   - Complications
   - SharedUI
   - WidgetShared
+  - RenderTests
   - Packages/UsageCore/Sources
   - Packages/UsageCore/Tests
 excluded:

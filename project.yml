@@ -163,6 +163,35 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.evenseal.usagedeck.watchkitapp.complications
         TARGETED_DEVICE_FAMILY: "4"
 
+  # Test-only: renders every widget / complication family to PNG (RenderTests/). Never shipped.
+  UsageWidgetsRenderTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: RenderTests
+      - path: WidgetShared
+      - path: SharedUI
+    dependencies:
+      - package: UsageCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.evenseal.usagedeck.widgetrendertests
+        GENERATE_INFOPLIST_FILE: YES
+
+  UsageComplicationsRenderTests:
+    type: bundle.unit-test
+    platform: watchOS
+    sources:
+      - path: RenderTests
+      - path: WidgetShared
+      - path: SharedUI
+    dependencies:
+      - package: UsageCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.evenseal.usagedeck.complicationrendertests
+        GENERATE_INFOPLIST_FILE: YES
+
 schemes:
   UsageDeck:
     build:
@@ -178,3 +207,17 @@ schemes:
         UsageDeckWatch: all
     run:
       config: Debug
+  WidgetRender:
+    build:
+      targets:
+        UsageWidgetsRenderTests: [test]
+    test:
+      targets:
+        - UsageWidgetsRenderTests
+  ComplicationRender:
+    build:
+      targets:
+        UsageComplicationsRenderTests: [test]
+    test:
+      targets:
+        - UsageComplicationsRenderTests
