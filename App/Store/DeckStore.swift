@@ -455,8 +455,7 @@ final class DeckStore {
 
     /// Redeems the confirmed invite over pinned HTTPS, keeps the token in the Keychain only,
     /// connects, asks for notification permission and runs the setup check at once.
-    func confirmPairing() async {
-        guard let invite = pendingInvite else { return }
+    func confirmPairing(_ invite: PairingInvite) async {
         pendingInvite = nil
         pairingInFlight = true
         defer { pairingInFlight = false }

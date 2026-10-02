@@ -65,8 +65,10 @@ private struct ConfirmPairing: ViewModifier {
                 }
             }),
             presenting: store.pendingInvite
-        ) { _ in
-            Button("Pair") { Task { await store.confirmPairing() } }
+        ) { invite in
+            // Pass the presented invite: dismissing the alert runs the binding's setter, which
+            // clears `pendingInvite`, before this action does.
+            Button("Pair") { Task { await store.confirmPairing(invite) } }
             Button("Cancel", role: .cancel) { store.pendingInvite = nil }
         } message: { invite in
             Text("Usage Deck will connect to \(invite.addrs.joined(separator: ", ")) over HTTPS pinned to this device's certificate.")
