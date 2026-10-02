@@ -19,7 +19,7 @@ settings:
     SWIFT_STRICT_CONCURRENCY: complete
     MARKETING_VERSION: "0.1"
     CURRENT_PROJECT_VERSION: "1"
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: YTHBPWUU3Z
     CODE_SIGN_STYLE: Automatic
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     DEAD_CODE_STRIPPING: YES
@@ -79,6 +79,11 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.evenseal.usagedeck
         TARGETED_DEVICE_FAMILY: "1"
+      configs:
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: UsageDeck AppStore
 
   UsageDeckUITests:
     type: bundle.ui-testing
@@ -123,6 +128,11 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.evenseal.usagedeck.watchkitapp
         TARGETED_DEVICE_FAMILY: "4"
+      configs:
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: UsageDeckWatch AppStore
 
   UsageWidgets:
     type: app-extension
@@ -154,6 +164,11 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.evenseal.usagedeck.widgets
         TARGETED_DEVICE_FAMILY: "1"
+      configs:
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: UsageWidgets AppStore
 
   UsageComplications:
     type: app-extension
@@ -185,6 +200,11 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.evenseal.usagedeck.watchkitapp.complications
         TARGETED_DEVICE_FAMILY: "4"
+      configs:
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: UsageComplications AppStore
 
   # Test-only: renders every widget / complication family to PNG (RenderTests/). Never shipped.
   UsageWidgetsRenderTests:
