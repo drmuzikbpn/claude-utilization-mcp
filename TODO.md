@@ -21,14 +21,14 @@ carries `TODO` comments (swiftlint `no_todo`); they go here.
   still orders projects by tokens today.
 - [ ] Unit-test the landscape gutter rule (`Gutters.of` in `WideDockView.swift`). The app target
   has no unit-test target; move the rule somewhere testable or add one.
+- [ ] Demo data (`DemoData`) has no `update` state, so the demo device screen reads "update:
+  unknown"; a real daemon always reports it.
 - [ ] Pause `DeckBackdrop`'s animation on screens hidden under a pushed screen (a small battery
   cost while they are covered).
 
 ## Daemon (`main`)
 
-- [ ] `install` should put `claude-usage` on the PATH (for example a link in `~/.local/bin`), or at
-  least print the full path when it finishes. `claude-usage install --lan` fails with "command not
-  found" right after a normal install.
+- [x] `install` puts `claude-usage` on the PATH (`~/.local/bin`, daemon 0.1.109, §23.51).
 - [ ] Rotate this Mac's bearer token (`claude-usage configure rotate-token`); it appeared in a
   session transcript. Re-pair the iPhone and the Android deck afterwards.
 - [ ] Remove the leftover literal `192.168.1.249` from this Mac's `bind` list now that `lan`
