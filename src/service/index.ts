@@ -51,6 +51,8 @@ export interface ServiceManager {
   stop(): Promise<void>;
   /** Restart in place — used by `configure port` after rewriting the unit. */
   restart(): Promise<void>;
+  /** launchd only: a detached witness that relaunches the job if a self-restart strands it (§23.50). */
+  armRestartWatchdog?(): void;
   status(): Promise<ServiceState>;
   logTail(n: number): Promise<string[]>;
 }

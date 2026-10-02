@@ -312,6 +312,8 @@ export async function defaultRestart(
     const { createServiceManager } = await import('../service/index.js');
     const service = await createServiceManager({ env });
     if (service.kind !== 'noop') {
+      // §23.50: arm the witness first — the restart request below can die with this process.
+      service.armRestartWatchdog?.();
       await service.restart();
       // The supervisor SIGKILLs us inside this window on any healthy machine.
       await new Promise<void>((resolve) => {
