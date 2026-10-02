@@ -52,7 +52,7 @@ struct RootView: View {
             }
         }
         .animation(.snappy, value: store.toast)
-        .animation(reduceMotion ? nil : .smooth, value: store.connecting?.deviceId)
+        .animation(reduceMotion ? nil : .smooth, value: store.connecting?.id)
         .sensoryFeedback(.error, trigger: store.toastSerial)
         // A limit crossing into warn or critical is felt as well as seen.
         .sensoryFeedback(trigger: store.worstStatus) { old, new in
@@ -78,7 +78,8 @@ private struct ConfirmPairing: ViewModifier {
     func body(content: Content) -> some View {
         content.alert(
             "Pair \(store.pendingInvite?.name ?? "device")?",
-            isPresented: Binding(get: { active && store.pendingInvite != nil }, set: {
+            // Never over "Connecting to <name>…": a link that arrives then waits its turn.
+            isPresented: Binding(get: { active && store.connecting == nil && store.pendingInvite != nil }, set: {
                 if !$0 {
                     store.pendingInvite = nil
                 }

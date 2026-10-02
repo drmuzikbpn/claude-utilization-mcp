@@ -16,8 +16,16 @@
             ProcessInfo.processInfo.arguments.contains(launchArgument)
         }
 
+        /// With `-UsageDeckDemoConnectingHold` the overlay never lands by itself (a 600 s timeout):
+        /// the smoke test proves Skip, not the auto-land, is what closed it.
+        static let holdArgument = "-UsageDeckDemoConnectingHold"
+
         static var opensConnecting: Bool {
-            ProcessInfo.processInfo.arguments.contains(connectingArgument)
+            ProcessInfo.processInfo.arguments.contains(connectingArgument) || holdsConnecting
+        }
+
+        static var holdsConnecting: Bool {
+            ProcessInfo.processInfo.arguments.contains(holdArgument)
         }
 
         /// What studio's `/health` would say once it answers: everything installed.

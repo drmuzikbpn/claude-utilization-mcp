@@ -60,7 +60,7 @@ final class UsageDeckSmokeTests: XCTestCase {
     /// device screen once studio's first load is in.
     @MainActor
     func testConnectingOverlayLandsOnAPopulatedDevice() {
-        relaunch(connecting: true)
+        relaunch(["-UsageDeckDemoConnecting"])
         XCTAssertTrue(element(labelled: "BEGINSWITH 'Connecting to studio'").waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Skip"].exists)
         snap("connecting")
@@ -74,10 +74,12 @@ final class UsageDeckSmokeTests: XCTestCase {
         snap("connected-device")
     }
 
+    /// `-UsageDeckDemoConnectingHold` never lands by itself, so only Skip can close it.
     @MainActor
     func testConnectingOverlaySkipOpensTheDevice() {
-        relaunch(connecting: true)
+        relaunch(["-UsageDeckDemoConnectingHold"])
         XCTAssertTrue(app.buttons["Skip"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["Setup"].exists)
         app.buttons["Skip"].tap()
         XCTAssertTrue(app.staticTexts["Setup"].waitForExistence(timeout: 5))
         XCTAssertFalse(element(labelled: "BEGINSWITH 'Connecting to studio'").exists)
@@ -102,9 +104,9 @@ final class UsageDeckSmokeTests: XCTestCase {
     }
 
     @MainActor
-    private func relaunch(connecting: Bool) {
+    private func relaunch(_ extra: [String]) {
         app.terminate()
-        app.launchArguments = ["-UsageDeckDemo"] + (connecting ? ["-UsageDeckDemoConnecting"] : [])
+        app.launchArguments = ["-UsageDeckDemo"] + extra
         app.launch()
     }
 
