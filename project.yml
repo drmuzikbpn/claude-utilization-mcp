@@ -1,0 +1,169 @@
+# XcodeGen spec. The .xcodeproj is generated (`xcodegen generate`) and never committed.
+name: UsageDeck
+
+options:
+  bundleIdPrefix: com.evenseal
+  deploymentTarget:
+    iOS: "18.0"
+    watchOS: "11.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+packages:
+  UsageCore:
+    path: Packages/UsageCore
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MARKETING_VERSION: "0.1"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+    GENERATE_INFOPLIST_FILE: NO
+
+targets:
+  UsageDeck:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    dependencies:
+      - package: UsageCore
+      - target: UsageWidgets
+      - target: UsageDeckWatch
+    entitlements:
+      path: App/UsageDeck.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.evenseal.usagedeck
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Usage Deck
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIUserInterfaceStyle: Dark
+        NSLocalNetworkUsageDescription: Usage Deck connects to the devices you pair on your local network to read Claude usage and pause sessions.
+        NSCameraUsageDescription: Usage Deck uses the camera to scan the pairing code shown by `claude-usage pair`.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.evenseal.usagedeck.pair
+            CFBundleURLSchemes:
+              - usagedeck
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.evenseal.usagedeck.refresh
+        UIBackgroundModes:
+          - fetch
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.evenseal.usagedeck
+        TARGETED_DEVICE_FAMILY: "1"
+
+  UsageDeckWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - path: Watch
+    dependencies:
+      - package: UsageCore
+      - target: UsageComplications
+    entitlements:
+      path: Watch/UsageDeckWatch.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.evenseal.usagedeck
+    info:
+      path: Watch/Info.plist
+      properties:
+        CFBundleDisplayName: Usage Deck
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: com.evenseal.usagedeck
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.evenseal.usagedeck.watchkitapp
+        TARGETED_DEVICE_FAMILY: "4"
+
+  UsageWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widgets
+    dependencies:
+      - package: UsageCore
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    entitlements:
+      path: Widgets/UsageWidgets.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.evenseal.usagedeck
+    info:
+      path: Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: Usage Deck
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.evenseal.usagedeck.widgets
+        TARGETED_DEVICE_FAMILY: "1"
+
+  UsageComplications:
+    type: app-extension
+    platform: watchOS
+    sources:
+      - path: Complications
+    dependencies:
+      - package: UsageCore
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    entitlements:
+      path: Complications/UsageComplications.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.evenseal.usagedeck
+    info:
+      path: Complications/Info.plist
+      properties:
+        CFBundleDisplayName: Usage Deck
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.evenseal.usagedeck.watchkitapp.complications
+        TARGETED_DEVICE_FAMILY: "4"
+
+schemes:
+  UsageDeck:
+    build:
+      targets:
+        UsageDeck: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  UsageDeckWatch:
+    build:
+      targets:
+        UsageDeckWatch: all
+    run:
+      config: Debug

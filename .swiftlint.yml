@@ -1,0 +1,54 @@
+included:
+  - App
+  - Watch
+  - Widgets
+  - Complications
+  - Packages/UsageCore/Sources
+  - Packages/UsageCore/Tests
+excluded:
+  - Packages/UsageCore/.build
+  - DerivedData
+  - build
+
+disabled_rules:
+  - identifier_name        # i, a, b, x, y in tight loops and comparators
+  - trailing_comma         # swiftformat owns commas
+  - opening_brace          # swiftformat owns wrapping
+  - function_body_length   # the Kotlin port keeps its long, linear functions
+  - type_body_length
+  - file_length
+  - large_tuple
+  - nesting
+  - todo                   # replaced by the stricter custom rule below
+  - optional_data_string_conversion # String(decoding:as:) is the lossless form we want
+
+opt_in_rules:
+  - empty_count
+  - first_where
+  - contains_over_first_not_nil
+  - redundant_nil_coalescing
+
+line_length:
+  warning: 140
+  error: 160
+  ignores_comments: true
+  ignores_urls: true
+  ignores_multiline_strings: true
+
+cyclomatic_complexity:
+  warning: 20
+
+force_try:
+  severity: warning
+
+custom_rules:
+  no_todo:
+    name: "No TODO/FIXME"
+    regex: "\\b(TODO|FIXME)\\b"
+    message: "No TODO/FIXME in committed code: do it, or record it in the spec's deferred list."
+    severity: error
+  no_token_logging:
+    name: "Never log a token"
+    regex: "(print|NSLog|os_log|logger\\.[a-z]+)\\([^)]*\\btoken\\b"
+    message: "Bearer tokens must never be printed or logged."
+    severity: error
