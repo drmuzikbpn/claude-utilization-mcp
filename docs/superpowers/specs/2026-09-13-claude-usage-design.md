@@ -551,6 +551,7 @@ QA from the Android dashboard, and two Macs in daily use.
 | §23.50 | A self-restart needs a witness that outlives it (2026-10-01) |
 | §23.51 | `claude-usage` on the PATH, and `pair` where you will see it (2026-10-02) |
 | §23.52 | The pair page: deck theme, copy link, "Pairing successful" (2026-10-02) |
+| §23.53 | `rotate-token` restarts the daemon (2026-10-02) |
 
 15 findings survived a 3-vote adversarial review (56 unique candidates). Where Part I
 conflicts with this section, this section wins.
@@ -1756,3 +1757,13 @@ at `<data home>/claude-usage/current/bin/claude-usage` and nothing put it on the
   Status errors (a daemon older than this) are ignored and Enter still ends the command.
 
 **Test-first, per Part III:** `test/server/pairing.test.ts`, `test/install/pair.test.ts`.
+
+### §23.53 `rotate-token` restarts the daemon (2026-10-02)
+
+The daemon reads `auth.token` once at startup and keeps it in memory, so
+`configure rotate-token` used to write a new token while the running daemon went on accepting
+the old one until its next restart — a rotation that did nothing. It now restarts the service
+(when one is installed), like `port` and `lan`. Every paired device must then re-pair with
+`claude-usage pair`.
+
+**Test-first, per Part III:** `test/install/configure.test.ts`.
