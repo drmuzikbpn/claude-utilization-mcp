@@ -230,6 +230,13 @@ export function validateConfig(input: unknown): Config {
       loopback: reqBool(tlsRaw, 'loopback', 'tls.loopback', d.tls.loopback),
     },
   };
+  // §23.45: HTTPS needs a port of its own.
+  if (config.tls.port !== null && config.port !== 0 && config.tls.port === config.port) {
+    throw new ConfigError('config key "tls.port" must differ from "port" — HTTP and HTTPS cannot share a port', 'tls.port');
+  }
+  if (config.tls.port === null && config.port === 65_535) {
+    throw new ConfigError('config key "tls.port" must be set when "port" is 65535 — the default port + 1 does not exist', 'tls.port');
+  }
   return config;
 }
 

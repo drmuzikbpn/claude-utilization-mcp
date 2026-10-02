@@ -1,6 +1,6 @@
 import { isIP } from 'node:net';
 import { networkInterfaces } from 'node:os';
-import { loadConfig, type Config } from '../config.js';
+import { ConfigError, loadConfig, validateConfig, type Config } from '../config.js';
 import { buildUnit, defaultExec, type ExecRunner } from '../service/index.js';
 import { addMcpServer, removeMcpServer } from './claude-json.js';
 import {
@@ -314,6 +314,16 @@ export async function runConfigure(argv: readonly string[], io: InstallIO): Prom
       return 1;
     }
 
+    // Never save a config the daemon would refuse to start with (e.g. tls.port collisions).
+    try {
+      validateConfig(config);
+    } catch (err) {
+      if (err instanceof ConfigError) {
+        io.stderr(`claude-usage configure: ${err.message}\n`);
+        return 1;
+      }
+      throw err;
+    }
     // `bind` is only read at startup (§23.44), so a changed one needs a restart too.
     if (JSON.stringify(config.bind) !== bindBefore) restart = true;
     persistConfig(config, ctx.configDir);

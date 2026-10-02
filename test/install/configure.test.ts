@@ -230,6 +230,14 @@ describe('scalar settings', () => {
     expect(seen).toEqual([50_003]);
   });
 
+  it('refuses a port that collides with tls.port, and writes nothing', async () => {
+    const b = bed();
+    await b.configure(['port', '47291']);
+    expect(await b.configure(['port', '65535'])).toBe(1);
+    expect(b.err).toContain('tls.port');
+    expect(config(b)['port']).toBe(47_291);
+  });
+
   it('rejects a bad port', async () => {
     const b = bed();
     expect(await b.configure(['port', 'nope'])).toBe(1);

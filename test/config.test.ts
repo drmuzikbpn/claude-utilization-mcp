@@ -97,6 +97,8 @@ describe('validation', () => {
     ['autoUpdate.enabled', { autoUpdate: { enabled: 1 } }, 'autoUpdate.enabled'],
     ['tls.port', { tls: { port: 70_000 } }, 'tls.port'],
     ['tls.loopback', { tls: { loopback: 'yes' } }, 'tls.loopback'],
+    ['tls.port equal to port', { port: 47_291, tls: { port: 47_291 } }, 'tls.port'],
+    ['tls.port defaulting past 65535', { port: 65_535 }, 'tls.port'],
   ];
 
   for (const [label, input, key] of cases) {
