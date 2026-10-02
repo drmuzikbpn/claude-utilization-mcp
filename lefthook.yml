@@ -1,0 +1,13 @@
+# Installed with `lefthook install`. Never bypass with --no-verify.
+pre-commit:
+  parallel: true
+  commands:
+    swiftformat:
+      glob: "*.swift"
+      run: swiftformat --lint {staged_files}
+    swiftlint:
+      glob: "*.swift"
+      run: swiftlint lint --strict --quiet {staged_files}
+    usagecore-build:
+      glob: "Packages/UsageCore/**/*.swift"
+      run: swift build --package-path Packages/UsageCore

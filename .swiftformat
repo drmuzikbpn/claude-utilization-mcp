@@ -1,0 +1,11 @@
+--swiftversion 6.0
+--exclude Packages/UsageCore/.build,DerivedData,build,*.xcodeproj
+--indent 4
+--maxwidth 140
+--wraparguments before-first
+--wrapparameters before-first
+--wrapcollections before-first
+--commas always
+--self remove
+--stripunusedargs closure-only
+--disable wrapMultilineStatementBraces,redundantReturn,preferKeyPath
