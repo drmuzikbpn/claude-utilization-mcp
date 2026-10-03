@@ -6,9 +6,11 @@ import com.evenseal.usagedeck.core.Clock
 import com.evenseal.usagedeck.core.SystemClock
 import com.evenseal.usagedeck.core.alerts.Alert
 import com.evenseal.usagedeck.core.alerts.AlertKind
+import com.evenseal.usagedeck.core.model.ActivityOrder
 import com.evenseal.usagedeck.core.model.BurnHistory
 import com.evenseal.usagedeck.core.model.Health
 import com.evenseal.usagedeck.core.model.PauseMode
+import com.evenseal.usagedeck.core.model.ProjectView
 import com.evenseal.usagedeck.core.model.TeamState
 import com.evenseal.usagedeck.core.pause.Escalation
 import com.evenseal.usagedeck.core.pause.PauseTarget
@@ -138,6 +140,17 @@ class DeckViewModel(
 
     fun projectRate(machineId: String, key: String): Double =
         burn.ratePerMinute(BurnKeys.project(machineId, key), _now.value)
+
+    /** Live projects for the portrait home, busiest first, by the same rates their rows show. */
+    fun projectsByActivity(team: TeamState): List<ProjectView> = ActivityOrder.projects(
+        team.projects,
+        projectRate = { projectRate(it.machineId, it.key) },
+        sessionRate = { project, session -> rate(project.machineId, session.sessionId) }
+    )
+
+    /** Every live session for the landscape home, busiest first. */
+    fun sessionsByActivity(team: TeamState): List<ActivityOrder.Row> =
+        ActivityOrder.sessions(team.projects) { project, session -> rate(project.machineId, session.sessionId) }
 
     fun series(machineId: String, sessionId: String, minutes: Int = 30, buckets: Int = 16): List<Double> =
         burn.series(BurnKeys.session(machineId, sessionId), _now.value, Duration.ofMinutes(minutes.toLong()), buckets)

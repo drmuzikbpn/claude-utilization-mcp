@@ -58,7 +58,6 @@ import com.evenseal.usagedeck.ui.components.RepairCard
 import com.evenseal.usagedeck.ui.components.SessionRow
 import com.evenseal.usagedeck.ui.components.StatusBar
 import com.evenseal.usagedeck.ui.components.liftOnReorder
-import com.evenseal.usagedeck.ui.components.rowRank
 import com.evenseal.usagedeck.ui.components.usersWithData
 import com.evenseal.usagedeck.ui.ledger.homeNavigation
 import com.evenseal.usagedeck.ui.theme.DeckColors
@@ -121,11 +120,10 @@ fun WideDockScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
                     )
                 } else {
                     ColumnHeader(liveCount = team.liveSessionCount)
-                    // Rank by project slot then session slot, so a session arriving in one project
-                    // does not read as a move for every row of the projects below it.
-                    val rows = team.projects.filter { it.sessions.isNotEmpty() }.flatMapIndexed { rank, project ->
-                        project.sessions.mapIndexed { i, session -> Triple(project, session, rowRank(rank, i)) }
-                    }
+                    // One flat list, busiest session first; a row's rank is its place in it.
+                    val rows = vm.sessionsByActivity(
+                        team
+                    ).mapIndexed { rank, row -> Triple(row.project, row.session, rank) }
                     LazyColumn(modifier = Modifier.weight(1f)) {
                         items(
                             rows,
