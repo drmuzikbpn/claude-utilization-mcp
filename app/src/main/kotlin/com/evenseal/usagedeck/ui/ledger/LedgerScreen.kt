@@ -138,7 +138,7 @@ fun LedgerScreen(vm: DeckViewModel, onOpen: (Route) -> Unit) {
                 LazyColumn(modifier = Modifier.weight(1f)) {
                     // Rows rank by project so folding a block or a new session elsewhere does not
                     // register as a move for everything beneath it.
-                    team.projects.filter { it.sessions.isNotEmpty() }.forEachIndexed { rank, project ->
+                    vm.projectsByActivity(team).forEachIndexed { rank, project ->
                         val open = DeckViewModel.projectId(project.machineId, project.key) in expanded
                         item(key = "h:${project.machineId}:${project.key}") {
                             ProjectHeader(
