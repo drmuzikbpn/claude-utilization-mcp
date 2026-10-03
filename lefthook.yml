@@ -11,3 +11,8 @@ pre-commit:
     usagecore-build:
       glob: "Packages/UsageCore/**/*.swift"
       run: swift build --package-path Packages/UsageCore
+
+pre-push:
+  commands:
+    marketing-version:
+      run: ci/check-version.sh
