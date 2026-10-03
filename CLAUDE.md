@@ -33,6 +33,11 @@ swift scripts/make-icon.swift App/Assets.xcassets/AppIcon.appiconset/icon-1024.p
 - Build number = `GITHUB_RUN_NUMBER * 10 + GITHUB_RUN_ATTEMPT`, which only ever goes up
   (the commit count did not: a squash merge shortened history and build 28 followed 29).
   TestFlight rejects a non-increasing number. Version = `MARKETING_VERSION` (`0.1`).
+- `MARKETING_VERSION` must equal the App Store version that is waiting for a build (0.x until the
+  first public release, which is 1.0): a build of any other version cannot be attached to it, and
+  the app page then shows the placeholder icon. lefthook's pre-push runs `ci/check-version.sh`
+  (`ci/asc.py version`, credentials through `op run`); it blocks on a mismatch and only reports
+  when it cannot check.
 - Signing: Debug automatic; Release manual — "Apple Distribution: Even Seal Productions LLC
   (YTHBPWUU3Z)" + four App Store profiles named `UsageDeck AppStore`, `UsageWidgets AppStore`,
   `UsageDeckWatch AppStore`, `UsageComplications AppStore` (all carry
