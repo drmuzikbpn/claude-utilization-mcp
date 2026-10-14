@@ -12,7 +12,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evenseal.usagedeck.BuildConfig
 import com.evenseal.usagedeck.core.daemon.DaemonException
 import com.evenseal.usagedeck.core.pairing.PairingInvite
+import com.evenseal.usagedeck.kiosk.ExitPin
 import com.evenseal.usagedeck.service.DeckGraph
+import com.evenseal.usagedeck.ui.components.Format
 import com.evenseal.usagedeck.ui.components.usersWithData
 import com.evenseal.usagedeck.ui.machine.MachineScreen
 import com.evenseal.usagedeck.ui.pairing.PairingScreen
@@ -67,10 +69,7 @@ internal fun SettingsRoute(graph: DeckGraph, onBack: () -> Unit, onWifi: () -> U
         version = BuildConfig.VERSION_NAME,
         updateState = label,
         onUpdate = { transform -> graph.settings.update(transform) },
-        onSetPin = { pin ->
-            graph.exitPin.set(pin)
-            graph.settings.update { it.copy(pinSet = true) }
-        },
+        onSetPin = { current, new -> setOrChangePin(graph, current, new) },
         onCheckUpdate = { checks?.let { c -> scope.launch { c.checkNow() } } },
         onBack = onBack,
         wifiLabel = if (wifi.connected) wifi.ssid.orEmpty() else "not connected",
@@ -136,6 +135,28 @@ private suspend fun redeem(graph: DeckGraph, invite: PairingInvite, replacing: S
     } catch (e: DaemonException) {
         e.userMessage()
     }
+
+/**
+ * The first PIN is simply set. After that the current PIN is required, and it goes through
+ * `ExitPin.verify`, so guessing here is counted and locked out exactly like guessing at the gate.
+ * Returns what to tell the user, or null when the new PIN is saved.
+ */
+internal fun setOrChangePin(graph: DeckGraph, current: String?, new: String): String? {
+    val verdict = if (graph.exitPin.isSet()) {
+        graph.exitPin.change(current.orEmpty(), new)
+    } else {
+        graph.exitPin.set(new)
+        ExitPin.Result.Ok
+    }
+    return when (verdict) {
+        ExitPin.Result.Ok -> {
+            graph.settings.update { it.copy(pinSet = true) }
+            null
+        }
+        is ExitPin.Result.Wrong -> "Current PIN is wrong · ${verdict.remaining} left"
+        is ExitPin.Result.LockedOut -> "Locked out for ${Format.countdown(verdict.until, graph.clock.now())}"
+    }
+}
 
 private fun Context.openCaptivePortal() {
     runCatching {

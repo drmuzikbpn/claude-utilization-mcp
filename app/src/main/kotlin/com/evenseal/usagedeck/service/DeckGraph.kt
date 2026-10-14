@@ -26,6 +26,7 @@ import com.evenseal.usagedeck.core.pairing.PairingClient
 import com.evenseal.usagedeck.core.pause.PauseController
 import com.evenseal.usagedeck.core.update.ReleaseChecker
 import com.evenseal.usagedeck.core.update.Version
+import com.evenseal.usagedeck.kiosk.AndroidUptime
 import com.evenseal.usagedeck.kiosk.ExitPin
 import com.evenseal.usagedeck.kiosk.KioskManager
 import com.evenseal.usagedeck.kiosk.ModeController
@@ -106,7 +107,7 @@ class DeckGraph(private val app: Application) {
 
     val kiosk: KioskManager = KioskManager(app)
 
-    val exitPin: ExitPin = ExitPin(encryptedPrefs(app, PIN_PREFS), clock)
+    val exitPin: ExitPin = ExitPin(encryptedPrefs(app, PIN_PREFS), clock, AndroidUptime(app))
 
     val burn: BurnHistory = BurnHistory()
 

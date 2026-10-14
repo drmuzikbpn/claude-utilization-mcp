@@ -56,7 +56,7 @@ fun SettingsScreen(
     version: String,
     updateState: String,
     onUpdate: ((Settings) -> Settings) -> Unit,
-    onSetPin: (String) -> Unit,
+    onSetPin: (current: String?, new: String) -> String?,
     onCheckUpdate: () -> Unit,
     onBack: () -> Unit,
     wifiLabel: String = "",
@@ -356,34 +356,66 @@ private fun HourPicker(label: String, time: LocalTime, onChange: (LocalTime) -> 
     }
 }
 
+/**
+ * The first PIN needs only itself. Changing one needs the current PIN as well: [onSetPin] gets
+ * it, checks it under the gate's own attempt counter, and returns what to show if it refused.
+ */
 @Composable
-private fun PinField(isSet: Boolean, onSetPin: (String) -> Unit) {
+private fun PinField(isSet: Boolean, onSetPin: (current: String?, new: String) -> String?) {
+    var current by remember { mutableStateOf("") }
     var entry by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf<String?>(null) }
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)) {
         Text(
-            text = if (isSet) "A PIN is set. Enter six digits to change it." else "No PIN set yet.",
+            text = if (isSet) {
+                "A PIN is set. To change it, enter the current PIN, then six new digits."
+            } else {
+                "No PIN set yet. Set one now: until then anyone at this screen can choose it."
+            },
             color = DeckColors.muted,
             fontFamily = DeckType.text,
             fontSize = 12.sp
         )
+        if (isSet) {
+            OutlinedTextField(
+                modifier = Modifier.semantics { contentDescription = CURRENT_PIN_FIELD },
+                value = current,
+                onValueChange = { current = it.filter(Char::isDigit).take(PIN_LENGTH) },
+                label = { Text("Current PIN") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
+            )
+        }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
                 modifier = Modifier.semantics { contentDescription = PIN_FIELD },
                 value = entry,
                 onValueChange = { entry = it.filter(Char::isDigit).take(PIN_LENGTH) },
+                label = { Text(if (isSet) "New PIN" else "PIN") },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
             )
             TextButton(
-                enabled = entry.length == PIN_LENGTH,
+                enabled = entry.length == PIN_LENGTH && (!isSet || current.length == PIN_LENGTH),
                 onClick = {
-                    onSetPin(entry)
+                    message = onSetPin(current.takeIf { isSet }, entry) ?: "PIN saved."
                     entry = ""
+                    current = ""
                 }
             ) {
                 Text("Save", color = DeckColors.accent, fontFamily = DeckType.text)
             }
+        }
+        message?.let {
+            Text(
+                modifier = Modifier.semantics { contentDescription = PIN_MESSAGE },
+                text = it,
+                color = DeckColors.fg,
+                fontFamily = DeckType.text,
+                fontSize = 12.sp
+            )
         }
     }
 }
@@ -392,6 +424,8 @@ const val WARN_SLIDER = "warn threshold"
 const val CRITICAL_SLIDER = "critical threshold"
 const val DIM_SLIDER = "night dim"
 const val PIN_FIELD = "exit pin field"
+const val CURRENT_PIN_FIELD = "current exit pin field"
+const val PIN_MESSAGE = "exit pin message"
 
 private const val PIN_LENGTH = 6
 private const val PERCENT = 100

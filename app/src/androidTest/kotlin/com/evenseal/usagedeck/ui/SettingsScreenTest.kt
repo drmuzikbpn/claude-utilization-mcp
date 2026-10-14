@@ -50,7 +50,7 @@ class SettingsScreenTest {
                     version = "0.1.417+abc1234",
                     updateState = "up to date",
                     onUpdate = { transform -> state = transform(state).normalised() },
-                    onSetPin = {},
+                    onSetPin = { _, _ -> null },
                     onCheckUpdate = {},
                     onBack = {},
                     users = users
