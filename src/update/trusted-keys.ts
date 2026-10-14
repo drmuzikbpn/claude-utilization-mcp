@@ -41,5 +41,5 @@ export interface TrustedKey {
 export const RELEASE_PUBLIC_KEY_PLACEHOLDER = 'RELEASE_PUBLIC_KEY_PLACEHOLDER';
 
 export const TRUSTED_RELEASE_KEYS: readonly TrustedKey[] = [
-  { id: 'release-2026-10', publicKey: RELEASE_PUBLIC_KEY_PLACEHOLDER },
+  { id: 'release-2026-10', publicKey: 'MCowBQYDK2VwAyEAVqlqxVV0fc3okzP00M4i3i+VTOWMDG7uUxvI6OJKohE=' },
 ];
