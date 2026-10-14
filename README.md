@@ -47,9 +47,9 @@ synthetic.*
 
 | Module | What it is | Tests |
 | --- | --- | --- |
-| `core` | Pure Kotlin/JVM: model, daemon client, SSE, pinned TLS + pairing redeem, team merge, pause state machine, alerts, update check | 193 |
-| `app` | Android: kiosk, wifi, pairing, Compose UI, foreground service, installer | 155 unit + 42 instrumented |
-| `fakedaemon` | Ktor server implementing the daemon contract with scripted scenarios | 19 |
+| `core` | Pure Kotlin/JVM: model, daemon client, SSE, pinned TLS + pairing redeem, team merge, pause state machine, alerts, update check | 242 |
+| `app` | Android: kiosk, wifi, pairing, Compose UI, foreground service, installer | 239 unit + 69 instrumented |
+| `fakedaemon` | Ktor server implementing the daemon contract (pinned HTTPS, pairing) with scripted scenarios | 30 |
 
 ## Build and run
 
