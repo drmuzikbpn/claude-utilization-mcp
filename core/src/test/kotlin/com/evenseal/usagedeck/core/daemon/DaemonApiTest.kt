@@ -5,6 +5,7 @@ package com.evenseal.usagedeck.core.daemon
 
 import com.evenseal.usagedeck.core.model.MachineConfig
 import com.evenseal.usagedeck.core.model.PauseMode
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
@@ -12,6 +13,8 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -45,7 +48,14 @@ class DaemonApiTest {
                 runBlocking { OkHttpDaemonApi(config, OkHttpClient()).health() }
             }
             assertEquals("network", e.code)
-            assertEquals(0, plain.requestCount)
+            // The TLS ClientHello can reach a plain server, which may log it as an
+            // unparseable request (it does on Linux). What must never arrive is HTTP, and
+            // above all the bearer.
+            val seen = plain.takeRequest(1, TimeUnit.SECONDS)
+            if (seen != null) {
+                assertNull(seen.getHeader("Authorization"))
+                assertFalse(seen.requestLine.contains("HTTP/1."))
+            }
         } finally {
             plain.shutdown()
         }
