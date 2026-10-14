@@ -17,13 +17,17 @@ public final class Endpoints: Sendable {
     }
 
     private let state: Mutex<State>
+    /// The fingerprint these addresses are pinned to: a refused certificate is only ever this
+    /// device's when the refusal was for this pin.
+    private let pin: String?
 
-    public init(_ urls: [URL]) {
+    public init(_ urls: [URL], pin: String? = nil) {
         state = Mutex(State(urls: urls, preferred: nil))
+        self.pin = pin
     }
 
     public convenience init(record: DeviceRecord) {
-        self.init(record.baseURLs)
+        self.init(record.baseURLs, pin: record.fingerprint)
     }
 
     /// Candidates in the order to try them now.
@@ -77,7 +81,7 @@ public final class Endpoints: Sendable {
                 if Task.isCancelled {
                     throw CancellationError()
                 }
-                let mapped = DaemonError.from(transport: error)
+                let mapped = DaemonError.from(transport: error, pin: pin)
                 DiagLog.shared.log(
                     .network,
                     "\(DiagLog.host(base.host() ?? "?")) failed: \(DiagLog.describe(error)) → \(DiagLog.safeCode(mapped.code))"

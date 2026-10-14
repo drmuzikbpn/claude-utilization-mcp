@@ -58,6 +58,8 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
     enum Outcome: Sendable {
         case respond(Response)
         case fail(URLError.Code)
+        /// Answers 302 with a `Location`, the way a server asking to be followed elsewhere does.
+        case redirect(to: URL)
     }
 
     typealias Handler = @Sendable (URLRequest) -> Outcome
@@ -74,9 +76,14 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     static func session() -> URLSession {
+        URLSession(configuration: configuration())
+    }
+
+    /// For sessions that need their own delegate (`PinnedTrust.session(fingerprint:configuration:)`).
+    static func configuration() -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [StubURLProtocol.self]
-        return URLSession(configuration: configuration)
+        return configuration
     }
 
     override static func canInit(with _: URLRequest) -> Bool {
@@ -101,6 +108,21 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         switch handler(recorded) {
         case let .fail(code):
             client?.urlProtocol(self, didFailWithError: URLError(code))
+        case let .redirect(target):
+            let found = HTTPURLResponse(
+                url: request.url ?? target,
+                statusCode: 302,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Location": target.absoluteString]
+            )
+            if let found {
+                var next = request
+                next.url = target
+                client?.urlProtocol(self, wasRedirectedTo: next, redirectResponse: found)
+                // What a server sends with a 302 when the client does not follow it.
+                client?.urlProtocol(self, didReceive: found, cacheStoragePolicy: .notAllowed)
+            }
+            client?.urlProtocolDidFinishLoading(self)
         case let .respond(response):
             let http = HTTPURLResponse(
                 url: request.url ?? URL(fileURLWithPath: "/"),

@@ -73,4 +73,49 @@ struct EventStreamTests {
         let items = await collect(stream(addrs: [uniqueHost("dead")]))
         #expect(items == [.closed(.network)])
     }
+
+    // MARK: - size caps
+
+    @Test func aLineOverTheCapEndsTheStreamWithAnError() async {
+        let body = "event: heartbeat\ndata: {}\n\nevent: snapshot\ndata: " + String(repeating: "x", count: 5000) + "\n\n"
+        StubURLProtocol.register(host: host) { _ in .respond(.init(body: Data(body.utf8))) }
+        let config = DeviceConfig(record: record(addrs: [host]), token: "tok")
+        let stream = EventStream(
+            config: config,
+            session: StubURLProtocol.session(),
+            endpoints: Endpoints(record: config.record),
+            limits: SSEParser.Limits(line: 1024, event: 4096)
+        )
+        let items = await collect(stream)
+        #expect(items.first == .open)
+        #expect(items.contains(.event(.emptyHeartbeat)), "what came before the oversized line still counts")
+        guard case let .closed(error?) = items.last else { Issue.record("no error"); return }
+        #expect(error.code == "bad_response")
+        #expect(items.count == 3)
+    }
+
+    @Test func theParserStopsAtAnOversizedLine() {
+        var parser = SSEParser(limits: .init(line: 16, event: 64))
+        for byte in "data: \(String(repeating: "y", count: 40))\n\n".utf8 {
+            #expect(parser.feed(byte) == nil)
+        }
+        #expect(parser.overflowed)
+    }
+
+    @Test func theParserStopsAtAnOversizedEvent() {
+        var parser = SSEParser(limits: .init(line: 32, event: 64))
+        var frames = 0
+        for _ in 0 ..< 10 {
+            for byte in "data: 0123456789\n".utf8 where parser.feed(byte) != nil {
+                frames += 1
+            }
+        }
+        #expect(parser.overflowed)
+        #expect(frames == 0)
+    }
+
+    @Test func ordinaryEventsNeverTripTheDefaultCaps() {
+        #expect(SSEParser.frames(in: Fixtures.text("stream.sse")).count == 6)
+        #expect(SSEParser.Limits.standard.line >= 1024 * 1024)
+    }
 }

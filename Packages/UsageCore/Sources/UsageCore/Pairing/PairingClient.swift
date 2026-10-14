@@ -95,8 +95,7 @@ public struct PairingClient: Sendable {
             request.httpBody = body
             request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
             request.setValue("application/json", forHTTPHeaderField: "Accept")
-            let (data, raw) = try await session.data(for: request)
-            guard let http = raw as? HTTPURLResponse else { throw DaemonError.network }
+            let (data, http) = try await BoundedBody.data(session, for: request, limit: BoundedBody.errorLimit)
             guard (200 ..< 300).contains(http.statusCode) else {
                 throw DaemonError.from(status: http.statusCode, body: data)
             }

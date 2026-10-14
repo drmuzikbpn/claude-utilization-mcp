@@ -33,6 +33,78 @@ struct DaemonAPITests {
         #expect(request.url?.path() == "/v1/sessions")
     }
 
+    // MARK: - what a device may not make this app do
+
+    func pinned(maxBody: Int = URLSessionDaemonAPI.maxBody) -> URLSessionDaemonAPI {
+        let config = DeviceConfig(record: record(addrs: [host]), token: "tok")
+        let session = PinnedTrust.session(fingerprint: config.record.fingerprint, configuration: StubURLProtocol.configuration())
+        return URLSessionDaemonAPI(config: config, session: session, maxBody: maxBody)
+    }
+
+    @Test func aRedirectIsNeverFollowed() async throws {
+        let elsewhere = uniqueHost("elsewhere")
+        StubURLProtocol.register(host: elsewhere) { _ in .respond(.init(body: Fixtures.data("health.json"))) }
+        let target = try #require(URL(string: "https://\(elsewhere):47292/health"))
+        StubURLProtocol.register(host: host) { _ in .redirect(to: target) }
+        await #expect(throws: DaemonError(code: "http_302", httpStatus: 302)) {
+            _ = try await pinned().health()
+        }
+        #expect(StubURLProtocol.recorded(host: elsewhere).isEmpty, "the bearer never follows a device's redirect")
+        #expect(StubURLProtocol.recorded(host: host).count == 1)
+    }
+
+    @Test func aSessionWithoutTheDelegateWouldHaveFollowedIt() async throws {
+        // The control for the test above: the stub really does redirect.
+        let elsewhere = uniqueHost("elsewhere")
+        StubURLProtocol.register(host: elsewhere) { _ in .respond(.init(body: Fixtures.data("health.json"))) }
+        let target = try #require(URL(string: "https://\(elsewhere):47292/health"))
+        StubURLProtocol.register(host: host) { _ in .redirect(to: target) }
+        _ = try? await api().health()
+        #expect(StubURLProtocol.recorded(host: elsewhere).count == 1)
+    }
+
+    @Test func healthAlwaysCarriesTheBearer() async throws {
+        // The daemon answers /health without a bearer with liveness only; identity and install
+        // state (the setup check) need it.
+        serve(Fixtures.data("health-v2.json"))
+        _ = try await api().health()
+        let request = try #require(StubURLProtocol.recorded(host: host).first)
+        #expect(request.url?.path() == "/health")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer tok")
+    }
+
+    @Test func aBodyOverTheCapIsRefusedNotBuffered() async {
+        serve(Data(repeating: UInt8(ascii: " "), count: 2000) + Fixtures.data("summary.json"))
+        await #expect(throws: DaemonError.self) { _ = try await pinned(maxBody: 1024).summary() }
+        do {
+            _ = try await pinned(maxBody: 1024).summary()
+        } catch let error as DaemonError {
+            #expect(error.code == "bad_response")
+            #expect(!error.isTransport, "another address would only send the same thing")
+        } catch {
+            Issue.record("unexpected \(error)")
+        }
+    }
+
+    @Test func aBodyUnderTheCapStillParses() async throws {
+        serve(Fixtures.data("summary.json"))
+        _ = try await pinned(maxBody: 1024 * 1024).summary()
+    }
+
+    @Test func anOversizedErrorBodyStillYieldsItsStatus() async {
+        serve(Data(repeating: UInt8(ascii: "x"), count: 200_000), status: 500)
+        await #expect(throws: DaemonError(code: "http_500", httpStatus: 500)) { _ = try await pinned().summary() }
+    }
+
+    @Test func anAbsurdETagIsDropped() async throws {
+        serve(Fixtures.data("sessions.json"), headers: ["ETag": String(repeating: "e", count: 5000)])
+        guard case let .changed(_, etag) = try await pinned().sessions(ifNoneMatch: nil) else {
+            Issue.record("expected changed")
+            return
+        }
+        #expect(etag == nil)
+    }
+
     @Test func notModifiedYieldsUnchangedAndSendsIfNoneMatch() async throws {
         serve(Data(), status: 304)
         #expect(try await api().sessions(ifNoneMatch: #"W/"812""#) == .unchanged)
@@ -162,8 +234,9 @@ struct EndpointsTests {
     }
 
     @Test func everyCandidateWithTheWrongCertificateIsAPinningFailure() async {
-        PinRejections.shared.note()
-        let endpoints = Endpoints([a, b])
+        let pin = "pin-\(UUID().uuidString)"
+        PinRejections.shared.note(pin: pin)
+        let endpoints = Endpoints([a, b], pin: pin)
         await #expect(throws: DaemonError(code: "pinning")) {
             try await endpoints.first { _ -> Int in throw URLError(.cancelled) }
         }
@@ -180,12 +253,42 @@ struct EndpointsTests {
         // A stream being replaced or a scene going to the background also cancels requests; that
         // marked a healthy device "Needs re-pair" (found on the simulator, 2026-10-01).
         let ledger = PinRejections()
-        #expect(DaemonError.from(transport: URLError(.cancelled), rejections: ledger) == .network)
-        ledger.note()
-        #expect(DaemonError.from(transport: URLError(.cancelled), rejections: ledger) == DaemonError(code: "pinning"))
-        ledger.note(at: Date().addingTimeInterval(-PinRejections.window - 1))
-        #expect(DaemonError.from(transport: URLError(.cancelled), rejections: ledger) == .network)
+        #expect(DaemonError.from(transport: URLError(.cancelled), pin: "aa", rejections: ledger) == .network)
+        ledger.note(pin: "aa")
+        #expect(DaemonError.from(transport: URLError(.cancelled), pin: "aa", rejections: ledger) == DaemonError(code: "pinning"))
+        ledger.note(pin: "aa", at: Date().addingTimeInterval(-PinRejections.window - 1))
+        #expect(DaemonError.from(transport: URLError(.cancelled), pin: "aa", rejections: ledger) == .network)
         #expect(DaemonError.from(transport: URLError(.serverCertificateUntrusted), rejections: ledger) == DaemonError(code: "pinning"))
+    }
+
+    @Test func aRefusalOnOneDeviceNeverMarksAnother() async {
+        let ledger = PinRejections()
+        ledger.note(pin: "AA")
+        #expect(ledger.recent(pin: "aa"), "fingerprints compare without case")
+        #expect(!ledger.recent(pin: "bb"))
+        #expect(DaemonError.from(transport: URLError(.cancelled), pin: "bb", rejections: ledger) == .network)
+        // A cancellation nobody can tie to a device is never a pin failure.
+        #expect(DaemonError.from(transport: URLError(.cancelled), rejections: ledger) == .network)
+
+        // Through the candidate list: studio's refusal a moment ago, laptop's request cancelled.
+        let studio = "pin-\(UUID().uuidString)"
+        let laptop = "pin-\(UUID().uuidString)"
+        PinRejections.shared.note(pin: studio)
+        await #expect(throws: DaemonError.network) {
+            try await Endpoints([a], pin: laptop).first { _ -> Int in throw URLError(.cancelled) }
+        }
+        await #expect(throws: DaemonError(code: "pinning")) {
+            try await Endpoints([a], pin: studio).first { _ -> Int in throw URLError(.cancelled) }
+        }
+    }
+
+    @Test func theLedgerForgetsOldRefusals() {
+        let ledger = PinRejections()
+        for n in 0 ..< 500 {
+            ledger.note(pin: "old-\(n)", at: Date().addingTimeInterval(-60))
+        }
+        ledger.note(pin: "new")
+        #expect(ledger.count == 1)
     }
 
     @Test func recordBuildsHTTPSBaseURLsAndBracketsIPv6() {

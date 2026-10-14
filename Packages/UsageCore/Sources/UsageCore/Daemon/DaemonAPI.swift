@@ -24,14 +24,19 @@ public protocol DaemonAPI: Sendable {
 /// `DaemonAPI` over a pinned `URLSession`, trying each of the device's candidate addresses.
 public final class URLSessionDaemonAPI: DaemonAPI {
     public static let requestTimeout: TimeInterval = 6
+    /// The most a device may send in one answer. A busy daemon's sessions list is tens of kilobytes.
+    public static let maxBody = 4 * 1024 * 1024
+    static let maxETag = 256
 
     private let token: String
     private let session: URLSession
+    private let maxBody: Int
     public let endpoints: Endpoints
 
-    public init(config: DeviceConfig, session: URLSession, endpoints: Endpoints? = nil) {
+    public init(config: DeviceConfig, session: URLSession, endpoints: Endpoints? = nil, maxBody: Int = URLSessionDaemonAPI.maxBody) {
         token = config.token
         self.session = session
+        self.maxBody = maxBody
         self.endpoints = endpoints ?? Endpoints(record: config.record)
     }
 
@@ -52,7 +57,8 @@ public final class URLSessionDaemonAPI: DaemonAPI {
         if response.statusCode == 304 {
             return .unchanged
         }
-        return try .changed(decode(data), etag: response.value(forHTTPHeaderField: "ETag"))
+        let etag = response.value(forHTTPHeaderField: "ETag").flatMap { $0.utf8.count <= Self.maxETag ? $0 : nil }
+        return try .changed(decode(data), etag: etag)
     }
 
     public func tokensByProjectToday() async throws -> TokensDTO {
@@ -108,8 +114,7 @@ public final class URLSessionDaemonAPI: DaemonAPI {
                 request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
             }
             configure(&request)
-            let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse else { throw DaemonError.network }
+            let (data, http) = try await BoundedBody.data(session, for: request, limit: maxBody)
             guard (200 ..< 300).contains(http.statusCode) || http.statusCode == 304 else {
                 throw DaemonError.from(status: http.statusCode, body: data)
             }

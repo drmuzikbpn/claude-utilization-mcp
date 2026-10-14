@@ -21,16 +21,38 @@ public struct SSEFrame: Sendable, Equatable {
 /// It works on bytes rather than `AsyncBytes.lines` on purpose: `lines` drops empty lines, and
 /// the empty line is exactly what dispatches an event.
 public struct SSEParser: Sendable {
+    /// The most one line and one event's joined data may hold. A device that sends more is not
+    /// speaking the protocol; the parser stops (`overflowed`) instead of growing without bound.
+    public struct Limits: Sendable, Equatable {
+        public var line: Int
+        public var event: Int
+
+        public init(line: Int, event: Int) {
+            self.line = line
+            self.event = event
+        }
+
+        /// A snapshot event is one `data:` line holding everything a device knows.
+        public static let standard = Limits(line: 4 * 1024 * 1024, event: 4 * 1024 * 1024)
+    }
+
+    private let limits: Limits
+    /// True once a line or an event went over its cap. Nothing is parsed after that.
+    public private(set) var overflowed = false
+    private var eventBytes = 0
     private var line: [UInt8] = []
     private var lastWasCR = false
     private var event: String?
     private var data: [String] = []
     private var id: String?
 
-    public init() {}
+    public init(limits: Limits = .standard) {
+        self.limits = limits
+    }
 
     /// Consumes one byte; returns a frame when that byte completed one.
     public mutating func feed(_ byte: UInt8) -> SSEFrame? {
+        guard !overflowed else { return nil }
         switch byte {
         case 0x0A: // \n
             if lastWasCR {
@@ -43,6 +65,12 @@ public struct SSEParser: Sendable {
             return endLine()
         default:
             lastWasCR = false
+            guard line.count < limits.line else {
+                overflowed = true
+                line = []
+                data = []
+                return nil
+            }
             line.append(byte)
             return nil
         }
@@ -77,7 +105,14 @@ public struct SSEParser: Sendable {
         }
         switch field {
         case "event": event = String(value)
-        case "data": data.append(String(value))
+        case "data":
+            eventBytes += value.utf8.count + 1
+            guard eventBytes <= limits.event else {
+                overflowed = true
+                data = []
+                return nil
+            }
+            data.append(String(value))
         case "id": id = String(value)
         default: break // `retry` and unknown fields: reconnection pacing is ours, not the server's.
         }
@@ -88,6 +123,7 @@ public struct SSEParser: Sendable {
         defer {
             event = nil
             data = []
+            eventBytes = 0
         }
         guard !data.isEmpty else { return nil }
         return SSEFrame(event: event, data: data.joined(separator: "\n"), id: id)
@@ -112,17 +148,19 @@ public final class EventStream: Sendable {
     private let token: String
     private let session: URLSession
     private let endpoints: Endpoints
+    private let limits: SSEParser.Limits
 
-    public init(config: DeviceConfig, session: URLSession, endpoints: Endpoints) {
+    public init(config: DeviceConfig, session: URLSession, endpoints: Endpoints, limits: SSEParser.Limits = .standard) {
         token = config.token
         self.session = session
         self.endpoints = endpoints
+        self.limits = limits
     }
 
     public func connect() -> AsyncStream<StreamItem> {
         let (stream, continuation) = AsyncStream<StreamItem>.makeStream()
-        let task = Task { [token, session, endpoints] in
-            await Self.run(token: token, session: session, endpoints: endpoints, into: continuation)
+        let task = Task { [token, session, endpoints, limits] in
+            await Self.run(token: token, session: session, endpoints: endpoints, limits: limits, into: continuation)
             continuation.finish()
         }
         continuation.onTermination = { _ in task.cancel() }
@@ -133,6 +171,7 @@ public final class EventStream: Sendable {
         token: String,
         session: URLSession,
         endpoints: Endpoints,
+        limits: SSEParser.Limits,
         into continuation: AsyncStream<StreamItem>.Continuation
     ) async {
         let bytes: URLSession.AsyncBytes
@@ -150,7 +189,7 @@ public final class EventStream: Sendable {
                     var body = Data()
                     for try await byte in bytes {
                         body.append(byte)
-                        if body.count > 64 * 1024 {
+                        if body.count >= BoundedBody.errorLimit {
                             break
                         }
                     }
@@ -167,11 +206,16 @@ public final class EventStream: Sendable {
         }
 
         continuation.yield(.open)
-        var parser = SSEParser()
+        var parser = SSEParser(limits: limits)
         do {
             for try await byte in bytes {
                 if let frame = parser.feed(byte) {
                     continuation.yield(.event(SSEDecoder.decode(event: frame.event, data: frame.data)))
+                }
+                if parser.overflowed {
+                    // Leaving the loop drops the connection; the caller reconnects on its backoff.
+                    continuation.yield(.closed(BoundedBody.tooLarge))
+                    return
                 }
             }
             continuation.yield(.closed(nil))

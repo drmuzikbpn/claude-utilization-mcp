@@ -6,7 +6,8 @@ import Foundation
 import Security
 import Synchronization
 
-/// When PinnedTrust last refused a certificate. URLSession reports a refused challenge as a plain
+/// When PinnedTrust last refused a certificate, per pinned fingerprint: a refusal on one device
+/// says nothing about another, and must never mark it. URLSession reports a refused challenge as a plain
 /// `URLError.cancelled`, which is also what any cancelled request looks like (a stream being
 /// replaced, a scene going to the background, a group losing its race). Only a cancellation
 /// shortly after a real refusal is a pin mismatch; reading every cancel as one marked a healthy
@@ -15,16 +16,25 @@ public final class PinRejections: Sendable {
     public static let shared = PinRejections()
     public static let window: TimeInterval = 10
 
-    private let last = Mutex<Date?>(nil)
+    private let last = Mutex<[String: Date]>([:])
 
     public init() {}
 
-    public func note(at date: Date = Date()) {
-        last.withLock { $0 = date }
+    /// `pin` is the fingerprint the refusing session was pinned to.
+    public func note(pin: String, at date: Date = Date()) {
+        last.withLock { refusals in
+            // Only the last few seconds matter; nothing older is kept.
+            refusals = refusals.filter { date.timeIntervalSince($0.value) < Self.window }
+            refusals[pin.lowercased()] = date
+        }
     }
 
-    public func recent(now: Date = Date()) -> Bool {
-        last.withLock { $0.map { now.timeIntervalSince($0) < Self.window } ?? false }
+    public func recent(pin: String, now: Date = Date()) -> Bool {
+        last.withLock { $0[pin.lowercased()].map { now.timeIntervalSince($0) < Self.window } ?? false }
+    }
+
+    var count: Int {
+        last.withLock { $0.count }
     }
 }
 
@@ -34,7 +44,10 @@ public final class PinRejections: Sendable {
 /// The daemon's certificate is self-signed (ECDSA P-256), so there is no chain to evaluate: the
 /// pin is the whole of trust, and it holds on every candidate address. Host names are not
 /// checked — the LAN IP, `.local` name and tailnet IP all present the same key.
-public final class PinnedTrust: NSObject, URLSessionDelegate, Sendable {
+///
+/// It also refuses every HTTP redirect: a device is only ever asked for its own paths, and a
+/// redirect would carry the request (a daemon could aim it anywhere) off the pinned address.
+public final class PinnedTrust: NSObject, URLSessionTaskDelegate, Sendable {
     /// DER prefix of a P-256 SubjectPublicKeyInfo, up to the BIT STRING holding the X9.63 point.
     /// `SecKeyCopyExternalRepresentation` returns only that point, so the header is prepended to
     /// rebuild the bytes Node's `spki` export and `openssl pkey -pubin -outform der` hash.
@@ -65,11 +78,21 @@ public final class PinnedTrust: NSObject, URLSessionDelegate, Sendable {
     ) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
         guard let trust = accepted(challenge) else {
             if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
-                PinRejections.shared.note()
+                PinRejections.shared.note(pin: fingerprint)
             }
             return (.cancelAuthenticationChallenge, nil)
         }
         return (.useCredential, URLCredential(trust: trust))
+    }
+
+    /// Never follow a redirect; the 3xx itself becomes the response (and so an error).
+    public func urlSession(
+        _: URLSession,
+        task _: URLSessionTask,
+        willPerformHTTPRedirection _: HTTPURLResponse,
+        newRequest _: URLRequest
+    ) async -> URLRequest? {
+        nil
     }
 
     /// The trust to answer with, or nil to refuse.
