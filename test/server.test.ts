@@ -8,6 +8,7 @@ import { connect as netConnect } from 'node:net';
 import { createServer, MAX_CONNECTIONS, MAX_CONNECTIONS_PER_ADDRESS, type ServerOptions, type UsageServer } from '../src/server/index.js';
 import { EmptyLimitsProvider, FakeLimitsProvider, FakeTokensSource, snapshotWithPercents, testConfig } from './helpers/fakes.js';
 import { rawJson, rawRequest, authFetch } from './helpers/raw-request.js';
+import { listenerProof } from '../src/server/middleware.js';
 
 const TOKEN = 'test-bearer-token';
 const started: UsageServer[] = [];
@@ -514,3 +515,30 @@ describe('connection ceilings (§23.58)', () => {
     expect(MAX_CONNECTIONS_PER_ADDRESS).toBeLessThan(MAX_CONNECTIONS);
   });
 });
+
+describe('GET /health answers a listener challenge (§23.61)', () => {
+  it('with HMAC(token, challenge), with or without the bearer, and never the token', async () => {
+    const { url } = await start();
+    const challenge = 'ab'.repeat(32);
+    const res = await fetch(url('/health'), { headers: { 'x-claude-usage-challenge': challenge } });
+    const text = await res.text();
+    expect(JSON.parse(text)).toEqual({ ok: true, proof: listenerProof(TOKEN, challenge) });
+    expect(text).not.toContain(TOKEN);
+    const authed = (await (await authFetch(url('/health'), { headers: { 'x-claude-usage-challenge': challenge } })).json()) as { proof: string; version: string };
+    expect(authed.proof).toBe(listenerProof(TOKEN, challenge));
+    expect(authed.version).toBe('9.9.9');
+  });
+
+  it('ignores a malformed challenge', async () => {
+    const { url } = await start();
+    for (const challenge of ['short', 'AB'.repeat(32), 'zz'.repeat(32)]) {
+      expect(await (await fetch(url('/health'), { headers: { 'x-claude-usage-challenge': challenge } })).json()).toEqual({ ok: true });
+    }
+  });
+
+  it('a daemon with no token proves nothing', async () => {
+    const { url } = await start({ config: testConfig({ auth: { token: '' } }) });
+    expect(await (await fetch(url('/health'), { headers: { 'x-claude-usage-challenge': 'ab'.repeat(32) } })).json()).toEqual({ ok: true });
+  });
+});
+

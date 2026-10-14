@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Even Seal Productions
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { configPath, resolveConfigDir } from '../config.js';
+import { listenerProof, PROOF_CHALLENGE_HEADER } from '../server/middleware.js';
 
 export const DAEMON_FILE = 'daemon.json';
 
@@ -55,6 +57,21 @@ export function readDaemonInfo(configDir: string = resolveConfigDir()): DaemonIn
     startedAt: typeof rec['startedAt'] === 'string' ? rec['startedAt'] : '',
     version: typeof rec['version'] === 'string' ? rec['version'] : '',
   };
+}
+
+/**
+ * Is `pid` alive **and ours** (§23.61)? `kill(pid, 0)` succeeds only for a process this
+ * user may signal; `EPERM` means it belongs to someone else — after a reboot, a recycled
+ * pid — and such a `daemon.json` describes nothing we should talk to.
+ */
+export function isOwnPidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Is the pid in `daemon.json` still alive? A `false` here means the file is stale. */
@@ -128,6 +145,8 @@ export class DaemonClient {
   private readonly token: string | undefined;
   private readonly fetchImpl: ClientFetch;
   private readonly readsToken: boolean;
+  /** Bases whose listener has proved it holds our token (§23.61). */
+  private readonly proven = new Set<string>();
 
   constructor(opts: DaemonClientOptions = {}) {
     this.readsToken = opts.token === undefined && (opts.baseUrl === undefined || opts.configDir !== undefined);
@@ -144,6 +163,11 @@ export class DaemonClient {
     const info = readDaemonInfo(this.configDir);
     if (info === null) {
       throw new DaemonUnreachable('claude-usage daemon not running — run `claude-usage status`');
+    }
+    // §23.61: a daemon.json whose process is gone, or is not ours, is stale — whatever now
+    // listens on that port is not our daemon.
+    if (!isOwnPidAlive(info.pid)) {
+      throw new DaemonUnreachable(`claude-usage daemon not running (stale daemon.json, pid ${String(info.pid)}) — run \`claude-usage status\``);
     }
     return `http://127.0.0.1:${info.port}`;
   }
@@ -162,9 +186,13 @@ export class DaemonClient {
     body: unknown,
     opts: { timeoutMs?: number },
   ): Promise<unknown> {
-    const url = `${this.baseUrl()}${path}`;
+    const base = this.baseUrl();
+    const url = `${base}${path}`;
     const headers: Record<string, string> = { accept: 'application/json' };
     const token = this.token ?? (this.readsToken ? readAuthToken(this.configDir) : '');
+    // §23.61: a port found through daemon.json gets the token only after it has proved it is
+    // our daemon. An explicit `baseUrl` is the caller's own choice and is not second-guessed.
+    if (token.length > 0 && this.explicitBase === undefined) await this.proveListener(base, token, opts.timeoutMs ?? this.timeoutMs);
     if (token.length > 0) headers['authorization'] = `Bearer ${token}`;
     if (body !== undefined) headers['content-type'] = 'application/json';
 
@@ -197,9 +225,49 @@ export class DaemonClient {
     }
     if (!res.ok) {
       const envelope = parsed as { error?: { code?: string; message?: string } } | null;
+      // A rotated token makes the cached proof worthless; prove again next time.
+      if (res.status === 401) this.proven.delete(base);
       const message = envelope?.error?.message ?? `HTTP ${res.status}`;
       throw new DaemonUnreachable(`${method} ${path}: ${message}`, parsed, res.status);
     }
     return parsed;
+  }
+
+  /**
+   * Challenge the listener at `base` to prove it holds `token` (§23.61), without sending the
+   * token. Once per client and base; a client is short-lived (one hook run, one CLI command).
+   */
+  private async proveListener(base: string, token: string, timeoutMs: number): Promise<void> {
+    if (this.proven.has(base)) return;
+    const challenge = randomBytes(32).toString('hex');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    if (typeof timer.unref === 'function') timer.unref();
+    let proof: unknown;
+    try {
+      const res = await this.fetchImpl(`${base}/health`, {
+        method: 'GET',
+        headers: { accept: 'application/json', [PROOF_CHALLENGE_HEADER]: challenge },
+        signal: controller.signal,
+      });
+      const text = await res.text().catch(() => '');
+      try {
+        proof = (JSON.parse(text) as { proof?: unknown } | null)?.proof;
+      } catch {
+        proof = undefined; // not JSON: certainly not our daemon
+      }
+    } catch (err) {
+      throw new DaemonUnreachable(`GET /health failed: ${(err as Error).message}`, err);
+    } finally {
+      clearTimeout(timer);
+    }
+    const expected = Buffer.from(listenerProof(token, challenge), 'utf8');
+    const got = Buffer.from(typeof proof === 'string' ? proof : '', 'utf8');
+    if (got.length !== expected.length || !timingSafeEqual(got, expected)) {
+      throw new DaemonUnreachable(
+        `the process listening at ${base} did not prove it is this user's claude-usage daemon — the token was not sent`,
+      );
+    }
+    this.proven.add(base);
   }
 }

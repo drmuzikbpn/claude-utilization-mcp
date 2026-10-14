@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Even Seal Productions
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 
 /** Normalize an IPv4-mapped IPv6 address to its IPv4 form. */
@@ -135,6 +135,22 @@ export function isTlsRequest(req: IncomingMessage): boolean {
  * keeps learning that its token was rotated.
  */
 export const HEALTH_PATH = '/health';
+
+/**
+ * §23.61: a local client's challenge to the listener on the daemon's port. Before a client
+ * sends the bearer to whatever `daemon.json` names, it asks the listener to prove it holds
+ * the same token: `proof = HMAC-SHA256(token, PROOF_LABEL + challenge)`, hex. Something
+ * else on the port — another user's process after a reboot left `daemon.json` stale —
+ * cannot answer, and never sees the token. The proof reveals nothing about a 256-bit token.
+ */
+export const PROOF_CHALLENGE_HEADER = 'x-claude-usage-challenge';
+export const PROOF_LABEL = 'claude-usage-listener-proof-v1:';
+/** 32 random bytes, hex. */
+export const PROOF_CHALLENGE_RE = /^[0-9a-f]{64}$/;
+
+export function listenerProof(token: string, challenge: string): string {
+  return createHmac('sha256', token).update(`${PROOF_LABEL}${challenge}`, 'utf8').digest('hex');
+}
 
 export function isHealthProbe(method: string, path: string): boolean {
   return (method === 'GET' || method === 'HEAD') && path === HEALTH_PATH;

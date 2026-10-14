@@ -5,7 +5,7 @@ import { createTokenReader } from './credentials/index.js';
 import { EventBus } from './events/bus.js';
 import { LimitsPoller, effectivePollIntervalMs } from './limits/poller.js';
 import { effectiveTlsPort, ensureConfigDir, expandHome, generateToken, loadConfig, resolveConfigDir, saveConfig, writeJsonFile, type Config } from './config.js';
-import { daemonFilePath, readAuthToken } from './clients/http.js';
+import { daemonFilePath, isOwnPidAlive, readAuthToken, readDaemonInfo } from './clients/http.js';
 import { bindWants, LAN_KEYWORD, resolveBindAddresses, TAILSCALE_KEYWORD } from './net/bind.js';
 import { resolveLanIPv4, resolveLocalHostName } from './net/lan.js';
 import { resolveMagicDnsName, resolveTailscaleIPv4 } from './net/tailscale.js';
@@ -246,6 +246,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   }
 
   async function bringUp(): Promise<DaemonHandle> {
+  // §23.61: a daemon.json left by a daemon that died must not outlive this start attempt,
+  // even if the bind below fails. One whose process is alive and ours is left alone — it
+  // is the daemon that holds the port, and its clients still need the file.
+  const recorded = readDaemonInfo(configDir);
+  if (recorded !== null && !isOwnPidAlive(recorded.pid)) {
+    try {
+      rmSync(daemonFilePath(configDir), { force: true });
+    } catch {
+      // best effort
+    }
+  }
 
   // --- §16: which addresses, and under which Host names ----------------------
   const network = opts.network ?? defaultNetworkResolver();

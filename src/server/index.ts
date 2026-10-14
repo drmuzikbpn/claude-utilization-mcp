@@ -18,7 +18,20 @@ import {
 } from './events.js';
 import { sendError, sendJson } from './errors.js';
 import { createUserReader, defaultClaudeJsonPath } from './identity.js';
-import { buildHostPolicy, checkRequest, HEALTH_PATH, isLoopbackRequest, isTlsRequest, normalizeAddress, PAIR_REDEEM_PATH, requestPath, type HostPolicy } from './middleware.js';
+import {
+  buildHostPolicy,
+  checkRequest,
+  HEALTH_PATH,
+  isLoopbackRequest,
+  isTlsRequest,
+  listenerProof,
+  normalizeAddress,
+  PAIR_REDEEM_PATH,
+  PROOF_CHALLENGE_HEADER,
+  PROOF_CHALLENGE_RE,
+  requestPath,
+  type HostPolicy,
+} from './middleware.js';
 import { createInstallReader, type InstallPaths } from './install-state.js';
 import { buildPairingLink, createPairingCodes, type PairingCodes } from './pairing.js';
 import { parseTokensQuery } from './query.js';
@@ -331,6 +344,15 @@ export function createServer(opts: ServerOptions): UsageServer {
     sendJson(res, 200, { token: opts.config.auth.token, name: opts.config.name, fp: opts.pairing?.info().fp ?? null });
   }
 
+  /** §23.61: answer a loopback client's challenge, so it can tell us from an impostor. */
+  function proofFor(req: IncomingMessage): { proof?: string } {
+    const challenge = req.headers[PROOF_CHALLENGE_HEADER];
+    const token = opts.config.auth.token;
+    if (typeof challenge !== 'string' || !PROOF_CHALLENGE_RE.test(challenge) || token.length === 0) return {};
+    if (!isLoopbackRequest(req)) return {};
+    return { proof: listenerProof(token, challenge) };
+  }
+
   // --- request pipeline -----------------------------------------------------
 
   function handle(req: IncomingMessage, res: ServerResponse): void {
@@ -385,7 +407,7 @@ export function createServer(opts: ServerOptions): UsageServer {
     switch (path) {
       case HEALTH_PATH:
         // §23.55: without the bearer this is a liveness probe and nothing else.
-        sendJson(res, 200, gate.authenticated ? healthBody(snapshotDeps) : LIVENESS_BODY);
+        sendJson(res, 200, { ...(gate.authenticated ? healthBody(snapshotDeps) : LIVENESS_BODY), ...proofFor(req) });
         return;
       case '/v1/limits':
         sendJson(res, 200, limitsBody(snapshotDeps));

@@ -210,3 +210,22 @@ describe('the bearer token on a bare `serve` (§23.55)', () => {
     expect((JSON.parse(readFileSync(configPath(dir), 'utf8')) as { auth: { token: string } }).auth.token).toBe(TEST_TOKEN);
   });
 });
+
+describe('a stale daemon.json (§23.61)', () => {
+  it('is removed before binding, so a start that fails leaves nothing pointing at the port', async () => {
+    const dir = tempConfigDir();
+    writeFileSync(daemonFilePath(dir), JSON.stringify({ pid: 2 ** 30, port: 1 }));
+    const blocker = await start(tempConfigDir());
+    await expect(start(dir, { port: blocker.port })).rejects.toBeInstanceOf(PortInUseError);
+    expect(existsSync(daemonFilePath(dir))).toBe(false);
+  });
+
+  it('a live daemon’s file is left alone by a second start that fails', async () => {
+    const dir = tempConfigDir();
+    const first = await start(dir);
+    const before = readFileSync(daemonFilePath(dir), 'utf8');
+    await expect(start(dir, { port: first.port })).rejects.toBeInstanceOf(PortInUseError);
+    expect(readFileSync(daemonFilePath(dir), 'utf8')).toBe(before);
+  });
+});
+
