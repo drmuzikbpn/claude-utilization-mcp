@@ -70,19 +70,19 @@ describe('plist', () => {
   });
 });
 
-describe('launchctl commands', () => {
+describe('/bin/launchctl commands', () => {
   it('boots out then bootstraps on install', async () => {
     const h = tempHome();
     const exec = fakeExec();
     const svc = new LaunchdService({ env: h.env, exec: exec.runner, uid: 501 });
     await svc.install(unit());
     expect(exec.lines()).toEqual([
-      `launchctl bootout gui/501/${LAUNCHD_LABEL}`,
-      `launchctl bootstrap gui/501 ${svc.unitPath}`,
+      `/bin/launchctl bootout gui/501/${LAUNCHD_LABEL}`,
+      `/bin/launchctl bootstrap gui/501 ${svc.unitPath}`,
       // RunAtLoad does not fire reliably when bootstrapping from a non-GUI session.
-      `launchctl kickstart -k gui/501/${LAUNCHD_LABEL}`,
+      `/bin/launchctl kickstart -k gui/501/${LAUNCHD_LABEL}`,
       // …and confirm launchd actually kept the job (§23.28).
-      `launchctl print gui/501/${LAUNCHD_LABEL}`,
+      `/bin/launchctl print gui/501/${LAUNCHD_LABEL}`,
     ]);
   });
 
@@ -99,11 +99,11 @@ describe('launchctl commands', () => {
     const exec = fakeExec((f, a) => (a[0] === 'bootstrap' ? { code: 5, stderr: 'Load failed' } : undefined));
     const svc = new LaunchdService({ env: h.env, exec: exec.runner, uid: 501, retryWaitMs: 0 });
     await expect(svc.install(unit())).resolves.toBeUndefined();
-    expect(exec.lines()).toContain(`launchctl kickstart -k gui/501/${LAUNCHD_LABEL}`);
+    expect(exec.lines()).toContain(`/bin/launchctl kickstart -k gui/501/${LAUNCHD_LABEL}`);
   });
 
   /**
-   * §23.26. `launchctl bootout` returns before the job is actually gone, and anything that
+   * §23.26. `/bin/launchctl bootout` returns before the job is actually gone, and anything that
    * lands in that window fails with `EALREADY` (errno 37). Observed on the Mac Studio during
    * the very install that was meant to repair it: `bootout` succeeded, the re-`bootstrap`
    * failed silently into the tolerate branch, `kickstart -k` then died with exit 37, and the
@@ -125,7 +125,7 @@ describe('launchctl commands', () => {
     await expect(svc.install(unit())).resolves.toBeUndefined();
     expect(bootstraps).toBe(3);
     // And it still went on to start the job rather than stopping at the successful bootstrap.
-    expect(exec.lines()).toContain(`launchctl kickstart -k gui/501/${LAUNCHD_LABEL}`);
+    expect(exec.lines()).toContain(`/bin/launchctl kickstart -k gui/501/${LAUNCHD_LABEL}`);
   });
 
   it('gives up retrying rather than looping forever', async () => {
@@ -190,7 +190,7 @@ describe('launchctl commands', () => {
     await svc.install(unit());
     exec.calls.length = 0;
     await svc.uninstall();
-    expect(exec.lines()).toEqual([`launchctl bootout gui/501/${LAUNCHD_LABEL}`]);
+    expect(exec.lines()).toEqual([`/bin/launchctl bootout gui/501/${LAUNCHD_LABEL}`]);
     expect(existsSync(svc.unitPath)).toBe(false);
   });
 
@@ -199,7 +199,7 @@ describe('launchctl commands', () => {
     const exec = fakeExec();
     const svc = new LaunchdService({ env: h.env, exec: exec.runner, uid: 501 });
     await svc.restart();
-    expect(exec.lines()).toEqual([`launchctl kickstart -k gui/501/${LAUNCHD_LABEL}`]);
+    expect(exec.lines()).toEqual([`/bin/launchctl kickstart -k gui/501/${LAUNCHD_LABEL}`]);
   });
 
   it('stop boots out', async () => {
@@ -207,7 +207,7 @@ describe('launchctl commands', () => {
     const exec = fakeExec();
     const svc = new LaunchdService({ env: h.env, exec: exec.runner, uid: 501 });
     await svc.stop();
-    expect(exec.lines()).toEqual([`launchctl bootout gui/501/${LAUNCHD_LABEL}`]);
+    expect(exec.lines()).toEqual([`/bin/launchctl bootout gui/501/${LAUNCHD_LABEL}`]);
   });
 });
 
@@ -286,9 +286,12 @@ describe('restart watchdog (§23.50)', () => {
     expect(unrefed).toBe(true);
     const script = call.args[1]!;
     expect(call.args[0]).toBe('-c');
-    expect(call.args.at(-1)).toBe(`gui/501/${LAUNCHD_LABEL}`);
-    expect(script).toContain('launchctl print');
-    expect(script).toContain('launchctl kickstart "$1"');
+    // §23.62: launchctl by absolute path, as $2, under a PATH of system directories only.
+    expect(call.args.slice(-2)).toEqual([`gui/501/${LAUNCHD_LABEL}`, '/bin/launchctl']);
+    expect(script).toContain('PATH=/usr/bin:/bin:/usr/sbin:/sbin');
+    expect(script).toContain('"$2" print "$1"');
+    expect(script).toContain('"$2" kickstart "$1"');
+    expect(script).not.toMatch(/(^|\s)launchctl /m);
     expect(script).not.toContain('kickstart -k');
   });
 
@@ -312,8 +315,10 @@ describe('restart watchdog (§23.50)', () => {
         `#!/bin/sh\necho "$@" >> ${log}\n[ "$1" = print ] && printf '%s\\n' '${printOut}'\nexit 0\n`,
         { mode: 0o755 },
       );
+    // The fake is handed over as $2, exactly as the real absolute path is; the PATH given
+    // here is ignored by the script, which sets its own.
     const run = () =>
-      execFileSync('/bin/sh', ['-c', script.replace(/sleep \d+/g, 'sleep 0'), 'watchdog', 'gui/501/x'], {
+      execFileSync('/bin/sh', ['-c', script.replace(/sleep \d+/g, 'sleep 0'), 'watchdog', 'gui/501/x', join(bin, 'launchctl')], {
         env: { PATH: `${bin}:/usr/bin:/bin` },
       });
 

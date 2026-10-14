@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Even Seal Productions
 import { execFile } from 'node:child_process';
+import { SECURITY_BIN } from '../service/bins.js';
 import { NoCredentialsError, parseCredentialsJson } from './types.js';
 
 export const KEYCHAIN_SERVICE = 'Claude Code-credentials';
@@ -29,7 +30,7 @@ const defaultRunner: CommandRunner = (file, args) =>
 export async function getAccessTokenFromKeychain(runner: CommandRunner = defaultRunner): Promise<string> {
   let result: CommandResult;
   try {
-    result = await runner('security', ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-w']);
+    result = await runner(SECURITY_BIN, ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-w']);
   } catch (err) {
     throw new NoCredentialsError(`could not run \`security\`: ${(err as Error).message}`);
   }

@@ -60,7 +60,7 @@ describe('keychain', () => {
     const calls: string[][] = [];
     const token = await getAccessTokenFromKeychain(runner({ stdout: `${GOOD_JSON}\n` }, calls));
     expect(token).toBe(FAKE_TOKEN);
-    expect(calls[0]).toEqual(['security', 'find-generic-password', '-s', KEYCHAIN_SERVICE, '-w']);
+    expect(calls[0]).toEqual(['/usr/bin/security', 'find-generic-password', '-s', KEYCHAIN_SERVICE, '-w']);
   });
 
   it('reports a non-zero exit without leaking stdout', async () => {

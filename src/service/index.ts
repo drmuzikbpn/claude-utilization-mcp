@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Even Seal Productions
 import { execFile } from 'node:child_process';
+import { absolutePath } from './bins.js';
 
 /**
  * Service manager abstraction (§8 "Service manager interface", §23.9).
@@ -124,7 +125,9 @@ export function buildUnit(opts: {
   env?: NodeJS.ProcessEnv;
 }): ServiceUnit {
   const env = opts.env ?? process.env;
-  const unitEnv: Record<string, string> = { PATH: env['PATH'] ?? '' };
+  // §23.62: the installer's PATH minus every relative or empty entry, which would be
+  // resolved against whatever directory the service manager starts the daemon in.
+  const unitEnv: Record<string, string> = { PATH: absolutePath(env['PATH']) };
   for (const key of ['XDG_CONFIG_HOME', 'XDG_DATA_HOME'] as const) {
     const v = env[key];
     if (typeof v === 'string' && v.length > 0) unitEnv[key] = v;

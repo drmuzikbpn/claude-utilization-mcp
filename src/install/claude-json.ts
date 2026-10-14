@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Even Seal Productions
+import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { defaultExec, type ExecRunner } from '../service/index.js';
@@ -60,9 +61,10 @@ function readClaudeJson(file: string): { json: Record<string, unknown>; mode: nu
 
 /** Temp file in the same directory, then `rename(2)` — mode preserved, no `.bak`. */
 function writeClaudeJson(file: string, json: Record<string, unknown>, mode: number): void {
-  const tmp = join(dirname(file), `.claude.json.claude-usage.${String(process.pid)}.tmp`);
+  const tmp = join(dirname(file), `.claude.json.claude-usage.${randomBytes(8).toString('hex')}.tmp`);
   try {
-    writeFileSync(tmp, `${JSON.stringify(json, null, 2)}\n`, { mode });
+    // §23.62: an unguessable name, created exclusively — never through a planted symlink.
+    writeFileSync(tmp, `${JSON.stringify(json, null, 2)}\n`, { mode, flag: 'wx' });
     renameSync(tmp, file);
   } catch (err) {
     try {

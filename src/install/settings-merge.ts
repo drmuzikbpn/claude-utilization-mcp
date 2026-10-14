@@ -4,6 +4,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'nod
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
 import { writeFileAtomic } from '../config.js';
+import { jsonErrorPosition } from '../config.js';
 
 /**
  * Merge-only edits to `~/.claude/settings.json` (§7.1, §7.3, §23.11).
@@ -45,17 +46,27 @@ export class SettingsError extends Error {
   }
 }
 
+/**
+ * `binPath` as one shell word (§23.62). Claude Code runs these commands through a shell, so
+ * a home directory with a space, a quote or a `$` in it would otherwise split the path or
+ * run part of it. A path made only of ordinary characters is left as it is, which keeps
+ * every existing entry byte-for-byte the same.
+ */
+export function shellWord(binPath: string): string {
+  return /^[A-Za-z0-9_./+:@%-]+$/.test(binPath) ? binPath : `'${binPath.replace(/'/g, `'\\''`)}'`;
+}
+
 export function hookCommand(binPath: string): string {
-  return `${binPath} hook`;
+  return `${shellWord(binPath)} hook`;
 }
 
 export function statuslineCommand(binPath: string): string {
-  return `${binPath} statusline`;
+  return `${shellWord(binPath)} statusline`;
 }
 
 /** The silent limits feed (§23.54): forwards `rate_limits` to the local daemon, prints nothing. */
 export function observeCommand(binPath: string): string {
-  return `${binPath} observe`;
+  return `${shellWord(binPath)} observe`;
 }
 
 /** The one line a user adds to their own statusline script, after it has read stdin into `$input`. */
@@ -124,7 +135,8 @@ export function readSettingsFile(file: string): LoadedSettings {
   try {
     parsed = JSON.parse(text);
   } catch (err) {
-    throw new SettingsError(`${file} is not valid JSON (${(err as Error).message}) — aborting, nothing written`, file);
+    // §23.62: never the parser's message — it quotes the file, and settings.json can hold keys.
+    throw new SettingsError(`${file} is not valid JSON${jsonErrorPosition(err)} — aborting, nothing written`, file);
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new SettingsError(`${file} is not a JSON object — aborting, nothing written`, file);

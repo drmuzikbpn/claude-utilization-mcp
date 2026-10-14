@@ -265,7 +265,9 @@ export function loadConfig(dir: string = resolveConfigDir()): Config {
   try {
     parsed = JSON.parse(text);
   } catch (err) {
-    throw new ConfigError(`${file} is not valid JSON: ${(err as Error).message}`);
+    // §23.62: never the parser's own message — on Node ≥ 20 it quotes the text around the
+    // error, which here can be part of `auth.token`.
+    throw new ConfigError(`${file} is not valid JSON${jsonErrorPosition(err)}`);
   }
   return validateConfig(parsed);
 }
@@ -281,11 +283,28 @@ export function ensureConfigDir(dir: string = resolveConfigDir()): string {
   return dir;
 }
 
+/**
+ * ` (at position N)` from a `JSON.parse` error, or `''` — and nothing else from it: the
+ * message itself quotes the input (§23.62).
+ */
+export function jsonErrorPosition(err: unknown): string {
+  const m = /position (\d+)/.exec(err instanceof Error ? err.message : '');
+  return m === null ? '' : ` (at position ${m[1] as string})`;
+}
+
+/**
+ * A temp name nobody can guess, created exclusively (§23.62): another process can neither
+ * pre-create it as a symlink nor race us to it.
+ */
+export function tempNameFor(file: string): string {
+  return `${file}.${randomBytes(8).toString('hex')}.tmp`;
+}
+
 /** Atomic write (temp file in the same directory + rename) at `mode`, default 0600. */
 export function writeFileAtomic(file: string, contents: string, mode: number = CONFIG_FILE_MODE): void {
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  const tmp = tempNameFor(file);
   try {
-    writeFileSync(tmp, contents, { mode });
+    writeFileSync(tmp, contents, { mode, flag: 'wx' });
     chmodSync(tmp, mode);
     renameSync(tmp, file);
   } catch (err) {

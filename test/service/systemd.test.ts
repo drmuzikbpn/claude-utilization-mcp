@@ -3,9 +3,10 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { SystemdService } from '../../src/service/systemd.js';
+import { renderUnit, systemdQuote, SystemdService } from '../../src/service/systemd.js';
 import { buildUnit, ServiceError, SYSTEMD_UNIT, UPDATE_RESTART_EXIT_CODE } from '../../src/service/index.js';
 import { NoopService } from '../../src/service/noop.js';
+import { absolutePath, SYSTEM_PATH, systemBin } from '../../src/service/bins.js';
 import { createServiceManager } from '../../src/service/index.js';
 import { cleanupAllTempHomes, fakeExec, tempHome } from '../install/helpers.js';
 
@@ -28,10 +29,10 @@ describe('unit file', () => {
     expect(svc.unitPath).toBe(join(h.home, '.config', 'systemd', 'user', 'claude-usage.service'));
     const text = readFileSync(svc.unitPath, 'utf8');
     expect(text).toContain(
-      'ExecStart=/usr/local/bin/node /data/claude-usage/current/bin/claude-usage serve',
+      'ExecStart="/usr/local/bin/node" "/data/claude-usage/current/bin/claude-usage" "serve"',
     );
-    expect(text).toContain('Environment=PATH=/usr/local/bin:/usr/bin');
-    expect(text).toContain('Environment=XDG_DATA_HOME=/data');
+    expect(text).toContain('Environment="PATH=/usr/local/bin:/usr/bin"');
+    expect(text).toContain('Environment="XDG_DATA_HOME=/data"');
     expect(text).toContain('Restart=on-failure');
     expect(text).toContain('[Install]\nWantedBy=default.target');
   });
@@ -121,7 +122,7 @@ describe('status and logs', () => {
 
   it('tails the journal', async () => {
     const h = tempHome();
-    const exec = fakeExec((f) => (f === 'journalctl' ? { stdout: 'a\nb\nc\n' } : undefined));
+    const exec = fakeExec((f) => (f.endsWith('/journalctl') || f === 'journalctl' ? { stdout: 'a\nb\nc\n' } : undefined));
     const svc = new SystemdService({ env: h.env, exec: exec.runner });
     expect(await svc.logTail(20)).toEqual(['a', 'b', 'c']);
     expect(exec.lines()).toContain('journalctl --user -u claude-usage -n 20 --no-pager -q');
@@ -136,7 +137,7 @@ describe('status and logs', () => {
 
   it('drops journalctl banner lines that would read as captured output', async () => {
     const h = tempHome();
-    const exec = fakeExec((f) => (f === 'journalctl' ? { stdout: '-- No entries --\n' } : undefined));
+    const exec = fakeExec((f) => (f.endsWith('/journalctl') || f === 'journalctl' ? { stdout: '-- No entries --\n' } : undefined));
     const svc = new SystemdService({ env: h.env, exec: exec.runner });
     expect(await svc.logTail(20)).toEqual([]);
   });
@@ -190,3 +191,43 @@ describe('noop', () => {
     expect(svc.unitPath).toBe('');
   });
 });
+
+describe('unit-file quoting (§23.62)', () => {
+  it('quotes every word so a space, quote, % or $ in a path cannot split it or expand', () => {
+    const text = renderUnit({
+      nodePath: '/opt/my node/bin/node',
+      binPath: '/home/alice/we"ird/%h/$HOME/claude-usage',
+      args: ['serve'],
+      env: { PATH: '/usr/bin:/bin', XDG_DATA_HOME: '/home/alice/data dir' },
+    });
+    expect(text).toContain('ExecStart="/opt/my node/bin/node" "/home/alice/we\\"ird/%%h/$$HOME/claude-usage" "serve"');
+    expect(text).toContain('Environment="XDG_DATA_HOME=/home/alice/data dir"');
+    expect(systemdQuote('a\\b')).toBe('"a\\\\b"');
+  });
+
+  it('refuses a line break, which would end the directive and start another', () => {
+    expect(() => systemdQuote('/x\nExecStartPre=/bin/evil')).toThrow(/line break/);
+    expect(() => renderUnit({ nodePath: '/n', binPath: '/b', args: ['serve'], env: { PATH: '/x\r\n[Install]' } })).toThrow(/line break/);
+  });
+
+  it('runs systemctl, journalctl and loginctl by absolute path', async () => {
+    const exec = fakeExec();
+    const svc = new SystemdService({ env: tempHome().env, exec: exec.runner });
+    await svc.restart().catch(() => undefined);
+    await svc.logTail(5);
+    await svc.enableLinger().catch(() => undefined);
+    for (const c of exec.calls) expect(c.file).toBe(systemBin(c.file.split('/').pop() as string));
+    expect(exec.calls.map((c) => c.file.split('/').pop())).toEqual(expect.arrayContaining(['systemctl', 'journalctl', 'loginctl']));
+  });
+
+  it('systemBin finds a program in the system directories only, and buildUnit keeps only absolute PATH entries', () => {
+    expect(systemBin('systemctl', (p) => p === '/bin/systemctl')).toBe('/bin/systemctl');
+    expect(systemBin('systemctl', (p) => p.startsWith('/usr/bin/'))).toBe('/usr/bin/systemctl');
+    expect(systemBin('systemctl', () => false)).toBe('systemctl');
+    const unit = buildUnit({ nodePath: '/n', binPath: '/b', env: { PATH: '.:bin::/usr/local/bin:./x:/usr/bin:/usr/bin' } });
+    expect(unit.env['PATH']).toBe('/usr/local/bin:/usr/bin');
+    expect(absolutePath('')).toBe(SYSTEM_PATH);
+    expect(absolutePath(undefined)).toBe(SYSTEM_PATH);
+  });
+});
+

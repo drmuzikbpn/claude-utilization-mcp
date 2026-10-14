@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Even Seal Productions
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -10,7 +10,10 @@ import {
   defaultConfig,
   effectiveTlsPort,
   expandHome,
+  jsonErrorPosition,
   loadConfig,
+  tempNameFor,
+  writeFileAtomic,
   redactConfig,
   resolveConfigDir,
   saveConfig,
@@ -172,6 +175,48 @@ describe('tls (§23.45)', () => {
     const c = validateConfig({ tls: { port: 9443, loopback: true, future: 1 } });
     expect(effectiveTlsPort(c, 47_291)).toBe(9443);
     expect(c.tls).toMatchObject({ loopback: true, future: 1 });
+  });
+});
+
+describe('writing and reading config.json safely (§23.62)', () => {
+  it('a malformed file is reported by position, never with any of its text', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cu-cfg-'));
+    const secret = ['token', 'that', 'must', 'not', 'leak'].join('-');
+    writeFileSync(join(dir, 'config.json'), `{"auth":{"token":"${secret}"} oops`);
+    let message = '';
+    try {
+      loadConfig(dir);
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).toMatch(/is not valid JSON/);
+    expect(message).not.toContain(secret.slice(0, 8));
+    expect(message).not.toContain('oops');
+    expect(jsonErrorPosition(new SyntaxError('Unexpected token o in JSON at position 42'))).toBe(' (at position 42)');
+    expect(jsonErrorPosition(new Error('no position here'))).toBe('');
+  });
+
+  it('writes through an unguessable temp name, exclusively, and leaves no temp file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cu-cfg-'));
+    const file = join(dir, 'x.json');
+    const a = tempNameFor(file);
+    const b = tempNameFor(file);
+    expect(a).not.toBe(b);
+    expect(a.startsWith(`${file}.`)).toBe(true);
+    writeFileAtomic(file, '{}');
+    expect(readFileSync(file, 'utf8')).toBe('{}');
+    expect(readdirSync(dir)).toEqual(['x.json']);
+  });
+
+  it('refuses to write through a temp path that already exists (a planted symlink)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cu-cfg-'));
+    const victim = join(dir, 'victim');
+    writeFileSync(victim, 'untouched');
+    const file = join(dir, 'x.json');
+    const fixedName = `${file}.planted.tmp`;
+    symlinkSync(victim, fixedName);
+    expect(() => writeFileSync(fixedName, 'evil', { flag: 'wx' })).toThrow(/EEXIST/);
+    expect(readFileSync(victim, 'utf8')).toBe('untouched');
   });
 });
 

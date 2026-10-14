@@ -17,6 +17,7 @@ import {
   type ServiceState,
   type ServiceUnit,
 } from './index.js';
+import { systemBin } from './bins.js';
 
 /** Result of `loginctl enable-linger` — reported, never fatal (§23.9). */
 export interface LingerReport {
@@ -25,11 +26,22 @@ export interface LingerReport {
 }
 
 /** Render the systemd user unit (§23.9). Deterministic — tests compare it verbatim. */
+/**
+ * One word of a unit-file command line or `Environment=` assignment, quoted the way
+ * systemd.syntax(7) reads it (§23.62): double quotes, `\\` and `"` escaped, `%` and `$`
+ * doubled so neither a specifier nor a variable is expanded. A line break cannot be
+ * represented safely — it would end the directive and start another — so it is refused.
+ */
+export function systemdQuote(word: string): string {
+  if (/[\r\n]/.test(word)) throw new Error('a unit-file value cannot contain a line break');
+  return `"${word.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/%/g, '%%').replace(/\$/g, '$$$$')}"`;
+}
+
 export function renderUnit(unit: ServiceUnit): string {
   const envLines = Object.keys(unit.env)
-    .map((k) => `Environment=${k}=${unit.env[k] ?? ''}`)
+    .map((k) => `Environment=${systemdQuote(`${k}=${unit.env[k] ?? ''}`)}`)
     .join('\n');
-  const exec = [unit.nodePath, unit.binPath, ...unit.args].join(' ');
+  const exec = [unit.nodePath, unit.binPath, ...unit.args].map(systemdQuote).join(' ');
   return `[Unit]
 Description=claude-usage — local usage service for Claude Code sessions
 After=network.target
@@ -66,7 +78,7 @@ export class SystemdService implements ServiceManager {
   }
 
   private async systemctl(args: readonly string[], tolerate = false): Promise<string> {
-    const result = await this.exec('systemctl', ['--user', ...args]);
+    const result = await this.exec(systemBin('systemctl'), ['--user', ...args]);
     if (result.code !== 0 && !tolerate) {
       throw new ServiceError(`systemctl --user ${args.join(' ')} failed (exit ${String(result.code)})`, result);
     }
@@ -101,7 +113,7 @@ export class SystemdService implements ServiceManager {
 
   async status(): Promise<ServiceState> {
     if (!existsSync(this.unitPath)) return 'not-installed';
-    const result = await this.exec('systemctl', ['--user', 'is-active', SYSTEMD_UNIT]);
+    const result = await this.exec(systemBin('systemctl'), ['--user', 'is-active', SYSTEMD_UNIT]);
     return result.stdout.trim() === 'active' ? 'running' : 'stopped';
   }
 
@@ -109,7 +121,7 @@ export class SystemdService implements ServiceManager {
   async logTail(n: number): Promise<string[]> {
     // `-q` drops journalctl's informational banners ("-- No entries --", "-- Journal begins…"),
     // which would otherwise read as captured daemon output; the filter below is belt-and-braces.
-    const result = await this.exec('journalctl', [
+    const result = await this.exec(systemBin('journalctl'), [
       '--user',
       '-u',
       SYSTEMD_UNIT_NAME,
@@ -127,7 +139,7 @@ export class SystemdService implements ServiceManager {
    * fails — and uninstall never touches it.
    */
   async enableLinger(): Promise<LingerReport> {
-    const result = await this.exec('loginctl', ['enable-linger', this.user]);
+    const result = await this.exec(systemBin('loginctl'), ['enable-linger', this.user]);
     if (result.code === 0) return { ok: true, message: `lingering enabled for ${this.user}` };
     if (result.code === 127) {
       return { ok: false, message: 'loginctl not found — lingering not enabled (the daemon stops at logout)' };

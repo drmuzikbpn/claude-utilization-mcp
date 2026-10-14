@@ -17,6 +17,7 @@ import {
   type ServiceState,
   type ServiceUnit,
 } from './index.js';
+import { LAUNCHCTL_BIN, SYSTEM_PATH } from './bins.js';
 
 const XML_ESCAPES: Record<string, string> = {
   '&': '&amp;',
@@ -121,7 +122,7 @@ export class LaunchdService implements ServiceManager {
   }
 
   private async run(args: readonly string[], tolerate = false): Promise<void> {
-    const result = await this.exec('launchctl', args);
+    const result = await this.exec(LAUNCHCTL_BIN, args);
     if (result.code !== 0 && !tolerate) {
       throw new ServiceError(`launchctl ${args.join(' ')} failed (exit ${String(result.code)})`, result);
     }
@@ -157,14 +158,14 @@ export class LaunchdService implements ServiceManager {
     // (e.g. over SSH), so ask for it explicitly; this is also what makes install idempotent.
     // In a GUI session RunAtLoad *does* fire, so this can arrive while launchd is already
     // starting the job and come back EALREADY — that is the job starting, not failing.
-    const kick = await this.exec('launchctl', ['kickstart', '-k', this.target]);
+    const kick = await this.exec(LAUNCHCTL_BIN, ['kickstart', '-k', this.target]);
     if (kick.code !== 0 && kick.code !== EALREADY) {
       throw new ServiceError(`launchctl kickstart -k ${this.target} failed (exit ${String(kick.code)})`, kick);
     }
     // Everything above tolerates something, so confirm the end state rather than inferring it
     // from exit codes: the Studio's install reported success three times while leaving the
     // LaunchAgent unregistered (§23.28).
-    const loaded = await this.exec('launchctl', ['print', this.target]);
+    const loaded = await this.exec(LAUNCHCTL_BIN, ['print', this.target]);
     if (loaded.code !== 0) {
       throw new ServiceError(
         `launchd did not keep the service after bootstrap (launchctl print exit ${String(loaded.code)}) — ` +
@@ -200,7 +201,7 @@ export class LaunchdService implements ServiceManager {
    */
   private async bootstrapWithRetry(): Promise<void> {
     for (let attempt = 0; attempt < BOOTSTRAP_ATTEMPTS; attempt += 1) {
-      const result = await this.exec('launchctl', ['bootstrap', this.domain, this.unitPath]);
+      const result = await this.exec(LAUNCHCTL_BIN, ['bootstrap', this.domain, this.unitPath]);
       if (result.code === 0) return;
       if (attempt < BOOTSTRAP_ATTEMPTS - 1 && this.retryWaitMs > 0) {
         await new Promise<void>((resolve) => {
@@ -238,19 +239,22 @@ export class LaunchdService implements ServiceManager {
    * 90 s; a job that came back on its own is simply seen running and left alone.
    */
   armRestartWatchdog(spawnFn: WatchdogSpawn = spawn): void {
+    // §23.62: launchctl by absolute path ($2), and nothing else from the caller's PATH.
     const script = [
+      `PATH=${SYSTEM_PATH}`,
+      'export PATH',
       'i=0',
       'while [ "$i" -lt 45 ]; do',
       '  sleep 2',
       '  i=$((i + 1))',
-      '  if ! launchctl print "$1" 2>/dev/null | grep -Eq "^[[:space:]]*pid = [0-9]+"; then',
-      '    launchctl kickstart "$1" >/dev/null 2>&1',
+      '  if ! "$2" print "$1" 2>/dev/null | grep -Eq "^[[:space:]]*pid = [0-9]+"; then',
+      '    "$2" kickstart "$1" >/dev/null 2>&1',
       '    exit 0',
       '  fi',
       'done',
     ].join('\n');
     try {
-      spawnFn('/bin/sh', ['-c', script, 'claude-usage-restart-watchdog', this.target], {
+      spawnFn('/bin/sh', ['-c', script, 'claude-usage-restart-watchdog', this.target, LAUNCHCTL_BIN], {
         detached: true,
         stdio: 'ignore',
       }).unref();
@@ -261,7 +265,7 @@ export class LaunchdService implements ServiceManager {
 
   async status(): Promise<ServiceState> {
     if (!existsSync(this.unitPath)) return 'not-installed';
-    const result = await this.exec('launchctl', ['print', this.target]);
+    const result = await this.exec(LAUNCHCTL_BIN, ['print', this.target]);
     if (result.code !== 0) return 'stopped';
     return /^\s*pid\s*=\s*\d+/m.test(result.stdout) ? 'running' : 'stopped';
   }
@@ -310,7 +314,7 @@ export class LaunchdService implements ServiceManager {
   async diagnose(): Promise<string[]> {
     let out: string;
     try {
-      const result = await this.exec('launchctl', ['print', this.target]);
+      const result = await this.exec(LAUNCHCTL_BIN, ['print', this.target]);
       if (result.code !== 0) return [];
       out = result.stdout;
     } catch {

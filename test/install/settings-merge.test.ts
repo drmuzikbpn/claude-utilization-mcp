@@ -12,9 +12,14 @@ import {
   hookCommand,
   readSettingsFile,
   removeSettings,
+  observeCommand,
   SettingsError,
+  shellWord,
   statuslineCommand,
 } from '../../src/install/settings-merge.js';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { cleanupAllTempHomes, tempHome } from './helpers.js';
 
 afterAll(cleanupAllTempHomes);
@@ -245,3 +250,33 @@ describe('removal is surgical', () => {
     expect(readFileSync(b.file, 'utf8')).toBe(before);
   });
 });
+
+describe('shell quoting and error text (§23.62)', () => {
+  it('leaves an ordinary path exactly as before, so existing entries still match', () => {
+    expect(hookCommand('/home/alice/.local/bin/claude-usage')).toBe('/home/alice/.local/bin/claude-usage hook');
+  });
+
+  it('makes a path with spaces, quotes or $ one shell word', () => {
+    const path = "/home/alice/My Stuff/it's $HOME/claude-usage";
+    const cmd = observeCommand(path);
+    const out = execFileSync('/bin/sh', ['-c', `printf '%s\\n' ${cmd.replace(/ observe$/, '')}`], { encoding: 'utf8' });
+    expect(out).toBe(`${path}\n`);
+    expect(shellWord('a;rm -rf x')).toBe("'a;rm -rf x'");
+  });
+
+  it('a malformed settings.json is reported by position, never by content', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cu-sm-'));
+    const file = join(dir, 'settings.json');
+    writeFileSync(file, '{"env":{"API_KEY":"sk-live-secret-value-123"}, oops}');
+    let message = '';
+    try {
+      applySettings({ file, binPath: '/b/claude-usage', hook: true, statusline: false });
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).toContain('is not valid JSON');
+    expect(message).not.toContain('secret');
+    expect(message).not.toContain('oops');
+  });
+});
+
