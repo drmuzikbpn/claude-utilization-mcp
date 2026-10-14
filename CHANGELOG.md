@@ -4,6 +4,37 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Security
+- **Every request needs the bearer token, from this machine too.** The loopback `GET` and
+  hook `POST` exemptions are gone; the hook, status line, MCP server and CLI read the token
+  from `config.json`. Without a token `GET /health` answers `{"ok":true}` only. A request a
+  web page started (`Origin`, or `Sec-Fetch-Site` other than `none`) is refused (§23.55).
+- Local clients make the listener prove it holds the token (an HMAC challenge on
+  `/health`) before sending it, and ignore a stale `daemon.json` (§23.61).
+- Session registration is bounded: UUID ids only, checked paths and strings, at most 256
+  sessions, pids accepted only for Claude Code processes of the same user and re-verified
+  by start time and boot id before any signal; freezes are recorded before the first
+  `SIGSTOP`, never touch the daemon or its parents, and a crash thaws everything (§23.56).
+- **HTTPS only off the machine**: plain HTTP is served on loopback alone; wildcard and public
+  `bind` addresses are refused unless `allowPublicBind: true`; the `tailscale` keyword is
+  range- and interface-checked (§23.57).
+- **`configure pairing` is removed** — its QR code carried the bearer. Use `claude-usage pair`.
+  An abandoned pairing code is revoked (`DELETE /v1/pair/code`) (§23.57, §23.63).
+- **Signed releases**: the updater requires `SHA256SUMS.sig`, an Ed25519 signature checked
+  against keys compiled into the daemon, before it trusts a checksum; dependencies install
+  with `npm ci` from the shrinkwrap inside the signed tarball; the archive is checked for
+  unsafe members (§23.59, §23.60).
+- The release workflow builds with a read-only token and signs in a separate `release`
+  environment job; every action is pinned to a commit SHA; nothing is published to npm and
+  the package is `private`.
+- `configure rotate-token` also reaches a daemon run in the foreground, and says so plainly if
+  it did not take (§23.58).
+- `claude-usage config` no longer prints the token; JSON errors no longer quote the file;
+  system programs run by absolute path; unit files and hook commands are quoted (§23.60,
+  §23.62).
+- A commit-time `scripts/public-check.sh` (also run on pull requests) blocks credentials and
+  private data.
+
 ### Fixed
 - An auto-update could leave the daemon stopped on macOS: the restart is a `launchctl
   kickstart -k` issued from inside the job being restarted. A detached watchdog now relaunches
@@ -17,7 +48,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   `configure lan on|off` (§23.44).
 - HTTPS on `port + 1` for every non-loopback address. The certificate is self-signed and
   pinned, and is built with no dependencies. Its key is generated once and kept, so apps
-  stay paired across restarts and certificate renewals. Plain HTTP is unchanged (§23.45).
+  stay paired across restarts and certificate renewals (§23.45). Since §23.57 off-machine addresses are HTTPS only.
 - The machine's `.local` name is accepted as a `Host` (§23.46).
 - One-time pairing codes. `POST /v1/pair/code` mints one; it needs the bearer and must come
   from loopback. `POST /v1/pair` trades a code for the bearer over HTTPS only: each code
@@ -96,15 +127,14 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   new identity beside the old account's percentages indefinitely. The token cache now has a
   TTL (`TOKEN_REFRESH_MS`, 10 min, deliberately equal to the identity re-read interval), and
   `POST /v1/refresh` re-reads the credential store instead of reusing the cached token.
-- Version directories now get their production `node_modules` (`npm install --omit=dev`) so the `mcp` and `configure pairing` subcommands work from the installed copy and from release tarballs.
+- Version directories now get their production `node_modules` so the `mcp` subcommand works from the installed copy and from release tarballs.
 
 ### Added
-- `configure pairing --addr <ip>` override for phones that are on Wi-Fi rather than the tailnet.
 - Transcript back-fill in `/v1/sessions`: sessions with activity in the last 10 min read `alive: true`; sessions idle for more than 24 h are omitted.
 - Daemon (`claude-usage serve`): rate-limit windows from the Claude Code OAuth usage endpoint, normalized to `limits[]`; local token spend indexed from `~/.claude/projects/**/*.jsonl` including subagent transcripts, deduplicated, snapshotted to disk.
-- HTTP API on loopback (+ optional Tailscale bind): `/health`, `/v1/limits`, `/v1/summary`, `/v1/tokens`, `/v1/refresh`, `/v1/config`, `/v1/sessions` (+ register/heartbeat/end/gate), `/v1/pause`, `/v1/resume`, `/v1/pause/rules`, `/v1/events` (SSE). Bearer token required for every mutating request and for every non-loopback request; Host allowlist; `Origin` rejected.
+- HTTP API on loopback (+ optional Tailscale bind): `/health`, `/v1/limits`, `/v1/summary`, `/v1/tokens`, `/v1/refresh`, `/v1/config`, `/v1/sessions` (+ register/heartbeat/end/gate), `/v1/pause`, `/v1/resume`, `/v1/pause/rules`, `/v1/events` (SSE). Bearer token required (since §23.55, for every request); Host allowlist; `Origin` rejected.
 - Sessions registry fed by Claude Code hooks (SessionStart / UserPromptSubmit / PreToolUse / SessionEnd), worktree-aware project grouping, `lastTool`.
 - Pause rules (`all` / `project:<git-common-dir>` / `session:<id>`): soft pause via hook gate, hard freeze via SIGSTOP/SIGCONT with orphan sweep and the offline `claude-usage resume --all` escape hatch.
 - `UserPromptSubmit` nudge at 80 % / 95 % (inform-only, never blocks), statusline with pause marker, MCP server (`get_limits`, `get_summary`, `get_tokens`, `get_sessions`, `refresh_limits`).
-- `install` / `configure` / `uninstall`: launchd + systemd user units, merge-only `~/.claude/settings.json` edits with a once-written `.bak`, MCP registration via `claude mcp add`, pairing payload + QR for the remote dashboard.
-- Auto-update from GitHub Releases (sha256-verified, versions layout with `current` symlink, deferral while sessions are hard-frozen, `rollback`); release workflow tags, publishes and (when `NPM_TOKEN` is set) npm-publishes every green push to `main`.
+- `install` / `configure` / `uninstall`: launchd + systemd user units, merge-only `~/.claude/settings.json` edits with a once-written `.bak`, MCP registration via `claude mcp add`, and pairing for the remote dashboard.
+- Auto-update from GitHub Releases (sha256-verified, versions layout with `current` symlink, deferral while sessions are hard-frozen, `rollback`); release workflow tags and publishes every green push to `main`.

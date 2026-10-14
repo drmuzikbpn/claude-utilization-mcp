@@ -31,8 +31,9 @@ sharing one handler.
 
 ## The request gate
 
-**Listeners (§23.45).** Plain HTTP on `port` (47291) on every bound address. Every
-non-loopback bound address also gets HTTPS on `tls.port` (default `port + 1`, 47292),
+**Listeners (§23.45, §23.57).** Plain HTTP on `port` (47291) on loopback only —
+`127.0.0.1` always, plus any other loopback address in `bind`. Every non-loopback bound
+address gets HTTPS on `tls.port` (default `port + 1`, 47292) and no plain-HTTP listener,
 running the same handler and gate, with a self-signed ECDSA P-256 certificate. Clients pin
 `fp`, the lowercase hex SHA-256 of the certificate's SubjectPublicKeyInfo DER:
 
@@ -52,20 +53,31 @@ Every request passes through the same gate, in this order
    a port, that port must be one we listen on. Otherwise **`421 misdirected_request`**.
    (`0.0.0.0` / `::` are never accepted as a `Host` value even when bound.)
 3. **Origin** — any request carrying an `Origin` header at all is **`403 forbidden`**.
-4. **Auth** —
-   - loopback + `GET`/`HEAD` → **no token required**;
-   - loopback + `POST` to `/v1/sessions/register`, `/v1/sessions/{id}/heartbeat`,
-     `/v1/sessions/{id}/end` → **no token required** (see the deviations section);
-   - `POST /v1/pair` from anywhere → **no token required**; the route itself demands HTTPS
-     and a one-time code ([Pairing](#pairing));
-   - everything else → `Authorization: Bearer <config.auth.token>`, compared in constant
-     time over sha256 digests. Missing or wrong → **`401 unauthorized`**. An empty
-     configured token never matches anything.
+   **Fetch metadata** — a `Sec-Fetch-Site` header with any value but `none` is
+   **`403 forbidden`**, token or not (§23.55).
+4. **Auth (§23.55)** — every request, from loopback too, needs
+   `Authorization: Bearer <config.auth.token>`, compared in constant time over sha256
+   digests. Missing or wrong → **`401 unauthorized`**. An empty configured token never
+   matches anything. Two exceptions:
+   - `GET`/`HEAD /health` with **no** `Authorization` header → `200 { "ok": true }` and
+     nothing else (a wrong token is still `401`);
+   - `POST /v1/pair` from anywhere → no token; the route itself demands HTTPS and a
+     one-time code ([Pairing](#pairing)).
+
+Local clients (hook, status line, `observe`, MCP server, CLI) read the token from
+`config.json`. Before sending it to the port named in `daemon.json` they send
+`GET /health` with `x-claude-usage-challenge: <64 lowercase hex>`; on loopback the daemon
+adds `"proof": HMAC-SHA256(token, "claude-usage-listener-proof-v1:" + challenge)` (hex) to
+the body, and the client sends the token only if that matches (§23.61).
 
 | Situation | Result |
 | --- | --- |
-| `GET /health` from `127.0.0.1` | 200, no token |
-| `GET /health` from the tailnet, no token | 401 |
+| `GET /health` from `127.0.0.1`, no token | 200, `{ "ok": true }` only |
+| `GET /health` with a valid token | 200, the full body below |
+| `GET /health` with a wrong token | 401 |
+| `GET /v1/summary` from `127.0.0.1`, no token | 401 |
+| `GET /health` from the tailnet, no token | 200, `{ "ok": true }` only |
+| Any request with `Sec-Fetch-Site: cross-site` | 403 |
 | `POST /v1/pause` from `127.0.0.1`, no token | 401 |
 | Any request with `Origin:` | 403 |
 | `Host: evil.test` | 421 |
@@ -90,7 +102,7 @@ Real examples (`test/fixtures/sessions/errors.json`):
 ```json
 { "error": { "code": "unauthorized",
              "message": "a valid Authorization: Bearer token is required",
-             "hint": "mutating requests need the token even from loopback" } }
+             "hint": "every request needs the token, from this machine too — it is in config.json (0600), and `claude-usage` reads it for you" } }
 ```
 
 ```json
@@ -115,7 +127,8 @@ A request that exceeds the 5 s timeout gets `500 internal_error` with
 
 ## `GET /health`
 
-Auth: loopback GET exempt. `HEAD` allowed.
+Auth: token for this body; without any `Authorization` header the answer is just
+`{ "ok": true }` (plus `proof` when challenged, above). `HEAD` allowed.
 
 ```json
 {
@@ -168,7 +181,7 @@ Auth: loopback GET exempt. `HEAD` allowed.
 
 ## `GET /v1/limits`
 
-Auth: loopback GET exempt.
+Auth: token required (§23.55).
 
 The daemon's cached copy of `GET https://api.anthropic.com/api/oauth/usage`
 (`anthropic-beta: oauth-2025-04-20`, `User-Agent: claude-usage/<version>`), polled every `pollIntervalMs` (never faster than
@@ -230,7 +243,7 @@ ignores.
 
 ## `GET /v1/summary`
 
-Auth: loopback GET exempt. This is the hook's and the status line's single call.
+Auth: token required (§23.55). This is the hook's and the status line's single call.
 
 ```json
 {
@@ -300,7 +313,7 @@ upstream rows and their `stale` (§23.37); they do not wait for the next poll.
 
 ## `GET /v1/tokens`
 
-Auth: loopback GET exempt. Query: `?since=<iso|today|all|7d|24h|30m>&groupBy=project|session|model|day`.
+Auth: token required (§23.55). Query: `?since=<iso|today|all|7d|24h|30m>&groupBy=project|session|model|day`.
 
 ```json
 {
@@ -352,7 +365,7 @@ Passing `groupBy` more than once is a `400` — multiple groupings are not suppo
 
 ## `GET /v1/config`
 
-Auth: loopback GET exempt. The effective config with `auth.token` replaced by
+Auth: token required (§23.55). The effective config with `auth.token` replaced by
 `"<redacted>"` (or left `""` when none is set). Unknown keys you added to `config.json`
 appear here too.
 
@@ -370,7 +383,7 @@ appear here too.
 
 ## `GET /v1/sessions`
 
-Auth: loopback GET exempt. `HEAD` allowed. Sets `ETag: W/"<rev>"`; a matching
+Auth: token required (§23.55). `HEAD` allowed. Sets `ETag: W/"<rev>"`; a matching
 `If-None-Match` gets **`304`** with the same `etag` and no body.
 
 ```json
@@ -428,20 +441,26 @@ Full three-session example including a `discovered: "transcript"` one:
 
 ## Session lifecycle endpoints
 
-These are what `claude-usage hook` calls. All three are `POST`, and all three are exempt
-from the token **from loopback only**.
+These are what `claude-usage hook` calls. Like everything else they need the token
+(§23.55); the hook reads it from `config.json`. Every `{id}` must be a UUID (`400`
+otherwise, §23.56).
 
 | Endpoint | Body | Response |
 | --- | --- | --- |
 | `POST /v1/sessions/register` | `{ sessionId, pid, cwd, transcriptPath, gitCommonDir, source }` | `200 { session, rev }` |
 | `POST /v1/sessions/{id}/heartbeat` | `{}` | `200 { ok: true, rev, paused, mode, ruleId, reason }`; `404` for an unknown session |
 | `POST /v1/sessions/{id}/end` | `{}` | `200 { ok: true, ended: <bool>, rev }` — idempotent |
-| `GET /v1/sessions/{id}/gate?tool=<name>` | — | `200 { paused, mode, ruleId, reason }` |
+| `GET /v1/sessions/{id}/gate` | — | `200 { paused, mode, ruleId, reason }` — read-only |
+| `POST /v1/sessions/{id}/gate` | `{ tool }` | the same, and records `lastTool` (§23.56) |
 
-- `register` requires a non-empty `sessionId` (`400` otherwise) and is idempotent —
+- `register` requires a UUID `sessionId`; absolute paths ≤ 4096 chars; a `.jsonl`
+  `transcriptPath` (kept only inside `projectsDir`); a short `source`; an integer `pid`
+  (`400` naming the field otherwise). The pid is kept only for a Claude Code process of the
+  same user, or its nearest such ancestor, and is otherwise `null`. At most 256 sessions;
+  when every slot is a live session, `503 unavailable`. It is idempotent —
   `claude --resume` re-registers the same id with a new pid. Registering applies any rule
   created before the session existed.
-- `gate` is a loopback GET, so the hook needs no token. `?tool=` records `lastTool`.
+- The hook's first gate poll is a `POST` carrying the tool; re-polls are `GET`s.
 - `end` SIGCONTs the session's recorded `frozenPids` first, so a stopped process can never
   outlive the session that owned it.
 
@@ -466,7 +485,7 @@ Rule shape ([`test/fixtures/sessions/pause-rules.json`](../test/fixtures/session
 { "id": "r_k3m7qz4ub2ah6ptc",
   "scope": "session:3f1c0a52-9d64-4f2e-8b71-2c5a0d9e4411",
   "mode": "hard",
-  "reason": "usage-deck:9f21c4ab",
+  "reason": "usage-android:9f21c4ab",
   "createdAt": "2026-09-13T14:03:10.000Z",
   "createdBy": "dashboard" }
 ```
@@ -484,7 +503,7 @@ Semantics:
   new worktree session in a paused project comes up paused.
 - Posting the same `(scope, mode)` twice returns the existing rule (idempotent).
 - `reason` is echoed verbatim, trimmed to 200 characters, everywhere the rule appears —
-  so a client can tag its own rules (`usage-deck:<installId>`).
+  so a client can tag its own rules (`usage-android:<installId>`).
 - `resume` is idempotent: empty arrays when nothing matched.
 - Mode validation: anything but `"soft"` / `"hard"` → `400`; a malformed scope → `400`.
 
@@ -532,8 +551,7 @@ base64url chars). It never contains the bearer. No HTTPS listener at all ⇒
 
 ### `GET /v1/pair/code`
 
-Auth: loopback only (`403 forbidden` from anywhere else; like every loopback `GET`, no bearer
-needed). What became of the most recently minted code, so `claude-usage pair` can tell its
+Auth: bearer **and** loopback (`403 forbidden` from anywhere else). What became of the most recently minted code, so `claude-usage pair` can tell its
 page the phone is in (§23.52). Never the code itself.
 
 ```json
@@ -558,12 +576,17 @@ response is `401 unauthorized` with message `pairing code is invalid or expired`
 ``run `claude-usage pair` again``. After 5 failures in a minute from one remote address,
 the rest of that minute gets `429 rate_limited`, even for a valid code.
 
-`configure pairing` is unchanged and still prints the v1 JSON, bearer included, for the
-Android dashboard.
+### `DELETE /v1/pair/code`
+
+Auth: bearer **and** loopback. Voids the live code at once: `200 { "revoked": <bool> }`.
+`claude-usage pair` calls it whenever it ends without a phone pairing (§23.63).
+
+The old `configure pairing` command, whose v1 JSON carried the bearer, has been removed
+(§23.57).
 
 ## `GET /v1/events` (SSE)
 
-Auth: loopback GET exempt (and only `GET`/`HEAD`; anything else is `405` with
+Auth: token required (§23.55; and only `GET`/`HEAD`; anything else is `405` with
 `allow: GET, HEAD`). `HEAD` returns `200` with the stream headers and no body.
 
 Response headers:
@@ -684,15 +707,8 @@ Read against `docs/superpowers/specs/2026-09-13-claude-usage-design.md` (Part II
 override Part I). Where the code and the spec differ, the code is what this document
 describes; these are the differences worth knowing.
 
-1. **Three `POST` endpoints are token-exempt from loopback.** §16 and `CLAUDE.md` say
-   *every* mutating endpoint requires the bearer token, even from loopback.
-   `src/server/middleware.ts` carves out `POST /v1/sessions/register`,
-   `/v1/sessions/{id}/heartbeat` and `/v1/sessions/{id}/end` for loopback callers only,
-   because Claude Code runs `claude-usage hook` as a bare command with no way to read the
-   token, and a `SessionStart` that cannot register makes the whole sessions view wrong.
-   They are write-only bookkeeping keyed by a session id the caller must already know, and
-   return no data. From the tailnet they still require the token. Pause/resume are
-   deliberately not on the list.
+1. **(Resolved by §23.55.)** The three hook `POST`s used to be token-exempt from loopback;
+   they now need the token like every other request.
 2. **Two different `rev` counters.** `/v1/sessions.rev`, the `ETag`, and
    `/v1/pause/rules.rev` come from the session registry. The SSE `id:` field, the
    `snapshot.rev` and the `heartbeat.rev` come from the event bus, which counts *all*

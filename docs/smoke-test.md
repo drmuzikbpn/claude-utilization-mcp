@@ -65,7 +65,11 @@ plutil -p ~/Library/LaunchAgents/com.github.drmuzikbpn.claude-usage.plist
 stat -f '%Sp %N' ~/.config/claude-usage ~/.config/claude-usage/config.json
 #   drwx------ … and -rw------- …
 
-curl -s localhost:47291/health | head -c 120
+curl -s localhost:47291/health
+#   {"ok":true}   ← without the token, liveness and nothing else (§23.55)
+# Every other request needs the token, from this machine too. Keep it out of argv:
+umask 077; printf 'Authorization: Bearer %s\n' "$(node -p 'require(process.env.HOME + "/.config/claude-usage/config.json").auth.token')" > "${TMPDIR:-/tmp}/cu-auth"
+curl -s -H @"${TMPDIR:-/tmp}/cu-auth" localhost:47291/health | head -c 120
 #   {"ok":true,"name":"…","version":"…"
 
 python3 -c "import json;d=json.load(open('$HOME/.claude/settings.json'));\
@@ -187,42 +191,34 @@ node bin/claude-usage configure          # or install --tailscale
 # ensure config.bind is ["127.0.0.1", "tailscale"], then restart the service
 node bin/claude-usage serve --verbose
 #   claude-usage <name> listening on http://127.0.0.1:47291
-#   claude-usage <name> listening on http://100.x.y.z:47291
+#   claude-usage <name> listening on https://100.x.y.z:47292   (HTTPS only off loopback)
 #   net: MagicDNS name <host>.<tailnet>.ts.net
 ```
 
-```bash
-node bin/claude-usage configure pairing
-#   {"v":1,"name":"adams-mbp","addr":"100.101.102.103","port":47291,"token":"…"}
-#   <QR block>
-node bin/claude-usage configure pairing --json    # JSON only, no QR
-```
-
-From the **second device** (phone on the tailnet, or another laptop):
+Pair the second device with `node bin/claude-usage pair` (one-time code, pinned HTTPS).
+Then from it, against the HTTPS port — plain HTTP is not served off the machine (§23.57):
 
 ```bash
-TOKEN=…  ADDR=100.101.102.103
+ADDR=100.101.102.103 # public-check:allow — the sample tailnet address
 curl -s -o /dev/null -w '%{http_code}\n' http://$ADDR:47291/health
-#   401   ← non-loopback GET needs the token
-curl -s -H "Authorization: Bearer $TOKEN" http://$ADDR:47291/health | head -c 80
-#   {"ok":true,…
-curl -s -H "Authorization: Bearer wrong" -o /dev/null -w '%{http_code}\n' http://$ADDR:47291/health
+#   000   ← nothing listens on plain HTTP off loopback
+curl -sk https://$ADDR:47292/health
+#   {"ok":true}   ← liveness only without a token
+curl -sk -H @auth-header https://$ADDR:47292/health | head -c 80
+#   {"ok":true,"name":…   (auth-header: a 0600 file holding "Authorization: Bearer <token>")
+curl -sk -H "Authorization: Bearer wrong" -o /dev/null -w '%{http_code}\n' https://$ADDR:47292/health
 #   401
-curl -s -H "Authorization: Bearer $TOKEN" -H 'Origin: http://x' \
-     -o /dev/null -w '%{http_code}\n' http://$ADDR:47291/health
+curl -sk -H @auth-header -H 'Sec-Fetch-Site: cross-site' -o /dev/null -w '%{http_code}\n' https://$ADDR:47292/health
 #   403
-curl -s -H "Authorization: Bearer $TOKEN" --resolve evil.test:47291:$ADDR \
-     -o /dev/null -w '%{http_code}\n' http://evil.test:47291/health
-#   421   ← Host allowlist; `curl --resolve` is the way to set a bogus Host,
-#            because fetch() refuses to override it (see test/helpers/raw-request.ts)
-curl -s -H "Authorization: Bearer $TOKEN" http://<magicdns-name>:47291/health | head -c 40
-#   200 — the MagicDNS name is in the allowlist
+curl -sk -H @auth-header --resolve evil.test:47292:$ADDR \
+     -o /dev/null -w '%{http_code}\n' https://evil.test:47292/health
+#   421   ← Host allowlist
 ```
 
 SSE from the second device:
 
 ```bash
-curl -sN -H "Authorization: Bearer $TOKEN" http://$ADDR:47291/v1/events | head -20
+curl -skN -H @auth-header https://$ADDR:47292/v1/events | head -20
 #   retry: 3000
 #   id: N / event: snapshot / data: {"name":…,"sessions":[…],"rules":[…],"rev":N}
 #   … then a heartbeat within 15 s
@@ -306,7 +302,7 @@ start the daemon: the pid must be SIGCONTed within startup, and `sessions.json` 
 daemon was down):
 
 ```bash
-curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+curl -s -X POST -H @"${TMPDIR:-/tmp}/cu-auth" -H 'content-type: application/json' \
   -d '{"mode":"hard"}' localhost:47291/v1/sessions/<transcript-id>/pause
 #   409 conflict — "…has no trusted pid" / hint: use mode "soft"
 ```
@@ -320,12 +316,9 @@ disappears. Kill the daemon while a session is soft-paused: the session must **c
 
 ## 6. Auto-update and deferral
 
-**Landing in the next merge** — run this section once `claude-usage update` / `rollback`
-exist. Until then, only the first check applies.
-
-- `curl -s localhost:47291/health | python3 -c 'import sys,json;print(json.load(sys.stdin)["update"])'`
-  → today: `{'channel': 'stable', 'current': '0.1.0', 'available': None, 'state':
-  'disabled', 'deferredReason': None}`.
+- `curl -s -H @"${TMPDIR:-/tmp}/cu-auth" localhost:47291/health | python3 -c 'import sys,json;print(json.load(sys.stdin)["update"])'`
+  → the live update state. A release without a valid `SHA256SUMS.sig` must end in
+  `state: "error"` with nothing installed (§23.59).
 - Point `autoUpdate.repo` at a scratch fork with one newer release, wait one
   `intervalMs`, and confirm: `versions/<new>/` appears, `current` repoints, the daemon
   restarts under launchd/systemd, and `claude-usage --version` reports the new version.

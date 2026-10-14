@@ -5,8 +5,11 @@ sessions are spending, and pause them, from your terminal, inside Claude Code it
 from your phone and watch.**
 
 `claude-usage` is a small background service (a "daemon") for macOS and Linux. It reads the
-same usage numbers `/usage` shows and the token counts in Claude Code's own transcripts,
-and serves them on this machine only, unless you choose to let a phone in.
+same usage numbers `/usage` shows and the token counts in Claude Code's own transcripts.
+Out of the box it serves them to this machine only. A scripted `install --yes` keeps it that
+way; an interactive `install` asks whether phones on your network may reach it, and suggests
+yes. A phone only ever connects over HTTPS with a pinned certificate, after pairing with a
+one-time code.
 
 ## Two jobs, one daemon
 
@@ -49,8 +52,8 @@ npm ci && npm run build
 node bin/claude-usage install
 ```
 
-`install` asks before each change (answer **yes** to "LAN access for the iPhone app?" if you
-want to use a phone). It copies itself into `~/.local/share/claude-usage`, starts the
+`install` asks before each change (answer **yes** to "Let phones on this network reach the
+daemon?" if you want to use a phone). It copies itself into `~/.local/share/claude-usage`, starts the
 background service, registers the Claude Code hook and MCP server, and puts `claude-usage`
 on your PATH. Afterwards you can delete the checkout: the service updates itself from the
 GitHub releases.
@@ -383,10 +386,12 @@ Details:
   (`192.168.x`, `10.x`, `172.16–31.x`; never a VM bridge or VPN tunnel). The daemon notices
   when it changes, such as moving to another network, and rebinds within 30 seconds.
   `claude-usage configure lan on|off` toggles it.
-- **HTTPS.** Every non-loopback address also gets an HTTPS listener on `port + 1` (47292),
-  with a self-signed certificate generated once and kept in the config directory. Apps pin
-  its key fingerprint; the certificate's issuer and host name do not matter to them. Plain
-  HTTP stays on every address too, for Android decks paired the legacy way.
+- **HTTPS only.** Every non-loopback address gets an HTTPS listener on `port + 1` (47292),
+  with a self-signed certificate generated once and kept in the config directory, and no
+  plain-HTTP listener: plain HTTP is served on loopback only. Apps pin the key fingerprint;
+  the certificate's issuer and host name do not matter to them.
+- **No wildcard or public address.** `0.0.0.0`, `::` or a publicly routable address in
+  `bind` is refused unless you add `"allowPublicBind": true` to `config.json` yourself.
 - **`<your-mac>.local`** is accepted as a `Host`, and the pairing link offers it next to the
   IP address.
 - **`/health.install`** tells the app whether the hooks, the status line and the MCP server
@@ -399,44 +404,44 @@ claude-usage install --tailscale        # or: edit config.bind to ["127.0.0.1", 
 ```
 
 `bind` entries are IP literals or the keywords `tailscale` and `lan`. `tailscale` resolves to
-the first IPv4 interface address inside `100.64.0.0/10` (falling back to `tailscale ip -4`).
+an address inside `100.64.0.0/10` that is on a `tailscale*` interface or that `tailscale ip -4`
+reports (the CLI is looked for at its usual absolute install paths, never through `PATH`).
 An address that cannot be found gives a warning, and the daemon keeps retrying it.
 `SIGHUP` re-resolves without a restart. The tailnet address gets HTTPS too, so
 `claude-usage pair` lists it as another address the phone tries when the Wi-Fi one is out
 of reach. Pair once and it works both at home and away.
 
-### Legacy pairing (older Android deck builds)
+### `configure pairing` is gone
 
-```bash
-claude-usage configure pairing          # v1 pairing JSON + terminal QR
-claude-usage configure pairing --json   # JSON only
-```
+The old `claude-usage configure pairing` printed a QR code that carried the bearer token
+itself. It has been removed; running it now just points at `claude-usage pair`, which shows a
+one-time code instead.
 
-The v1 payload carries the bearer token itself, so treat that QR like a password, and
-prefer `claude-usage pair` on any deck that supports it:
+### Security model in six bullets
 
-```json
-{ "v": 1, "name": "adams-mbp", "addr": "100.101.102.103", "port": 47291, "token": "…" }
-```
-
-### Security model in five bullets
-
-- A 32-byte random bearer token is minted at install and stored in `config.json` (`0600`).
-  `claude-usage configure rotate-token` replaces it and restarts the daemon, so the old token stops working at once; every paired device shows a **Re-pair** card until you pair it again with `claude-usage pair`.
-- The one exception to "mutating requests need the token" is `POST /v1/pair`. It accepts
-  only a one-time pairing code that `claude-usage pair` minted, only over HTTPS, and stops
-  answering a sender after 5 failures in a minute.
-- **Loopback GET/HEAD needs no token** — that is what keeps the hook, the status line and
-  `curl localhost` zero-config. Everything else — every non-loopback request, every
-  mutating request even from loopback — requires `Authorization: Bearer <token>`, compared
-  in constant time.
+- A 32-byte random bearer token is minted at install (or by the first `serve`) and stored in
+  `config.json` (`0600`). `claude-usage configure rotate-token` replaces it and the old one
+  stops working at once — the service is restarted, or a daemon running in the foreground is
+  signalled, and the command fails loudly if that did not take. Every paired device shows a
+  **Re-pair** card until you pair it again with `claude-usage pair`.
+- **Every request needs the token, from this machine too.** The hook, status line, MCP server
+  and CLI read it from `config.json`. Loopback is not an identity: any local process and any
+  web page can reach `127.0.0.1`. The only exceptions: `GET /health` with no token at all
+  answers `{"ok": true}` and nothing else, and `POST /v1/pair` accepts only a one-time
+  pairing code that `claude-usage pair` minted, only over HTTPS, and stops answering a sender
+  after 5 failures in a minute.
+- **Only HTTPS leaves the machine**, with a certificate the app pins. Plain HTTP is
+  loopback-only, and wildcard or public addresses are refused.
 - The `Host` header must name an address the daemon is actually bound to (or `localhost`,
-  or the machine's MagicDNS or `.local` name); anything else is `421`. Any request carrying an `Origin`
-  header is `403`. No CORS headers are ever sent. That is the anti-DNS-rebinding story.
-- No endpoint ever returns a credential. The OAuth access token is read, used for one
-  read-only GET and never stored, logged or serialized; `/v1/config` redacts the bearer
-  token.
-- Loopback is decided from the socket's remote address, never from a header.
+  or the machine's MagicDNS or `.local` name); anything else is `421`. Any request carrying
+  an `Origin` header, or a `Sec-Fetch-Site` other than `none`, is `403`. No CORS headers are
+  ever sent. That is the anti-DNS-rebinding story.
+- The OAuth access token is read, used for one read-only GET and never stored, logged or
+  serialized. The bearer token is returned by exactly one endpoint — `POST /v1/pair`, over
+  HTTPS, to whoever holds a valid one-time code — and `/v1/config` and
+  `claude-usage config` redact it.
+- **Updates are signed.** The updater refuses any release whose `SHA256SUMS` is not signed
+  by a release key compiled into the daemon.
 
 Full threat model: [`docs/security.md`](docs/security.md). Wire format and every status
 code: [`docs/api.md`](docs/api.md).
@@ -468,7 +473,7 @@ load/save round-trip. An invalid value is an error naming the key.
 | `name` | `os.hostname()` | label the dashboard shows for this machine |
 | `port` | `47291` | HTTP port (0–65535) |
 | `bind` | `["127.0.0.1"]` | IP literals and/or the keywords `tailscale`, `lan` |
-| `auth.token` | `""` | bearer token; minted by `install`, `0600` |
+| `auth.token` | `""` | bearer token; minted by `install` or the first `serve`, `0600` |
 | `pollIntervalMs` | `300000` | limits poll interval (1 000 – 86 400 000; values under 120 000 are raised to 120 000) |
 | `thresholds.warn` | `80` | percent at which a limit becomes `warn` (0–100) |
 | `thresholds.critical` | `95` | percent at which a limit becomes `critical`; must be ≥ `warn` |
@@ -485,6 +490,7 @@ load/save round-trip. An invalid value is an error naming the key.
 | `events.maxClients` | `16` | concurrent SSE streams (1–4096) |
 | `tls.port` | `null` | HTTPS port for non-loopback addresses; `null` means `port + 1` |
 | `tls.loopback` | `false` | also serve HTTPS on loopback (tests and CI only) |
+| `allowPublicBind` | `false` | let `bind` name a wildcard or publicly routable address; set by hand only |
 
 Scriptable edits:
 
@@ -496,7 +502,6 @@ claude-usage configure port 47300                   # rewrites and restarts the 
 claude-usage configure rotate-token                 # then re-pair every phone: claude-usage pair
 claude-usage configure lan on                       # lan | service | hook | mcp | statusline | autoupdate
 claude-usage pair                                   # pair a phone (QR page)
-claude-usage configure pairing [--json]             # legacy v1 pairing for older Android decks
 ```
 
 Two caveats worth knowing today: `hookDebounceMinutes` and `retentionDays` are validated
@@ -513,11 +518,16 @@ is genuinely off — no `current` symlink, or `configure autoupdate off`.
 - Versioning `MAJOR.MINOR.<commit-count>+<short-sha>`, computed in CI from
   `git rev-list --count HEAD` on `main`.
 - Every green CI run on `main` tags `v<version>` and publishes a GitHub Release with the
-  `npm pack` tarball plus `SHA256SUMS`; npm publish happens from the same job.
+  `npm pack` tarball (which carries its own `npm-shrinkwrap.json`), `SHA256SUMS` and
+  `SHA256SUMS.sig`, an Ed25519 signature over `SHA256SUMS`. The package is not published to
+  npm.
 - The daemon checks `releases/latest` every `autoUpdate.intervalMs` (±10% jitter),
-  downloads over TLS, verifies the sha256, extracts to `versions/<v>/`, smoke-tests
-  `node bin/claude-usage --version` from it, atomically repoints `current` and exits 0 —
-  `KeepAlive` / `Restart` brings it back. The previous two versions are kept;
+  downloads over TLS, verifies the signature against the release keys compiled into the
+  daemon and then the sha256, extracts to `versions/<v>/` (installing its dependencies with
+  `npm ci` from the shipped lockfile), smoke-tests
+  `node bin/claude-usage --version` from it, atomically repoints `current` and asks the
+  service manager to restart it (exiting 75 as the fallback, which `KeepAlive` / `Restart`
+  also relaunch). The previous two versions are kept;
   `claude-usage rollback` repoints `current` to the previous one.
 - Never restarts while a session is hard-frozen (`state: "deferred"`,
   `deferredReason: "hard_frozen_sessions"`), re-checked every 30 s. Soft pauses do not defer.
@@ -555,8 +565,8 @@ machines alike, which is why nothing else reveals it.
   service-manager interfaces exist so it can be added without touching the daemon.
 
 Node ≥ 20. The daemon itself has zero runtime dependencies — `@modelcontextprotocol/sdk`
-and `qrcode-terminal` are loaded lazily by `mcp` and `configure pairing` only, and the
-`pair` page's QR code comes from a vendored copy of the same generator.
+is loaded lazily by `mcp` only, and the `pair` page's QR code comes from a vendored copy of
+the `qrcode-terminal` generator.
 
 ## Troubleshooting
 

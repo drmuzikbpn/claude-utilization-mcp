@@ -36,12 +36,13 @@ These are the ones whose violation is silent. `CLAUDE.md` holds the full list.
 - Never refresh Anthropic OAuth tokens, and never call any Anthropic endpoint other than
   `GET /api/oauth/usage`.
 - Hooks always exit 0 and never block. A daemon that is unreachable means the hook prints nothing.
-- Every mutating endpoint requires the bearer token, even from loopback.
+- Every request requires the bearer token, from loopback too. The only exceptions are
+  `POST /v1/pair` and a liveness-only `GET /health`. Plain HTTP is served on loopback only.
 - Hard-frozen pids must be `SIGCONT`ed on shutdown and uninstall, and `claude-usage resume --all`
   must work with the daemon dead.
 - Edits to `~/.claude/settings.json` are merge-only.
-- The daemon has no runtime dependencies — stdlib only. `@modelcontextprotocol/sdk` and
-  `qrcode-terminal` are loaded lazily by CLI subcommands.
+- The daemon has no runtime dependencies — stdlib only. `@modelcontextprotocol/sdk` is loaded
+  lazily by the `mcp` subcommand, and is the only production dependency.
 - Anything after the service step in `install` degrades to a note. A late step must never abort
   and destroy the report of the steps that already succeeded (§23.9, §23.29).
 
