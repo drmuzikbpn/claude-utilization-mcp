@@ -6,3 +6,4 @@ dist/
 !.env.tmpl
 skill-observations/
 .claude/worktrees/
+.public-check.local

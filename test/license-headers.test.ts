@@ -10,7 +10,7 @@ const COPYRIGHT = 'Copyright (c) 2026 Even Seal Productions';
 
 /** Directories whose every source file carries the header; `vendor/` and fixtures keep their own. */
 const TREES = ['src', 'test', 'scripts', 'bin', '.github/workflows'];
-const SINGLE = ['lefthook.yml', 'eslint.config.js', 'vitest.config.ts', '.github/dependabot.yml'];
+const SINGLE = ['lefthook.yml', 'eslint.config.js', 'vitest.config.ts', '.github/dependabot.yml', '.gitleaks.toml'];
 const SKIP_DIRS = new Set(['fixtures', 'node_modules']);
 const SOURCE = /\.(ts|mjs|js|sh|ya?ml)$/;
 

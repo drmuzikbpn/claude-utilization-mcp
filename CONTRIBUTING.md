@@ -1,8 +1,8 @@
 # Contributing to claude-usage
 
 Thanks for looking. This branch (`main`) is the local daemon, hooks, CLI and MCP server. The
-Android kiosk that consumes it lives on the `usage-deck` branch of the same repository and has
-its own contributing notes.
+Android dashboard that consumes it lives on the `usage-android` branch of the same repository,
+and the iPhone and watch app on `usage-ios`; each has its own contributing notes.
 
 **The spec is authoritative**, not the code:
 `docs/superpowers/specs/2026-09-13-claude-usage-design.md`. Part II and Part III override Part I
@@ -21,7 +21,11 @@ section covering anything you are about to change.
 - **Use temp dirs.** `XDG_CONFIG_HOME` via the helpers in `test/install/helpers.ts`. A test must
   never touch the real `~/.claude`.
 - **No secrets, ever.** Fixtures under `test/fixtures/` contain no credentials and no real prompt
-  text. Examples use `example.test` addresses and the documentation IPs already in the tree.
+  text. Examples use `example.test` addresses and the RFC 5737 documentation IPs
+  (`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`). Test keys are generated inside the tests.
+- **Every source file carries the licence header** — `SPDX-License-Identifier: MIT` and
+  `Copyright (c) 2026 Even Seal Productions`, in the file's comment syntax, after any shebang.
+  `test/license-headers.test.ts` fails without it. `vendor/` and fixtures keep their own.
 
 ## Invariants
 
@@ -45,14 +49,46 @@ These are the ones whose violation is silent. `CLAUDE.md` holds the full list.
 
 ```bash
 npm ci
-npm test                 # vitest, ~880 tests
+npm test                 # vitest
 npm run typecheck
 npm run lint
 npm run build            # dist/, ESM, Node >= 20
 ```
 
-`npm ci` installs the lefthook pre-commit hook for you via `prepare`; it runs lint and
-typecheck on every commit.
+`npm ci` installs the lefthook pre-commit hook for you via `prepare`; it runs lint, typecheck
+and `scripts/public-check.sh` on every commit.
+
+## What may not be committed
+
+This is a public repository, so `scripts/public-check.sh` reads the staged diff before every
+commit and refuses it when an added line contains:
+
+| Rule | What trips it |
+| --- | --- |
+| `credential` | a private-key header, a vendor token prefix (`sk-ant-`, `ghp_`, `github_pat_`, …), or a bearer-looking string of 40+ characters outside tests and lockfiles. `gitleaks protect --staged` runs as well when gitleaks is installed |
+| `email` | any address other than `*@example.test`, `*@example.com`, `noreply@anthropic.com`, GitHub's no-reply addresses and `support@evensealproductions.com` |
+| `home-path` | `/Users/<name>/` or `/home/<name>/` — use `alice`, `you` or `runner` |
+| `ipv4` | an address outside loopback and the RFC 5737 documentation ranges |
+| `cgnat` | anything inside `100.64.0.0/10`, the range Tailscale assigns from |
+| `tailnet` | a `*.ts.net` machine name other than `example.ts.net` |
+| `blocklist` | a literal from your own `.public-check.local` |
+| `identity` | an author or committer e-mail other than `support@evensealproductions.com` |
+
+Run it by hand with `bash scripts/public-check.sh`, or against any diff with
+`bash scripts/public-check.sh --diff some.patch`.
+
+- **Private words.** Put names, hostnames or anything else you never want published into an
+  untracked `.public-check.local` at the repository root, one literal per line (`#` comments
+  and blank lines are ignored). It is git-ignored, matched case-insensitively, and the script
+  reports the entry's line number rather than the word. A linked worktree falls back to the
+  main worktree's file.
+- **Deliberate exceptions.** A line carrying the marker `public-check:allow` is exempt from the
+  `email`, `home-path`, `ipv4`, `cgnat` and `tailnet` rules — for a test that genuinely needs a
+  private or CGNAT address, say. The marker never excuses a credential or a blocklisted literal.
+- **Do not bypass it** with `--no-verify`. If the check is wrong, fix the check.
+
+The script is self-contained (bash 3.2, grep, sed, awk) and holds generic patterns only, so the
+same file is used unchanged on the app branches. Its tests are `test/public-check.test.ts`.
 
 `docs/smoke-test.md` covers what unit tests cannot: the service really being supervised,
 unattended self-update, pause and freeze against live sessions. Run the sections your change

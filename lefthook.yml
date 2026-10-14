@@ -7,3 +7,6 @@ pre-commit:
       run: npx eslint .
     typecheck:
       run: npx tsc --noEmit
+    # Nothing private reaches a public repository: see CONTRIBUTING.md.
+    public-check:
+      run: bash scripts/public-check.sh

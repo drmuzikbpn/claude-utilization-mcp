@@ -1,0 +1,20 @@
+diff --git a/src/example.ts b/src/example.ts
+index 0000000..1111111 100644
+--- a/src/example.ts
++++ b/src/example.ts
+@@ -0,0 +1,15 @@
++-----BEGIN PRIVATE KEY-----
++-----BEGIN OPENSSH PRIVATE KEY-----
++const key = "sk-ant-EXAMPLEexampleEXAMPLE0000";
++export GH=ghp_EXAMPLEexampleEXAMPLEexample0000
++pat: github_pat_EXAMPLE_example_EXAMPLE_0000
++curl -H "Authorization: Bearer 0000aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff"
++"token": "0000aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff6666"
++const opaque = "Zm9vYmFyMDEyMzQ1Njc4OWZvb2JhcjAxMjM0NTY3ODlmb29iYXI";
++Contact person@not-on-the-list.invalid.example.dev for access
++const dir = "/Users/somebody/code/project";
++cd /home/somebody/project
++const dns = "198.18.0.1";
++bind: ["192.168.50.7"]
++const tailnet = "100.64.0.9";
++https://machine.fake-tailnet.ts.net:47292/

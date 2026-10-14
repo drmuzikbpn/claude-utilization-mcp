@@ -1,0 +1,33 @@
+diff --git a/src/example.ts b/src/example.ts
+index 0000000..1111111 100644
+--- a/src/example.ts
++++ b/src/example.ts
+@@ -0,0 +1,22 @@
++// Lookalikes that are fine to publish.
++const loopback = "127.0.0.1";
++const docs = ["192.0.2.10", "198.51.100.7", "203.0.113.200"];
++// Private ranges are 10.0.0.0/8, 172.16.0.0/12 and 192.168.0.0/16; CGNAT is 100.64.0.0/10.
++const wildcard = "0.0.0.0";
++const version = "1.2.3.4.5";
++const mail = "someone@example.test, other@example.com, noreply@anthropic.com";
++const bot = "12345+bot@users.noreply.github.com";
++const project = "support@evensealproductions.com";
++const remote = "git@github.com:example/example.git";
++const home = "/Users/alice/code and /home/runner/work";
++const magic = "host.example.ts.net or any *.ts.net name";
++const pin = "uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683";
++const digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
++const label = this@Outer.member;
++const scoped = "@scope/package@1.2.3";
++++ a line that itself starts with two pluses
++const waived = "198.18.0.1"; // public-check:allow — benchmark range, used on purpose
++const short = "token: abc123";
++const keyHeader = "-----BEGIN PUBLIC KEY-----";
++const placeholder = "RELEASE_PUBLIC_KEY_PLACEHOLDER";
++const env = "GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}";
+diff --git a/test/example.test.ts b/test/example.test.ts
+index 0000000..1111111 100644
+--- a/test/example.test.ts
++++ b/test/example.test.ts
+@@ -0,0 +1 @@
++const TEST_TOKEN = "Zm9vYmFyMDEyMzQ1Njc4OWZvb2JhcjAxMjM0NTY3ODlmb29iYXI";

@@ -1,0 +1,15 @@
+credential	-----BEGIN PRIVATE KEY-----
+credential	-----BEGIN OPENSSH PRIVATE KEY-----
+credential	const key = "sk-ant-EXAMPLEexampleEXAMPLE0000";
+credential	export GH=ghp_EXAMPLEexampleEXAMPLEexample0000
+credential	pat: github_pat_EXAMPLE_example_EXAMPLE_0000
+credential	curl -H "Authorization: Bearer 0000aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff"
+credential	"token": "0000aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff6666"
+credential	const opaque = "Zm9vYmFyMDEyMzQ1Njc4OWZvb2JhcjAxMjM0NTY3ODlmb29iYXI";
+email	Contact person@not-on-the-list.invalid.example.dev for access
+home-path	const dir = "/Users/somebody/code/project";
+home-path	cd /home/somebody/project
+ipv4	const dns = "198.18.0.1";
+ipv4	bind: ["192.168.50.7"]
+cgnat	const tailnet = "100.64.0.9";
+tailnet	https://machine.fake-tailnet.ts.net:47292/
