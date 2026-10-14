@@ -14,6 +14,9 @@ final class AlertNotifier: NSObject {
     /// Tapping a lost-pairing notification: opens Re-pair for that device.
     var onRepair: ((String) -> Void)?
     private nonisolated static let repairKey = "repairDeviceId"
+    /// Demo mode: made-up devices raise made-up alerts, which must never reach the real
+    /// Notification Centre (or drop a banner over a screenshot).
+    var muted = false
 
     /// Becomes the notification centre's delegate so a banner still shows while the app is open.
     func install() {
@@ -22,10 +25,12 @@ final class AlertNotifier: NSObject {
 
     /// Asked at the first pairing, when there is finally something to be alerted about.
     func requestAuthorization() {
+        guard !muted else { return }
         center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
     func post(_ alert: Alert, quiet: Bool) {
+        guard !muted else { return }
         let content = UNMutableNotificationContent()
         content.title = alert.title
         content.body = alert.body

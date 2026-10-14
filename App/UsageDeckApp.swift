@@ -15,6 +15,7 @@ enum AppGraph {
     private static func makeStore() -> DeckStore {
         #if DEBUG
             if DemoData.isEnabled {
+                notifier.muted = true
                 let defaults = UserDefaults(suiteName: "usagedeck.demo") ?? .standard
                 defaults.removePersistentDomain(forName: "usagedeck.demo")
                 let store = DeckStore(

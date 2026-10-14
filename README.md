@@ -10,6 +10,30 @@ Usage Deck does not talk to Anthropic. It reads everything from
 [`claude-usage`](https://github.com/drmuzikbpn/claude-utilization-mcp), a small daemon you run on
 the computer where you use Claude Code (macOS or Linux), and talks only to that device.
 
+## What it looks like
+
+Every picture here is the app's demo mode: made-up devices, accounts and projects.
+
+| Ledger | Expanded project | Project | Device | Pairing |
+| --- | --- | --- | --- | --- |
+| <img src="docs/images/iphone-ledger.png" width="160" alt="iPhone home: two accounts and three live projects"> | <img src="docs/images/iphone-ledger-expanded.png" width="160" alt="A project unfolded into its sessions"> | <img src="docs/images/iphone-project.png" width="160" alt="Project drill-in with a five-hour burn chart"> | <img src="docs/images/iphone-device.png" width="160" alt="Device screen with its setup checklist"> | <img src="docs/images/iphone-pairing.png" width="160" alt="Pairing sheet"> |
+
+Landscape turns the iPhone into the wide dock, and a re-pair that would change a device's
+certificate says so first:
+
+<img src="docs/images/iphone-wide-dock.png" width="420" alt="Landscape wide dock"> <img src="docs/images/iphone-re-pair-warning.png" width="160" alt="Re-pair confirmation warning that the certificate differs">
+
+Widgets (small, medium, and the lock-screen circular, rectangular and inline families):
+
+<img src="docs/images/widget-systemSmall.png" width="120" alt="Small widget"> <img src="docs/images/widget-systemMedium.png" width="250" alt="Medium widget"> <img src="docs/images/widget-accessoryCircular.png" width="56" alt="Circular lock-screen widget"> <img src="docs/images/widget-accessoryRectangular.png" width="130" alt="Rectangular lock-screen widget"> <img src="docs/images/widget-accessoryInline.png" width="190" alt="Inline lock-screen widget">
+
+Apple Watch: an account page, the projects list, a project, the actions page, and the
+complications (circular, rectangular, corner, inline):
+
+<img src="docs/images/watch-account.png" width="150" alt="Watch account page with 5-hour and 7-day rings"> <img src="docs/images/watch-projects.png" width="150" alt="Watch projects list"> <img src="docs/images/watch-project.png" width="150" alt="Watch project detail"> <img src="docs/images/watch-actions.png" width="150" alt="Watch actions page">
+
+<img src="docs/images/complication-accessoryCircular.png" width="50" alt="Circular complication"> <img src="docs/images/complication-accessoryRectangular.png" width="150" alt="Rectangular complication"> <img src="docs/images/complication-accessoryCorner.png" width="44" alt="Corner complication"> <img src="docs/images/complication-accessoryInline.png" width="150" alt="Inline complication">
+
 ## Pair a device
 
 1. Install `claude-usage` on the device: see

@@ -50,11 +50,12 @@ final class UsageDeckSmokeTests: XCTestCase {
         snap("device")
         app.buttons["Re-pair"].tap()
         XCTAssertTrue(app.staticTexts["Or paste the pairing link"].waitForExistence(timeout: 5))
+        snap("pairing-sheet")
         let field = app.textFields.firstMatch
         field.tap()
         field.typeText(#"{"v":1,"name":"studio","addr":"100.64.0.7","port":47291,"token":"abc"}"#)
         app.buttons["Pair"].tap()
-        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'Android pairing code'")).firstMatch
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'old pairing code'")).firstMatch
             .waitForExistence(timeout: 5))
         snap("pairing")
     }
@@ -107,7 +108,45 @@ final class UsageDeckSmokeTests: XCTestCase {
             + "&code=abcdefghijklmnopqrstuv\n")
         XCTAssertTrue(app.alerts["Replace studio with attic?"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.alerts.buttons["Pair as new"].exists)
+        // Its certificate is not the one studio was paired with, and the alert says so.
+        XCTAssertTrue(element(labelled: "CONTAINS 'certificate in this code differs from the one studio was paired with'").exists)
         snap("replace-confirm")
+        app.alerts.buttons["Cancel"].tap()
+    }
+
+    /// The widgets open `usagedeck://open`. It brings the app forward and nothing else: no
+    /// pairing sheet, no error, and a Re-pair that was in progress is still in progress.
+    @MainActor
+    func testAWidgetLinkOnlyBringsTheAppForward() throws {
+        let open = try XCTUnwrap(URL(string: "usagedeck://open"))
+        XCTAssertTrue(app.staticTexts["Adam"].waitForExistence(timeout: 10))
+        XCUIDevice.shared.system.open(open)
+        XCTAssertFalse(app.staticTexts["Or paste the pairing link"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Adam"].exists)
+
+        relaunch(["-UsageDeckDemoNeedsRepair"])
+        XCTAssertTrue(app.buttons["Re-pair studio"].waitForExistence(timeout: 10))
+        app.buttons["Re-pair studio"].tap()
+        XCTAssertTrue(app.navigationBars["Re-pair"].waitForExistence(timeout: 5))
+        XCUIDevice.shared.system.open(open)
+        XCTAssertTrue(app.navigationBars["Re-pair"].waitForExistence(timeout: 3))
+        XCTAssertFalse(element(labelled: "CONTAINS 'pairing link'  AND label CONTAINS 'isn'").exists)
+    }
+
+    /// A pairing link from outside the app while the Re-pair sheet is open is a new pairing: it
+    /// must not replace the device being re-paired.
+    @MainActor
+    func testALinkFromOutsideNeverReplacesTheDeviceBeingRepaired() throws {
+        relaunch(["-UsageDeckDemoNeedsRepair"])
+        XCTAssertTrue(app.buttons["Re-pair studio"].waitForExistence(timeout: 10))
+        app.buttons["Re-pair studio"].tap()
+        XCTAssertTrue(app.navigationBars["Re-pair"].waitForExistence(timeout: 5))
+        let link = "usagedeck://pair?v=2&name=attic&addrs=attic.example.test&port=47292&fp=\(String(repeating: "cd", count: 32))"
+            + "&code=abcdefghijklmnopqrstuv"
+        try XCUIDevice.shared.system.open(XCTUnwrap(URL(string: link)))
+        XCTAssertTrue(app.navigationBars["Re-pair"].exists, "the app was not relaunched: the Re-pair sheet is still up")
+        XCTAssertTrue(app.alerts["Pair attic?"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.alerts.buttons["Replace"].exists)
         app.alerts.buttons["Cancel"].tap()
     }
 
