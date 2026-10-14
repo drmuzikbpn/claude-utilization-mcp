@@ -73,19 +73,19 @@
             studio.limitsFetchedAt = now.addingTimeInterval(-20)
             studio.today = Tokens(input: 420_000, output: 180_000, cacheCreate: 900_000, cacheRead: 7_400_000, messages: 312)
             studio.sessions = [
-                session("7f3a91c2", project: "claude-utilization-mcp", tokens: 3_100_000, now: now, title: "usage-ios phone"),
-                session("b2e40d17", project: "claude-utilization-mcp", tokens: 1_250_000, now: now, worktree: "ios-watch"),
+                session("7f3a91c2", project: "garden-planner", tokens: 3_100_000, now: now, title: "seed calendar"),
+                session("b2e40d17", project: "garden-planner", tokens: 1_250_000, now: now, worktree: "frost-dates"),
                 session(
                     "c9d1aa03",
-                    project: "android-project",
+                    project: "recipe-box",
                     tokens: 640_000,
                     now: now,
                     pause: PauseState(mode: .soft, ruleId: "r1", scope: "session:c9d1aa03", since: now, frozenPids: [])
                 ),
             ]
             studio.projectTokens = [ProjectTokens(
-                key: "/src/podcast-site",
-                label: "/src/podcast-site",
+                key: "/src/photo-archive",
+                label: "/src/photo-archive",
                 tokens: Tokens(input: 90000, output: 30000)
             )]
 
@@ -108,7 +108,7 @@
             laptop.sessions = [
                 session(
                     "e5f60718",
-                    project: "evenseal-web",
+                    project: "tide-tables",
                     tokens: 2_000_000,
                     now: now,
                     pause: PauseState(

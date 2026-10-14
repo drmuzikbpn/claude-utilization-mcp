@@ -27,18 +27,18 @@ final class UsageDeckSmokeTests: XCTestCase {
         snap("ledger")
 
         app.staticTexts["Adam"].tap()
-        app.buttons["Expand claude-utilization-mcp"].tap()
-        XCTAssertTrue(app.staticTexts["usage-ios phone"].waitForExistence(timeout: 5))
+        app.buttons["Expand garden-planner"].tap()
+        XCTAssertTrue(app.staticTexts["seed calendar"].waitForExistence(timeout: 5))
         snap("ledger-expanded")
 
-        app.buttons["Open claude-utilization-mcp"].tap()
+        app.buttons["Open garden-planner"].tap()
         XCTAssertTrue(app.staticTexts["share of today"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Pause project"].exists)
         snap("project")
         app.navigationBars.buttons.element(boundBy: 0).tap()
 
         app.buttons["Projects"].tap()
-        XCTAssertTrue(app.staticTexts["podcast-site"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["photo-archive"].waitForExistence(timeout: 5))
         snap("projects")
         app.navigationBars.buttons.element(boundBy: 0).tap()
 
@@ -165,7 +165,8 @@ final class UsageDeckSmokeTests: XCTestCase {
         XCTAssertLessThan(app.buttons["Pause all"].frame.midX, window.midX, "rail sits left")
         XCTAssertGreaterThan(caption.frame.minX, app.buttons["Pause all"].frame.maxX, "sessions pane is right of the rail")
         XCTAssertGreaterThan(rateHeader.frame.maxX, window.width * 0.75, "sessions pane reaches the right edge")
-        snap("wide-dock")
+        // app.screenshot() comes back as a portrait frame cut square in landscape; the screen's is whole.
+        snap("wide-dock", XCUIScreen.main.screenshot())
     }
 
     @MainActor
@@ -181,8 +182,8 @@ final class UsageDeckSmokeTests: XCTestCase {
     }
 
     @MainActor
-    private func snap(_ name: String) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
+    private func snap(_ name: String, _ screenshot: XCUIScreenshot? = nil) {
+        let attachment = XCTAttachment(screenshot: screenshot ?? app.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
