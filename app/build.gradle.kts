@@ -86,7 +86,6 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.ext)
     testImplementation(libs.coroutines.test)
-    testImplementation(libs.turbine)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(bom)
     testImplementation(libs.compose.ui.test.junit4)

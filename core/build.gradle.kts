@@ -13,7 +13,6 @@ dependencies {
     implementation(libs.okhttp.sse)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
-    testImplementation(libs.turbine)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.okhttp.tls)
 }
