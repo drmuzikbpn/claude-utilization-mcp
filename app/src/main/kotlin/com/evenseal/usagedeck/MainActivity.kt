@@ -16,6 +16,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.evenseal.usagedeck.kiosk.KioskManager
 import com.evenseal.usagedeck.kiosk.LockTaskReceiver
 import com.evenseal.usagedeck.kiosk.ScreenHold
 import com.evenseal.usagedeck.service.DeckService
@@ -23,6 +24,7 @@ import com.evenseal.usagedeck.ui.DeckNav
 import com.evenseal.usagedeck.ui.alerts.AlertOverlay
 import com.evenseal.usagedeck.ui.kiosk.ExitGate
 import com.evenseal.usagedeck.ui.kiosk.FirstPinDialog
+import com.evenseal.usagedeck.ui.kiosk.StorageErrorScreen
 import com.evenseal.usagedeck.ui.pairing.ImportConfirmDialog
 import com.evenseal.usagedeck.ui.setOrChangePin
 import kotlinx.coroutines.Dispatchers
@@ -39,8 +41,23 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
     private val graph by lazy { (application as UsageDeckApp).graph }
 
+    /** The encrypted store could not be opened; nothing here may touch [graph]. */
+    private var failed = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        if ((application as UsageDeckApp).storageFailure != null) {
+            // Fail closed: no graph, no service, no clients. The kiosk still locks, so a deck
+            // with a broken keystore shows this to a passer-by instead of the launcher.
+            failed = true
+            KioskManager(this).run {
+                applyPolicies()
+                startLockTask(this@MainActivity)
+            }
+            setContent { StorageErrorScreen() }
+            return
+        }
 
         if (graph.kiosk.isDeviceOwner) {
             graph.kiosk.applyPolicies()
@@ -103,6 +120,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (failed) return
         // Coming back from the captive portal or the QR scanner must re-pin the deck, unless a
         // maintenance window is deliberately open.
         if (graph.kiosk.isDeviceOwner && System.currentTimeMillis() >= maintenanceUntil) {

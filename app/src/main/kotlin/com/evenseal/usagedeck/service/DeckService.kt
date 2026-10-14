@@ -35,8 +35,16 @@ class DeckService : LifecycleService() {
 
     /** Last time each still-critical limit was re-announced. */
 
+    /** False when the encrypted store is unavailable: the service then owns nothing and stops. */
+    private var running = false
+
     override fun onCreate() {
         super.onCreate()
+        if ((application as UsageDeckApp).storageFailure != null) {
+            stopSelf()
+            return
+        }
+        running = true
         startForeground(NOTIFICATION_ID, buildNotification())
 
         graph.mode.start()
@@ -51,10 +59,14 @@ class DeckService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
-        return START_STICKY
+        return if (running) START_STICKY else START_NOT_STICKY
     }
 
     override fun onDestroy() {
+        if (!running) {
+            super.onDestroy()
+            return
+        }
         graph.updater.stop()
         graph.updateChecks = null
         graph.pause.stop()

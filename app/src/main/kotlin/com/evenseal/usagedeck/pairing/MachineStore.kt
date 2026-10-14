@@ -6,12 +6,8 @@ package com.evenseal.usagedeck.pairing
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import com.evenseal.usagedeck.core.model.MachineConfig
 import com.evenseal.usagedeck.core.pairing.PairingInvite
-import java.io.IOException
-import java.security.GeneralSecurityException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -163,32 +159,5 @@ class MachineStore(private val prefs: SharedPreferences) {
         private val listSerializer = ListSerializer(StoredMachine.serializer())
 
         fun open(context: Context): MachineStore = MachineStore(encryptedPrefs(context, PREFS_NAME))
-    }
-}
-
-/**
- * Opens [name] as `EncryptedSharedPreferences`, falling back to plain prefs when the AndroidKeyStore
- * is unavailable — which is the case under Robolectric, and on a device whose keystore has been
- * wiped. The fallback keeps the app usable; on the real kiosk the encrypted path always wins.
- */
-internal fun encryptedPrefs(context: Context, name: String): SharedPreferences {
-    val app = context.applicationContext
-    return try {
-        val key = MasterKey.Builder(app)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            app,
-            name,
-            key,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    } catch (e: GeneralSecurityException) {
-        Log.w("UsageDeckPrefs", "keystore unavailable, falling back to plain prefs for $name", e)
-        app.getSharedPreferences(name, Context.MODE_PRIVATE)
-    } catch (e: IOException) {
-        Log.w("UsageDeckPrefs", "keystore unreadable, falling back to plain prefs for $name", e)
-        app.getSharedPreferences(name, Context.MODE_PRIVATE)
     }
 }
