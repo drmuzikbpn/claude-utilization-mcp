@@ -367,6 +367,9 @@ public struct DeviceState: Sendable, Equatable {
     public var record: DeviceRecord
     public var health: Health = .dead
     public var lastHeartbeatAt: Date?
+    /// No check-in for `Aging.gone` (a day): still paired and listed, but it contributes no
+    /// account, project or total to the dashboards until it is heard from again.
+    public var gone = false
     public var name: String?
     public var version: String?
     public var user: User?

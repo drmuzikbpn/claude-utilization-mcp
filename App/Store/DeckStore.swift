@@ -346,8 +346,7 @@ final class DeckStore {
         let devices = records.map { record -> DeviceState in
             var state = states[record.id] ?? DeviceState(record: record)
             state.record = record
-            state.health = Aging.health(lastHeartbeatAt: state.lastHeartbeatAt, now: at)
-            return state
+            return state.aged(now: at)
         }
         let next = TeamState(devices: devices)
         let previous = team

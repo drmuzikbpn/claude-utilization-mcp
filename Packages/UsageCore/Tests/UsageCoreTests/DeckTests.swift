@@ -229,6 +229,16 @@ struct HomeEmptyTests {
         #expect(HomeEmpty.of(TeamState(devices: [busy])) == nil)
     }
 
+    @Test func aDeviceSilentForADayIsWaitedForAgain() {
+        let quiet = device("d1", user: adam, limits: [limit("session", 50)]).aged(now: t0.addingTimeInterval(86400))
+        #expect(!quiet.hasSnapshot)
+        #expect(HomeEmpty.of(TeamState(devices: [quiet])) == .connecting)
+        #expect(TeamState(devices: [quiet]).usersWithData.isEmpty)
+        // With another device reporting, the hint names only the ones that can show a session.
+        let team = TeamState(devices: [quiet, device("d2", user: adam)])
+        #expect(HomeEmpty.of(team) == .noSessions(deviceNames: ["d2"]))
+    }
+
     @Test func usersWithDataSkipsDevicesThatNeverArrived() {
         var waiting = DeviceState(record: record(id: "d2", addrs: ["10.0.0.1"]))
         waiting.health = .dead

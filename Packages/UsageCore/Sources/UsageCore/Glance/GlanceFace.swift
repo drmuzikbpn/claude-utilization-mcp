@@ -44,6 +44,19 @@ public extension WatchSnapshot {
         return max(account.health, byAge)
     }
 
+    /// This snapshot as it may be drawn at `now`. The iPhone already leaves out devices silent
+    /// for a day when it builds one; a snapshot that is itself a day old (`Aging.gone`) means no
+    /// device behind it has been heard from since, so its readings go too. Devices stay listed.
+    func current(now: Date) -> WatchSnapshot {
+        guard now.timeIntervalSince(generatedAt) >= Aging.gone else { return self }
+        var expired = self
+        expired.accounts = []
+        expired.projects = []
+        expired.teamTodayTokens = 0
+        expired.liveSessionCount = 0
+        return expired
+    }
+
     /// Whether `other` should replace this snapshot: never let an older reply (the phone's cached
     /// copy) overwrite a fresher application context.
     func isSuperseded(by other: WatchSnapshot) -> Bool {
@@ -117,7 +130,7 @@ public struct GlanceFace: Sendable, Equatable {
         now: Date,
         timeZone: TimeZone = .current
     ) -> GlanceFace {
-        guard let snapshot else { return blank(.noData) }
+        guard let snapshot = snapshot?.current(now: now) else { return blank(.noData) }
         guard snapshot.hasDevices else { return blank(.noDevices) }
         guard let account = snapshot.account(for: choice) else { return blank(.noData) }
         let health = snapshot.glanceHealth(of: account, now: now)

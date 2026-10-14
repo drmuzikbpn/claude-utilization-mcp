@@ -106,6 +106,19 @@ struct WatchSnapshotTests {
         #expect(!json.lowercased().contains("token\""), "no token field")
     }
 
+    @Test func aDeviceSilentForADayReachesTheWristAsADeviceWithNoAccount() {
+        let quiet = device("m1", user: jules, limits: [limit("session", 91)], sessions: [session("s1")], today: Tokens(input: 9))
+            .aged(now: t0.addingTimeInterval(86400))
+        let live = device("m2", user: adam, limits: [limit("session", 10)], today: Tokens(input: 3))
+        let snapshot = WatchSnapshot.make(team: TeamState(devices: [quiet, live]), escalations: [], now: t0.addingTimeInterval(86400))
+        #expect(snapshot.accounts.map(\.key) == ["uuid-adam"])
+        #expect(snapshot.devices.map(\.id) == ["m1", "m2"])
+        #expect(snapshot.devices.first?.lastSeenAt == t0)
+        #expect(snapshot.projects.isEmpty)
+        #expect(snapshot.teamTodayTokens == 3)
+        #expect(snapshot.liveSessionCount == 0)
+    }
+
     @Test func roundTripsThroughTheCodec() throws {
         let snapshot = WatchSnapshot.make(team: bigTeam(projects: 3, sessionsEach: 2), escalations: [], now: t0)
         #expect(try WatchSnapshotCodec.decode(WatchSnapshotCodec.encode(snapshot)) == snapshot)

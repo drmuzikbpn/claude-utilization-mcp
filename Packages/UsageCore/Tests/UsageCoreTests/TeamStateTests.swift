@@ -63,6 +63,43 @@ struct TeamStateTests {
         #expect(team.user(key: "uuid-adam")?.fiveHour?.percent == 10)
     }
 
+    @Test func aDeviceSilentForADayContributesNothingButStaysListed() {
+        let quiet = device(
+            "m1",
+            user: jules,
+            limits: [limit("session", 91)],
+            limitsFetchedAt: t0,
+            sessions: [session("s1", tokens: Tokens(input: 5))],
+            today: Tokens(input: 500),
+            projectTokens: [ProjectTokens(key: "/old", label: "/old", tokens: Tokens(input: 500))]
+        ).aged(now: t0.addingTimeInterval(86400))
+        let live = device("m2", user: adam, limits: [limit("session", 10)], limitsFetchedAt: t0, today: Tokens(input: 3))
+        let team = TeamState(devices: [quiet, live])
+        #expect(team.devices.map(\.id) == ["m1", "m2"])
+        #expect(team.device("m1")?.gone == true)
+        #expect(team.users.map(\.key) == ["uuid-adam"])
+        #expect(team.projects.isEmpty)
+        #expect(team.teamToday.total == 3)
+        #expect(team.liveSessionCount == 0)
+    }
+
+    @Test func aGoneDeviceNeverSuppliesAnAccountsLimitsEvenIfSomeArrive() throws {
+        var quiet = device("m1", user: adam).aged(now: t0.addingTimeInterval(86400))
+        // A reply without the heartbeat that proves it (a sessions poll alone) is not a check-in.
+        quiet.limits = [limit("session", 99)]
+        quiet.limitsFetchedAt = t0.addingTimeInterval(86400)
+        quiet.sessions = [session("s1")]
+        quiet.today = Tokens(input: 8)
+        let live = device("m2", user: adam, limits: [limit("session", 10)], limitsFetchedAt: t0, today: Tokens(input: 3))
+        let team = TeamState(devices: [quiet, live])
+        let user = try #require(team.users.first)
+        #expect(user.deviceIds == ["m2"])
+        #expect(user.fiveHour?.percent == 10)
+        #expect(team.projects.isEmpty)
+        #expect(team.liveSessionCount == 0)
+        #expect(team.teamToday.total == 3)
+    }
+
     @Test func aDeviceWithNoUserFallsBackToItsId() throws {
         let user = try #require(TeamState(devices: [device("m9")]).users.first)
         #expect(user.key == "m9")

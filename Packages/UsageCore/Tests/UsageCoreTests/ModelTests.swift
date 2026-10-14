@@ -17,6 +17,50 @@ struct AgingTests {
     @Test func aHeartbeatInTheFutureIsFresh() {
         #expect(Aging.health(lastHeartbeatAt: t0.addingTimeInterval(5), now: t0) == .fresh)
     }
+
+    @Test func aDeviceIsGoneADayAfterItsLastCheckIn() {
+        #expect(!Aging.isGone(lastHeartbeatAt: t0.addingTimeInterval(-86399), now: t0))
+        #expect(Aging.isGone(lastHeartbeatAt: t0.addingTimeInterval(-86400), now: t0))
+        // Never heard from is still connecting: there is nothing of its to drop.
+        #expect(!Aging.isGone(lastHeartbeatAt: nil, now: t0))
+    }
+
+    @Test func agingADeviceOutForgetsItsReadingsButNotWhoItIs() {
+        var state = device(
+            "m1",
+            user: adam,
+            limits: [limit("session", 42)],
+            limitsFetchedAt: t0,
+            sessions: [session("s1")],
+            today: Tokens(input: 9),
+            projectTokens: [ProjectTokens(key: "/g", label: "/g", tokens: Tokens(input: 9))]
+        )
+        state.version = "0.1.98"
+        state.summaryLoaded = true
+
+        let dead = state.aged(now: t0.addingTimeInterval(86399))
+        #expect(dead.health == .dead)
+        #expect(!dead.gone)
+        #expect(dead.limits.map(\.percent) == [42])
+
+        let gone = dead.aged(now: t0.addingTimeInterval(86400))
+        #expect(gone.gone)
+        #expect(gone.limits.isEmpty)
+        #expect(gone.limitsFetchedAt == nil)
+        #expect(gone.sessions.isEmpty)
+        #expect(gone.today == .zero)
+        #expect(gone.projectTokens.isEmpty)
+        #expect(!gone.summaryLoaded)
+        #expect(gone.user == adam)
+        #expect(gone.version == "0.1.98")
+        #expect(gone.lastHeartbeatAt == t0)
+    }
+
+    @Test func anAnswerThatLandsWhileGoneSurvivesTheNextTick() {
+        var gone = device("m1", limits: [limit("session", 42)]).aged(now: t0.addingTimeInterval(2 * 86400))
+        gone.limits = [limit("session", 7)]
+        #expect(gone.aged(now: t0.addingTimeInterval(2 * 86400 + 1)).limits.map(\.percent) == [7])
+    }
 }
 
 struct BurnHistoryTests {

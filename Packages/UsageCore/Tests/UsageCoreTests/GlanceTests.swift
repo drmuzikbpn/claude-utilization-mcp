@@ -131,6 +131,25 @@ struct GlanceFaceTests {
         #expect(face.age == "0s ago")
     }
 
+    @Test func aSnapshotADayOldShowsNoReadings() {
+        let stored = snapshot(accounts: two, projects: [project("/g", today: 10, live: true)])
+        let almost = t0.addingTimeInterval(86399)
+        #expect(stored.current(now: almost) == stored)
+        #expect(GlanceFace.make(snapshot: stored, choice: .highest, now: almost).state == .account)
+
+        let dayLater = t0.addingTimeInterval(86400)
+        let expired = stored.current(now: dayLater)
+        #expect(expired.accounts.isEmpty)
+        #expect(expired.projects.isEmpty)
+        #expect(expired.teamTodayTokens == 0)
+        #expect(expired.liveSessionCount == 0)
+        #expect(expired.devices == stored.devices)
+        #expect(expired.generatedAt == stored.generatedAt)
+        let face = GlanceFace.make(snapshot: stored, choice: .highest, now: dayLater)
+        #expect(face.state == .noData)
+        #expect(face.fiveHour.label == "—")
+    }
+
     @Test func emptyStatesSayWhy() {
         #expect(GlanceFace.make(snapshot: nil, choice: .highest, now: t0).state == .noData)
         #expect(GlanceFace.make(snapshot: snapshot(accounts: two, devices: []), choice: .highest, now: t0).state == .noDevices)

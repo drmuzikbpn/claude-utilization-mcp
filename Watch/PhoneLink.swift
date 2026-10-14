@@ -37,7 +37,7 @@ final class PhoneLink: NSObject {
 
     override init() {
         super.init()
-        snapshot = store.read()
+        snapshot = store.read()?.current(now: .now)
         #if DEBUG
             if let sample = DebugLaunch.sampleSnapshot() {
                 isSample = true
@@ -58,6 +58,8 @@ final class PhoneLink: NSObject {
         pollTask?.cancel()
         pollTask = nil
         guard active else { return }
+        // What was left on the wrist a day ago is not shown as if it were today's.
+        snapshot = snapshot?.current(now: .now)
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 self?.refresh()

@@ -19,7 +19,7 @@ public enum HomeEmpty: Sendable, Equatable {
             return team.devices.allSatisfy(\.needsRepair) ? .needsRepair : .connecting
         }
         if team.liveSessionCount == 0 {
-            return .noSessions(deviceNames: team.devices.map(\.displayName))
+            return .noSessions(deviceNames: team.devices.filter { !$0.gone }.map(\.displayName))
         }
         return nil
     }
@@ -27,9 +27,9 @@ public enum HomeEmpty: Sendable, Equatable {
 
 public extension DeviceState {
     /// A device has "arrived" once anything it reports is in hand; before that its user block
-    /// would be all dashes.
+    /// would be all dashes. One that has gone silent for a day is waited for again.
     var hasSnapshot: Bool {
-        user != nil || !limits.isEmpty || !sessions.isEmpty || lastHeartbeatAt != nil
+        !gone && (user != nil || !limits.isEmpty || !sessions.isEmpty || lastHeartbeatAt != nil)
     }
 }
 

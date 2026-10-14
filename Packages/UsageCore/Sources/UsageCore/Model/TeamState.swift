@@ -91,6 +91,8 @@ public struct ProjectView: Sendable, Equatable, Identifiable {
 }
 
 /// The merged view of every paired device. Derived lists are computed once at construction.
+/// A device that is `gone` (silent for a day) stays in `devices` but is left out of everything
+/// derived from them: users, projects and the totals.
 public struct TeamState: Sendable, Equatable {
     public let devices: [DeviceState]
     public let users: [UserView]
@@ -99,8 +101,9 @@ public struct TeamState: Sendable, Equatable {
 
     public init(devices: [DeviceState] = []) {
         self.devices = devices
-        users = Self.buildUsers(devices)
-        projects = Self.buildProjects(devices)
+        let reporting = devices.filter { !$0.gone }
+        users = Self.buildUsers(reporting)
+        projects = Self.buildProjects(reporting)
     }
 
     public static func == (lhs: TeamState, rhs: TeamState) -> Bool {
@@ -108,11 +111,11 @@ public struct TeamState: Sendable, Equatable {
     }
 
     public var liveSessionCount: Int {
-        devices.reduce(0) { $0 + $1.sessions.count(where: \.alive) }
+        devices.reduce(0) { $0 + ($1.gone ? 0 : $1.sessions.count(where: \.alive)) }
     }
 
     public var teamToday: Tokens {
-        devices.reduce(.zero) { $0 + $1.today }
+        devices.reduce(.zero) { $1.gone ? $0 : $0 + $1.today }
     }
 
     public func device(_ id: String) -> DeviceState? {

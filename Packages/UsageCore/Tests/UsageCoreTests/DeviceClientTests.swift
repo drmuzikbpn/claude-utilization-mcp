@@ -45,6 +45,33 @@ struct DeviceReducerTests {
         #expect(r.state.health == .dead)
     }
 
+    @Test func aDayOfSilenceForgetsTheReadingsAndACheckInBringsTheDeviceBack() {
+        var r = DeviceReducer(record: rec, burn: burn)
+        r.apply(.heartbeat(rev: 9, at: nil), now: t0)
+        r.applySummary(SummaryDTO(), now: t0)
+        #expect(r.state.summaryLoaded)
+        #expect(r.etag == #"W/"9""#)
+
+        r.age(now: t0.addingTimeInterval(86400))
+        #expect(r.state.gone)
+        #expect(!r.state.summaryLoaded)
+        // The sessions it forgot must be re-read in full, not answered with a 304.
+        #expect(r.etag == nil)
+
+        r.apply(.heartbeat(rev: 0, at: nil), now: t0.addingTimeInterval(90000))
+        #expect(!r.state.gone)
+        #expect(r.state.health == .fresh)
+    }
+
+    @Test func aStreamThatOpensEndsTheSilence() {
+        var r = DeviceReducer(record: rec, burn: burn)
+        r.apply(.heartbeat(rev: 1, at: nil), now: t0)
+        r.age(now: t0.addingTimeInterval(86400))
+        #expect(r.state.gone)
+        r.opened(now: t0.addingTimeInterval(86401))
+        #expect(!r.state.gone)
+    }
+
     @Test func sessionUpdatesUpsertEndsRemoveAndBurnIsRecorded() {
         var r = DeviceReducer(record: rec, burn: burn)
         let json = #"{"type":"update","session":{"sessionId":"s1","cwd":"/x","#

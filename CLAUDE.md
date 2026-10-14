@@ -108,6 +108,12 @@ fixture both sides must hash identically.
 - Escalation is best-effort (D10): `PauseController.tick()` on every wake fires overdue ones.
 - Aging: fresh < 30 s, stale < 120 s, dead ≥ 120 s, always off the phone's clock. Dead disables
   pause controls. Staleness age is always visible.
+- A device that has not checked in for a day is **gone** (`Aging.gone`, `DeviceState.gone`):
+  `aged(now:)` forgets its readings on that tick and `TeamState` leaves it out of users,
+  projects and totals, so nothing of its reaches the home screens, the watch or a widget. It
+  stays paired and listed (dead dot, "last heard 2d ago") and returns with its first check-in.
+  `fold()` ages every state itself, because a suspended app's clients do not. A snapshot that
+  is itself a day old draws no readings on the wrist or a widget (`WatchSnapshot.current(now:)`).
 - A limit alert fires once per window: `AlertLedger` keys on the limit's `resetsAt`, survives
   relaunch, and is forgotten when the limit drops under the threshold.
 - `BurnHistory` is written from device actors and read on the main actor: every access locks.

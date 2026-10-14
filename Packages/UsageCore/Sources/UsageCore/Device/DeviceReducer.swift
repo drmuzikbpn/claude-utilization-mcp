@@ -34,6 +34,7 @@ public struct DeviceReducer: Sendable {
         state.transport = .sse
         state.lastHeartbeatAt = now
         state.health = .fresh
+        state.gone = false
         state.lastError = nil
         state.needsRepair = false
     }
@@ -65,13 +66,19 @@ public struct DeviceReducer: Sendable {
 
     /// Re-derives health off the local clock; aging never trusts the daemon's clock.
     public mutating func age(now: Date) {
-        state.health = Aging.health(lastHeartbeatAt: state.lastHeartbeatAt, now: now)
+        let aged = state.aged(now: now)
+        if aged.gone, !state.gone {
+            // The sessions it forgot must come back in full, not as a 304 against the old ETag.
+            etag = nil
+        }
+        state = aged
     }
 
     /// Every event, heartbeat included, and every successful poll proves the daemon is alive.
     public mutating func touch(now: Date) {
         state.lastHeartbeatAt = now
         state.health = Aging.health(lastHeartbeatAt: now, now: now)
+        state.gone = false
         state.needsRepair = false
     }
 
