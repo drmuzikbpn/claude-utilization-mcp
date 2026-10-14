@@ -28,3 +28,4 @@ xcuserdata/
 
 __pycache__/
 *.pyc
+.cache_ggshield
