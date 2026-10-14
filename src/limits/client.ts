@@ -3,6 +3,9 @@
 import { getVersion } from '../version.js';
 import { LimitsError } from './types.js';
 
+/** The usage response is a few hundred bytes; anything over this is not it (§23.62). */
+export const MAX_USAGE_RESPONSE_BYTES = 256 * 1024;
+
 export const USAGE_ENDPOINT = 'https://api.anthropic.com/api/oauth/usage';
 /** Literal beta header Claude Code sends (§23.3, fixture README). */
 export const OAUTH_BETA_HEADER = 'oauth-2025-04-20';
@@ -103,11 +106,20 @@ export async function fetchLimits(
     throw new LimitsError('network', `usage request returned HTTP ${res.status}`, { status: res.status });
   }
 
+  // §23.62: the real body is a few hundred bytes. A response that says, or turns out to
+  // be, far larger is refused rather than held in memory.
+  const declared = Number(res.headers?.get('content-length') ?? Number.NaN);
+  if (Number.isFinite(declared) && declared > MAX_USAGE_RESPONSE_BYTES) {
+    throw new LimitsError('schema_drift', `usage response declares ${String(declared)} bytes, over the ${String(MAX_USAGE_RESPONSE_BYTES)} byte cap`);
+  }
   let text: string;
   try {
     text = await res.text();
   } catch (err) {
     throw new LimitsError('network', `could not read usage response: ${(err as Error).message}`);
+  }
+  if (Buffer.byteLength(text, 'utf8') > MAX_USAGE_RESPONSE_BYTES) {
+    throw new LimitsError('schema_drift', `usage response is over the ${String(MAX_USAGE_RESPONSE_BYTES)} byte cap`);
   }
 
   let parsed: unknown;

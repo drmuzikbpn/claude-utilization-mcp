@@ -47,7 +47,7 @@ export interface PairIO {
   stderr: (text: string) => void;
   configDir?: string;
   /** Injected in tests; defaults to an authenticated loopback `DaemonClient`. */
-  client?: { post(path: string, body?: unknown): Promise<unknown>; get(path: string): Promise<unknown> };
+  client?: { post(path: string, body?: unknown): Promise<unknown>; get(path: string): Promise<unknown>; delete?(path: string): Promise<unknown> };
   /** Opens the redirect file (a path, never the URL); defaults to `open` / `xdg-open`. */
   open?: (file: string) => Promise<void>;
   /** Resolves when the user is done (Enter, Ctrl-C or the timeout by default) or `signal` aborts. */
@@ -523,6 +523,11 @@ export async function runPair(io: PairIO): Promise<number> {
     stop.abort();
     redirect?.remove();
     await page.close();
+    // §23.63: stopped before a phone used it (Enter, Ctrl-C, an error) — the code must not
+    // stay redeemable for the rest of its five minutes.
+    if (outcome !== 'redeemed' && typeof client.delete === 'function') {
+      await client.delete('/v1/pair/code').catch(() => undefined);
+    }
   }
   return outcome === 'expired' ? 1 : 0;
 }

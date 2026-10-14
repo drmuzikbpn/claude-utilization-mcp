@@ -180,6 +180,10 @@ export class DaemonClient {
     return this.request('POST', path, body, opts);
   }
 
+  async delete(path: string, opts: { timeoutMs?: number } = {}): Promise<unknown> {
+    return this.request('DELETE', path, undefined, opts);
+  }
+
   private async request(
     method: string,
     path: string,

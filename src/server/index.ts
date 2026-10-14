@@ -171,6 +171,7 @@ const ROUTES: readonly RouteKey[] = [
   { method: 'GET', path: EVENTS_PATH },
   { method: 'POST', path: PAIR_CODE_PATH },
   { method: 'GET', path: PAIR_CODE_PATH },
+  { method: 'DELETE', path: PAIR_CODE_PATH },
   { method: 'POST', path: PAIR_REDEEM_PATH },
 ];
 
@@ -324,6 +325,15 @@ export function createServer(opts: ServerOptions): UsageServer {
     sendJson(res, 200, pairingCodes.status());
   }
 
+  /** §23.63: void the live code. Bearer (the gate) and loopback only, like minting. */
+  function revokePairingCode(req: IncomingMessage, res: ServerResponse): void {
+    if (!isLoopbackRequest(req)) {
+      sendError(res, 403, 'forbidden', 'pairing codes are revoked on this machine only', 'run `claude-usage pair` on the machine running the daemon');
+      return;
+    }
+    sendJson(res, 200, { revoked: pairingCodes.revoke() });
+  }
+
   /** The one bearer-less mutating route: TLS only, single-use code, per-source limit. */
   async function redeemPairingCode(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!isTlsRequest(req)) {
@@ -432,6 +442,7 @@ export function createServer(opts: ServerOptions): UsageServer {
         return;
       case PAIR_CODE_PATH:
         if (method === 'POST') mintPairingCode(req, res);
+        else if (method === 'DELETE') revokePairingCode(req, res);
         else pairingCodeStatus(req, res);
         return;
       case PAIR_REDEEM_PATH:

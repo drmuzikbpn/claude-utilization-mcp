@@ -13,6 +13,8 @@ import {
   createPairingCodes,
   orderPairingAddrs,
   PAIR_CODE_TTL_MS,
+  PAIR_FAILURE_LIMIT,
+  PAIR_FAILURE_SOURCES_MAX,
   PAIR_FAILURE_WINDOW_MS,
 } from '../../src/server/pairing.js';
 import { FakeLimitsProvider, FakeTokensSource, testConfig } from '../helpers/fakes.js';
@@ -327,3 +329,63 @@ describe('POST /v1/pair (§23.47)', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('revoking a code and bounding the failure table (§23.63)', () => {
+  it('revoke voids the live code at once and reports it as expired', () => {
+    let t = 0;
+    const codes = createPairingCodes({ now: () => t });
+    const { code } = codes.mint();
+    expect(codes.revoke()).toBe(true);
+    expect(codes.redeem(code, 'a')).toBe('invalid');
+    expect(codes.status().state).toBe('expired');
+    expect(codes.revoke()).toBe(false);
+    t += 1;
+  });
+
+  it('a redeemed code stays reported as redeemed after a revoke', () => {
+    const codes = createPairingCodes();
+    const { code } = codes.mint();
+    expect(codes.redeem(code, 'a')).toBe('ok');
+    expect(codes.revoke()).toBe(false);
+    expect(codes.status().state).toBe('redeemed');
+  });
+
+  it('holds at most PAIR_FAILURE_SOURCES_MAX sources; a new source past that is refused, even with the right code', () => {
+    let t = 0;
+    const codes = createPairingCodes({ now: () => t });
+    const { code } = codes.mint();
+    for (let i = 0; i < PAIR_FAILURE_SOURCES_MAX; i += 1) expect(codes.redeem('wrong', `fd00::${i.toString(16)}`)).toBe('invalid');
+    expect(codes.redeem(code, 'fd00::ffff:1')).toBe('rate_limited');
+    // A source already in the table is still judged on its own count.
+    expect(codes.redeem(code, 'fd00::1')).toBe('ok');
+    // Once the window has passed the table empties again.
+    t += PAIR_FAILURE_WINDOW_MS + 10_000;
+    const second = codes.mint();
+    expect(codes.redeem(second.code, 'fd00::ffff:1')).toBe('ok');
+  });
+
+  it('per-source limit still applies with the sweep throttled', () => {
+    let t = 0;
+    const codes = createPairingCodes({ now: () => t });
+    const { code } = codes.mint();
+    for (let i = 0; i < PAIR_FAILURE_LIMIT; i += 1) {
+      expect(codes.redeem('wrong', 'x')).toBe('invalid');
+      t += 1;
+    }
+    expect(codes.redeem(code, 'x')).toBe('rate_limited');
+    t += PAIR_FAILURE_WINDOW_MS;
+    expect(codes.redeem(code, 'x')).toBe('ok');
+  });
+
+  it('DELETE /v1/pair/code needs the bearer and loopback, and voids the code', async () => {
+    const { server, port, tlsPort } = await make();
+    const minted = await mint(port);
+    expect((await rawRequest({ port, method: 'DELETE', path: '/v1/pair/code', auth: false })).status).toBe(401);
+    expect((await viaHandle(server, port, '192.0.2.9', '/v1/pair/code', 'DELETE')).status).toBe(403);
+    const res = await rawRequest({ port, method: 'DELETE', path: '/v1/pair/code' });
+    expect(res.status).toBe(200);
+    expect(json(res.body)).toEqual({ revoked: true });
+    expect((await redeem(tlsPort, minted['code'])).status).toBe(401);
+  });
+});
+

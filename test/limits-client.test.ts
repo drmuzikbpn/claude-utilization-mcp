@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Even Seal Productions
 import { describe, expect, it } from 'vitest';
-import { OAUTH_BETA_HEADER, USAGE_ENDPOINT, USER_AGENT, fetchLimits, type FetchLike } from '../src/limits/client.js';
+import { MAX_USAGE_RESPONSE_BYTES, OAUTH_BETA_HEADER, USAGE_ENDPOINT, USER_AGENT, fetchLimits, type FetchLike } from '../src/limits/client.js';
 import { getVersion } from '../src/version.js';
 import { LimitsError } from '../src/limits/types.js';
 import { liveLimitsFixture } from './helpers/fixtures.js';
@@ -89,3 +89,26 @@ describe('fetchLimits', () => {
     }
   });
 });
+
+describe('the usage response is bounded (§23.62)', () => {
+  it('refuses a response that declares more than the cap, without reading it', async () => {
+    let read = false;
+    const impl: FetchLike = async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: (n: string) => (n.toLowerCase() === 'content-length' ? String(MAX_USAGE_RESPONSE_BYTES + 1) : null) },
+      text: async () => {
+        read = true;
+        return '{}';
+      },
+    });
+    await expect(fetchLimits(TOKEN, impl)).rejects.toMatchObject({ code: 'schema_drift' });
+    expect(read).toBe(false);
+  });
+
+  it('refuses a body that turns out to be larger than the cap', async () => {
+    const impl: FetchLike = async () => ({ ok: true, status: 200, text: async () => `{"x":"${'a'.repeat(MAX_USAGE_RESPONSE_BYTES)}"}` });
+    await expect(fetchLimits(TOKEN, impl)).rejects.toBeInstanceOf(LimitsError);
+  });
+});
+

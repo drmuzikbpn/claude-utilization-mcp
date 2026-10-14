@@ -439,3 +439,43 @@ describe('import graph (§23.48, CLAUDE.md)', () => {
     expect(rel.filter((f) => /vendor\/|install\/(qr|pair)\.ts/.test(f))).toEqual([]);
   });
 });
+
+describe('runPair revokes an unused code (§23.63)', () => {
+  const MINTED = { code: 'abcDEF0123456789_-xyzQ', expiresAt: '2026-10-01T12:05:00Z', link: LINK, name: 'studio', addrs: ['192.0.2.20'], port: 47_292, fp: 'ab'.repeat(32) };
+  function setup(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'cu-pair-cli-'));
+    saveConfig({ ...defaultConfig(), auth: { token: 'test-bearer-token' } }, dir);
+    return dir;
+  }
+
+  it.each([
+    ['the user stops it before a phone pairs', 'pending', true],
+    ['the code expires', 'expired', true],
+    ['the phone pairs', 'redeemed', false],
+  ])('revokes the code when %s: %s', async (_label, state, revoked) => {
+    const configDir = setup();
+    const deleted: string[] = [];
+    await runPair({
+      configDir,
+      stdout: () => undefined,
+      stderr: () => undefined,
+      client: {
+        get: async () => ({ state }),
+        post: async () => MINTED,
+        delete: async (path: string) => {
+          deleted.push(path);
+          return { revoked: true };
+        },
+      },
+      open: async () => undefined,
+      waitUntilDone: async (signal) => {
+        if (state === 'pending') return; // the user pressed Enter
+        await new Promise<void>((r) => signal.addEventListener('abort', () => r()));
+      },
+      pollMs: 1,
+      lingerMs: 0,
+    });
+    expect(deleted).toEqual(revoked ? ['/v1/pair/code'] : []);
+  });
+});
+
