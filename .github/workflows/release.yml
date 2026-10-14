@@ -121,7 +121,9 @@ jobs:
           packed="$(npm pack --pack-destination release --silent | tail -n 1)"
           asset="claude-usage-$VERSION.tgz"
           mv "release/$packed" "release/$asset"
-          tar -tzf "release/$asset" | grep -qx 'package/npm-shrinkwrap.json'
+          # Not `grep -q`: it exits at the first match, tar then dies of SIGPIPE ("stdout:
+          # write error") and pipefail fails the step even though the file is there.
+          tar -tzf "release/$asset" | grep -x 'package/npm-shrinkwrap.json' > /dev/null
           cd release
           sha256sum "$asset" > SHA256SUMS
           cat SHA256SUMS
