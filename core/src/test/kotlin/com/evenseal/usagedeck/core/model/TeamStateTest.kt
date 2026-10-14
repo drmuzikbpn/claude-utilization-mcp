@@ -77,6 +77,48 @@ class TeamStateTest {
     private val jules = User("jules@example.com", "uuid-jules", "Jules")
 
     @Test
+    fun `a machine silent for a day contributes nothing but stays listed`() {
+        val quiet = machine(
+            "m1",
+            jules,
+            limits = listOf(limit("session", 91)),
+            limitsFetchedAt = t0,
+            sessions = listOf(session("s1", "/old", "/old/.git", "old")),
+            today = Tokens(input = 500),
+            projectTokens = listOf(ProjectTokens("/old", "/old", Tokens(input = 500)))
+        ).aged(t0.plusSeconds(86_400))
+        val live =
+            machine("m2", adam, limits = listOf(limit("session", 10)), limitsFetchedAt = t0, today = Tokens(input = 3))
+        val team = TeamState(listOf(quiet, live))
+        assertEquals(listOf("m1", "m2"), team.machines.map { it.config.id })
+        assertTrue(team.machine("m1")!!.gone)
+        assertEquals(listOf("uuid-adam"), team.users.map { it.key })
+        assertTrue(team.projects.isEmpty())
+        assertEquals(3L, team.teamToday.total)
+        assertEquals(0, team.liveSessionCount)
+    }
+
+    @Test
+    fun `a gone machine never supplies an account's limits even if some arrive`() {
+        // A reply without the heartbeat that proves it is not a check-in.
+        val quiet = machine("m1", adam).aged(t0.plusSeconds(86_400)).copy(
+            limits = listOf(limit("session", 99)),
+            limitsFetchedAt = t0.plusSeconds(86_400),
+            sessions = listOf(session("s1", "/g", "/g/.git", "g")),
+            today = Tokens(input = 8)
+        )
+        val live =
+            machine("m2", adam, limits = listOf(limit("session", 10)), limitsFetchedAt = t0, today = Tokens(input = 3))
+        val team = TeamState(listOf(quiet, live))
+        val user = team.users.single()
+        assertEquals(listOf("m2"), user.machineIds)
+        assertEquals(10, user.fiveHour?.percent)
+        assertTrue(team.projects.isEmpty())
+        assertEquals(0, team.liveSessionCount)
+        assertEquals(3L, team.teamToday.total)
+    }
+
+    @Test
     fun `same user on two machines collapses with the freshest limits winning`() {
         val stale = machine(
             "m1",

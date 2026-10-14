@@ -44,16 +44,22 @@ data class ProjectView(
     val pause: PauseState? get() = sessions.mapNotNull { it.pause }.maxByOrNull { it.mode.ordinal }
 }
 
-/** The merged view of every paired machine. */
+/**
+ * The merged view of every paired machine. A machine that is [MachineState.gone] (silent for a
+ * day) stays in [machines] but is left out of everything derived from them: users, projects and
+ * the totals.
+ */
 data class TeamState(val machines: List<MachineState> = emptyList()) {
+    private val reporting: List<MachineState> get() = machines.filterNot { it.gone }
+
     val users: List<UserView> by lazy { buildUsers() }
 
     /** Live projects first (by live tokens, descending), then idle ones (by today's tokens). */
     val projects: List<ProjectView> by lazy { buildProjects() }
 
-    val liveSessionCount: Int get() = machines.sumOf { m -> m.sessions.count { it.alive } }
+    val liveSessionCount: Int get() = reporting.sumOf { m -> m.sessions.count { it.alive } }
 
-    val teamToday: Tokens get() = machines.fold(Tokens.ZERO) { a, m -> a + m.today }
+    val teamToday: Tokens get() = reporting.fold(Tokens.ZERO) { a, m -> a + m.today }
 
     /** Machines that rejected this deck (token rotated, certificate changed): the home card lists them. */
     val needsRepair: List<MachineState> get() = machines.filter { it.needsRepair != null }
@@ -63,7 +69,7 @@ data class TeamState(val machines: List<MachineState> = emptyList()) {
     fun session(machineId: String, sessionId: String): Session? =
         machine(machineId)?.sessions?.firstOrNull { it.sessionId == sessionId }
 
-    private fun buildUsers(): List<UserView> = machines.groupBy { userKey(it) }.map { (key, group) ->
+    private fun buildUsers(): List<UserView> = reporting.groupBy { userKey(it) }.map { (key, group) ->
         // Both daemons poll the same account and cache the answer for different lengths of time,
         // so the copy to show is the one fetched latest — and a machine that has no limits at all
         // never wins, or a failed fetch would blank a headline the other machine can still supply.
@@ -97,7 +103,7 @@ data class TeamState(val machines: List<MachineState> = emptyList()) {
     private fun buildProjects(): List<ProjectView> {
         val live = mutableListOf<ProjectView>()
         val idle = mutableListOf<ProjectView>()
-        machines.forEach { m ->
+        reporting.forEach { m ->
             // Only sessions the daemon reports alive make it onto the board; transcript back-fill of
             // finished sessions is history, and history belongs to the tokens endpoint, not the rows.
             val byKey = m.sessions.filter { it.alive }.groupBy { it.projectKey }

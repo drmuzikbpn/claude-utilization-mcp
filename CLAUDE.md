@@ -74,6 +74,10 @@ hook is missing.
   33 %, so near-equal rows do not swap every tick. `TeamState.projects` (by live tokens) is only the tie order.
 - Gesture grammar everywhere: tap = soft, hold 600 ms = hard, tap on paused = resume. Red styling only on hold actions.
 - Aging: fresh < 30 s since heartbeat, stale < 120 s, dead ≥ 120 s. Dead disables pause controls.
+- A machine that has not checked in for a day is **gone** (`Aging.GONE`, `MachineState.gone`):
+  `aged(now)` forgets its readings on that tick (and `MachineClient` drops the sessions ETag) and
+  `TeamState` leaves it out of users, projects and totals. It stays paired and listed (dead dot,
+  "last heard 2d ago") and returns with its first check-in.
 - Escalation default 90 s; range 30 s–600 s or off; persisted across process death.
 - Self-update defers while a gesture is in progress, a hold is mid-press, or any escalation is pending.
 - Version: `versionName = 0.MINOR.<commit-count>+<sha>`, `versionCode = commit-count`. Release repo `BuildConfig.RELEASE_REPO`, default `drmuzikbpn/claude-utilization-mcp` (shared with the daemon): APK releases are tags `deck-<version>`, pre-release, assets `usage-deck.apk` + `usage-deck.apk.sha256`; the checker considers `deck-` tags only. CI signs with `apksigner` + `app/signing/usage-deck.lineage` (v3, rotated from this Mac's debug key) so the debug-provisioned phone updates in place; Gradle never signs release.

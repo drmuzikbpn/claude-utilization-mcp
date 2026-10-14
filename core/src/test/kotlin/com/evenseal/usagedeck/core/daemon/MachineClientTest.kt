@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -225,6 +226,62 @@ class MachineClientTest {
         advanceTimeBy(120_000)
         runCurrent()
         assertEquals(Health.DEAD, f.client.state.value.health)
+    }
+
+    @Test
+    fun `a day of silence forgets the readings and a check-in brings the machine back`() = runTest {
+        val f = fixture()
+        f.events.emit(Connection.Open)
+        f.events.emit(snapshot(sessions = listOf(sessionDto("s1", 1_000))))
+        runCurrent()
+        f.clock.advance(86_400)
+        advanceTimeBy(1_100)
+        runCurrent()
+        val gone = f.client.state.value
+        assertTrue(gone.gone)
+        assertEquals(Health.DEAD, gone.health)
+        assertTrue(gone.limits.isEmpty())
+        assertTrue(gone.sessions.isEmpty())
+        assertEquals(0L, gone.today.total)
+        assertEquals("who it is survives", "adams-mbp", gone.name)
+
+        f.events.emit(DaemonEvent.Heartbeat(rev = 0, at = "2026-09-14T14:00:01.000Z"))
+        runCurrent()
+        assertFalse(f.client.state.value.gone)
+        assertEquals(Health.FRESH, f.client.state.value.health)
+        f.events.emit(snapshot(sessions = listOf(sessionDto("s1", 2_000))))
+        runCurrent()
+        assertEquals(1, f.client.state.value.sessions.size)
+        assertEquals(1, f.client.state.value.limits.size)
+    }
+
+    @Test
+    fun `a gone machine's sessions are re-read in full, not with the old etag`() = runTest {
+        val f = fixture()
+        f.events.emit(Connection.Open)
+        f.events.emit(snapshot(sessions = listOf(sessionDto("s1", 1_000)), rev = 7))
+        runCurrent()
+        f.clock.advance(86_400)
+        advanceTimeBy(1_100)
+        runCurrent()
+        assertTrue(f.client.state.value.gone)
+
+        // The stream drops, then two reconnects fail: the client falls back to polling.
+        val err = DaemonException("network", 0, "refused", null)
+        f.events.emit(Connection.Closed(err))
+        runCurrent()
+        advanceTimeBy(3_100)
+        runCurrent()
+        f.events.emit(Connection.Closed(err))
+        runCurrent()
+        advanceTimeBy(6_100)
+        runCurrent()
+        f.events.emit(Connection.Closed(err))
+        runCurrent()
+        assertEquals(MachineState.Transport.POLLING, f.client.state.value.transport)
+        assertTrue(f.api.calls.contains("sessions:null"))
+        assertFalse(f.api.calls.contains("sessions:W/\"7\""))
+        assertFalse("an answered poll is a check-in", f.client.state.value.gone)
     }
 
     @Test

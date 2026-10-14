@@ -138,6 +138,11 @@ data class MachineState(
     val config: MachineConfig,
     val health: Health = Health.DEAD,
     val lastHeartbeatAt: Instant? = null,
+    /**
+     * No check-in for [Aging.GONE] (a day): still paired and listed, but it contributes no user,
+     * project or total to the dashboards until it is heard from again.
+     */
+    val gone: Boolean = false,
     val name: String? = null,
     val version: String? = null,
     val user: User? = null,

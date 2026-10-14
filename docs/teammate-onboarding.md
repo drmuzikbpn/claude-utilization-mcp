@@ -98,6 +98,7 @@ per-machine read-only mode in v1.
 | What you see on the deck | What it usually means |
 | --- | --- |
 | Machine dot red, "has not checked in for 2 minutes" | Mac asleep, or the daemon stopped |
+| A machine's numbers and its user are gone; its dot is red, "last heard 2d ago" | No check-in for a day, so the deck stopped showing what it last reported. It is still paired; the numbers return when it checks in |
 | "Token rejected" | Token was rotated; re-run `claude-usage pair` |
 | Amber "<name> no longer accepts this deck" card | Token rotated or certificate changed; run `claude-usage pair` on that Mac and tap **Re-pair** |
 | "run `claude-usage pair` again" while pairing | The one-time code expired (five minutes) or was already used |

@@ -27,6 +27,16 @@ class HomeEmptyTest {
     }
 
     @Test
+    fun `a machine silent for a day is waited for again`() {
+        val quiet = machine("studio").copy(health = Health.DEAD, gone = true)
+        assertEquals(false, quiet.hasSnapshot)
+        assertEquals(HomeEmpty.Connecting(listOf(quiet)), HomeEmpty.of(TeamState(listOf(quiet))))
+        assertEquals(emptyList<Any>(), TeamState(listOf(quiet)).usersWithData())
+        // With another machine reporting, the hint names only the ones that can show a session.
+        assertEquals(HomeEmpty.NoSessions(listOf("mbp")), HomeEmpty.of(TeamState(listOf(machine("mbp"), quiet))))
+    }
+
+    @Test
     fun `every machine lost is its own state, not an invitation to start a session`() {
         val team = TeamState(listOf(machine("studio", lost)))
         assertEquals(HomeEmpty.AllNeedRepair, HomeEmpty.of(team))

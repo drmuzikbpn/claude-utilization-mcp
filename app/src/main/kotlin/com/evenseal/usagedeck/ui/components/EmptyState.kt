@@ -48,16 +48,19 @@ sealed interface HomeEmpty {
                 working.isEmpty() -> AllNeedRepair
                 working.none { it.hasSnapshot } -> Connecting(working)
                 team.liveSessionCount == 0 ->
-                    NoSessions(working.map { it.name ?: it.config.name })
+                    NoSessions(working.filterNot { it.gone }.map { it.name ?: it.config.name })
                 else -> null
             }
         }
     }
 }
 
-/** A machine has "arrived" once anything from its snapshot is in hand; before that its user block would be all dashes. */
+/**
+ * A machine has "arrived" once anything from its snapshot is in hand; before that its user block
+ * would be all dashes. One that has gone silent for a day is waited for again.
+ */
 val MachineState.hasSnapshot: Boolean
-    get() = user != null || limits.isNotEmpty() || sessions.isNotEmpty() || lastHeartbeatAt != null
+    get() = !gone && (user != null || limits.isNotEmpty() || sessions.isNotEmpty() || lastHeartbeatAt != null)
 
 /** The users worth a block: those with at least one machine that has delivered a snapshot. */
 fun TeamState.usersWithData() = users.filter { u -> u.machineIds.any { machine(it)?.hasSnapshot == true } }

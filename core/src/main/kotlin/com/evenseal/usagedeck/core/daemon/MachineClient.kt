@@ -10,6 +10,7 @@ import com.evenseal.usagedeck.core.model.MachineState
 import com.evenseal.usagedeck.core.model.PauseMode
 import com.evenseal.usagedeck.core.model.RepairReason
 import com.evenseal.usagedeck.core.model.Session
+import com.evenseal.usagedeck.core.model.aged
 import java.time.Instant
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CoroutineScope
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -147,11 +149,10 @@ class MachineClient(
     private suspend fun agingLoop() {
         while (coroutineContext.isActive) {
             delay(tickerMs)
-            _state.update {
-                it.copy(
-                    health = if (it.needsRepair != null) Health.DEAD else Aging.health(it.lastHeartbeatAt, clock.now())
-                )
-            }
+            val now = clock.now()
+            // The sessions a gone machine forgot must come back in full, not as a 304 against
+            // the old ETag.
+            if (_state.updateAndGet { it.aged(now) }.gone) etag = null
         }
     }
 
@@ -264,6 +265,7 @@ class MachineClient(
                 transport = MachineState.Transport.SSE,
                 lastHeartbeatAt = clock.now(),
                 health = Aging.health(clock.now(), clock.now()),
+                gone = false,
                 lastError = null
             )
         }
@@ -298,7 +300,7 @@ class MachineClient(
     private fun touch() {
         if (_state.value.needsRepair != null) return
         val now = clock.now()
-        updateLive { it.copy(lastHeartbeatAt = now, health = Aging.health(now, now)) }
+        updateLive { it.copy(lastHeartbeatAt = now, health = Aging.health(now, now), gone = false) }
     }
 
     private fun applySnapshot(event: DaemonEvent.Snapshot) {
