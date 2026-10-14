@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { DaemonClient } from './clients/http.js';
 import { CONFIG_DIR_MODE, CONFIG_FILE_MODE, resolveConfigDir, writeJsonFile } from './config.js';
 import { absoluteGitCommonDir } from './sessions/registry.js';
+import { isSessionId } from './sessions/validate.js';
 import type { LimitStatus } from './limits/status.js';
 import type { NormalizedLimit } from './limits/types.js';
 
@@ -269,7 +270,7 @@ export function pausedMarkerPath(configDir: string, sessionId: string): string {
 }
 
 function setPausedMarker(configDir: string, sessionId: string, contents: string | null): void {
-  if (sessionId.length === 0) return;
+  if (!isSessionId(sessionId)) return;
   const file = pausedMarkerPath(configDir, sessionId);
   try {
     if (contents === null) {
@@ -469,7 +470,9 @@ export async function runHook(io: HookIO = {}): Promise<number> {
   try {
     const input = parseHookStdin(io.stdin);
     const event = typeof input.hook_event_name === 'string' ? input.hook_event_name : '';
-    const sessionId = typeof input.session_id === 'string' ? input.session_id : '';
+    // §23.56: the id names a file under `paused/` and a URL path segment. Anything that is
+    // not the UUID Claude Code sends is treated as no session at all.
+    const sessionId = isSessionId(input.session_id) ? input.session_id : '';
     const cwd = typeof input.cwd === 'string' ? input.cwd : '';
     const client: HookClient = io.client ?? new DaemonClient({ configDir, timeoutMs: deadlineMs });
 

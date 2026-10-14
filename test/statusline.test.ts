@@ -166,16 +166,16 @@ describe('paused marker (§18.2)', () => {
   it('prefixes the line while the session is soft-paused', async () => {
     const d = await daemon();
     d.setPercents({ session: 42, weekly_all: 61 });
-    markPaused(d.configDir, 's1');
-    expect(await lineFor(d, '{"session_id":"s1"}')).toBe('⏸ paused from dashboard · 5h 42% · 7d 61%\n');
+    markPaused(d.configDir, '11111111-1111-4111-8111-111111111111');
+    expect(await lineFor(d, '{"session_id":"11111111-1111-4111-8111-111111111111"}')).toBe('⏸ paused from dashboard · 5h 42% · 7d 61%\n');
   });
 
   it('keeps the colours behind the prefix', async () => {
     const d = await daemon();
     d.setPercents({ session: 96 });
-    markPaused(d.configDir, 's1');
+    markPaused(d.configDir, '11111111-1111-4111-8111-111111111111');
     let out = '';
-    await runStatusline({ stdin: '{"session_id":"s1"}', stdout: (t) => (out += t), configDir: d.configDir, color: true });
+    await runStatusline({ stdin: '{"session_id":"11111111-1111-4111-8111-111111111111"}', stdout: (t) => (out += t), configDir: d.configDir, color: true });
     expect(out.startsWith('⏸ paused from dashboard · ')).toBe(true);
     expect(out).toContain(`${ESC}[31m5h 96%`);
   });
@@ -185,14 +185,14 @@ describe('paused marker (§18.2)', () => {
     d.setPercents({ session: 42, weekly_all: 61 });
     markPaused(d.configDir, 'other-session');
 
-    expect(await lineFor(d, '{"session_id":"s1"}')).toBe('5h 42% · 7d 61%\n');
+    expect(await lineFor(d, '{"session_id":"11111111-1111-4111-8111-111111111111"}')).toBe('5h 42% · 7d 61%\n');
     expect(await lineFor(d, '{}')).toBe('5h 42% · 7d 61%\n');
     expect(await lineFor(d, 'garbage')).toBe('5h 42% · 7d 61%\n');
 
-    markPaused(d.configDir, 's1');
-    expect(await lineFor(d, '{"session_id":"s1"}')).toContain('⏸');
-    rmSync(join(d.configDir, 'paused', 's1'));
-    expect(await lineFor(d, '{"session_id":"s1"}')).toBe('5h 42% · 7d 61%\n');
+    markPaused(d.configDir, '11111111-1111-4111-8111-111111111111');
+    expect(await lineFor(d, '{"session_id":"11111111-1111-4111-8111-111111111111"}')).toContain('⏸');
+    rmSync(join(d.configDir, 'paused', '11111111-1111-4111-8111-111111111111'));
+    expect(await lineFor(d, '{"session_id":"11111111-1111-4111-8111-111111111111"}')).toBe('5h 42% · 7d 61%\n');
   });
 
   it('refuses a session id that would walk out of the paused directory', () => {
@@ -208,8 +208,8 @@ describe('paused marker (§18.2)', () => {
   it('renders a null resetsAt cleanly, paused or not', async () => {
     const d = await daemon();
     d.limits.set({ ...d.limits.snapshot(), limits: d.limits.snapshot().limits.map((l) => ({ ...l, resetsAt: null })) });
-    markPaused(d.configDir, 's1');
-    const out = await lineFor(d, '{"session_id":"s1"}');
+    markPaused(d.configDir, '11111111-1111-4111-8111-111111111111');
+    const out = await lineFor(d, '{"session_id":"11111111-1111-4111-8111-111111111111"}');
     expect(out).toBe('⏸ paused from dashboard · 5h 5% · 7d 13%\n');
     expect(out).not.toMatch(/resets|null|NaN|Invalid/);
   });

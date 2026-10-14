@@ -7,6 +7,7 @@ import type { LimitStatus } from './limits/status.js';
 import type { NormalizedLimit } from './limits/types.js';
 import { HEADLINE_IDS, parseHookStdin, pausedMarkerPath, type SummaryBody } from './hook.js';
 import { runObserve } from './observe.js';
+import { isSessionId } from './sessions/validate.js';
 
 export const STATUSLINE_TIMEOUT_MS = 400;
 export const SEPARATOR = ' · ';
@@ -63,8 +64,7 @@ export function formatStatusline(summary: SummaryBody, color: boolean): string |
  */
 export function isSessionPaused(configDir: string, sessionId: string | undefined): boolean {
   // The id comes from hook stdin: refuse anything that could walk out of `paused/`.
-  if (typeof sessionId !== 'string' || sessionId.length === 0) return false;
-  if (sessionId.includes('/') || sessionId.includes('\\') || sessionId.startsWith('.')) return false;
+  if (!isSessionId(sessionId)) return false;
   try {
     return existsSync(pausedMarkerPath(configDir, sessionId));
   } catch {

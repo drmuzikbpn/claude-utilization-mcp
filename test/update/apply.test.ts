@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Even Seal Productions
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { currentLink, versionDir, versionsDir } from '../../src/paths.js';
@@ -13,6 +14,8 @@ import {
   rollback,
   runningUnderCurrent,
   smokeTest,
+  tarBin,
+  unsafeMembers,
 } from '../../src/update/apply.js';
 import { repointSymlink } from '../../src/install/versions.js';
 import { fakeExec, makeTarball as buildTarball, seedVersion, TempDirs } from './helpers.js';
@@ -30,6 +33,48 @@ describe('extractTarball', () => {
     expect(existsSync(join(dest, 'package.json'))).toBe(true);
     expect(existsSync(join(dest, 'package', 'package.json'))).toBe(false);
     expect(existsSync(join(dest, 'bin', 'claude-usage'))).toBe(true);
+  });
+
+  it.each([
+    ['an absolute path', '/etc/evil'],
+    ['a parent-directory hop', 'package/../../evil'],
+    ['a member outside package/', 'other/file'],
+    ['a dot segment', 'package/./x'],
+    ['a backslash', 'package\\..\\evil'],
+    ['a control character', 'package/a\u0007b'],
+  ])('refuses %s before anything is extracted (§23.60)', async (_label, member) => {
+    expect(unsafeMembers(`package/package.json\n${member}\n`)).toEqual([member]);
+    const dest = join(dirs.make(), 'out');
+    const exec = fakeExec((file, args) => (args[0] === '-tzf' ? { stdout: `package/package.json\n${member}\n` } : { code: 99 }));
+    await expect(extractTarball('/x.tgz', dest, exec.exec)).rejects.toMatchObject({ code: 'unsafe_archive' });
+    // Listed, never extracted.
+    expect(exec.calls.map((c) => c.args[0])).toEqual(['-tzf']);
+    expect(existsSync(dest)).toBe(false);
+  });
+
+  it('accepts what npm pack produces', () => {
+    expect(unsafeMembers('package/package.json\npackage/bin/claude-usage\npackage/dist/a/b.js\n')).toEqual([]);
+  });
+
+  it('refuses a real archive that smuggles a symlink, and never takes ownership from it (§23.60)', async () => {
+    const staging = dirs.make();
+    mkdirSync(join(staging, 'package'), { recursive: true });
+    writeFileSync(join(staging, 'package', 'package.json'), '{}');
+    symlinkSync('/etc', join(staging, 'package', 'escape'));
+    const tarball = join(staging, 'evil.tgz');
+    execFileSync('tar', ['-czf', tarball, '-C', staging, 'package']);
+    await expect(extractTarball(tarball, join(dirs.make(), 'out'))).rejects.toMatchObject({ code: 'unsafe_archive' });
+
+    const exec = fakeExec(() => ({ stdout: 'package/package.json\n' }));
+    await extractTarball('/x.tgz', join(dirs.make(), 'out2'), exec.exec);
+    expect(exec.calls[1]?.args).toContain('--no-same-owner');
+    expect(exec.calls[0]?.file).toBe(tarBin());
+  });
+
+  it('runs tar by absolute path where one exists', () => {
+    expect(tarBin((p) => p === '/bin/tar')).toBe('/bin/tar');
+    expect(tarBin(() => true)).toBe('/usr/bin/tar');
+    expect(tarBin(() => false)).toBe('tar');
   });
 
   it('reports a tar failure as extract_failed', async () => {
@@ -165,5 +210,13 @@ describe('layout introspection', () => {
     expect(runningUnderCurrent(dir, env)).toBe(true);
     expect(runningUnderCurrent(versionDir('1.1.0+b', env), env)).toBe(false);
     expect(runningUnderCurrent('/definitely/not/here', env)).toBe(false);
+  });
+});
+
+describe('apply() refuses a version that is not a version (§23.60)', () => {
+  it.each(['../../escape', '1.2.3/../../x', 'latest', '', '1.2'])('%j', async (version) => {
+    const env = dirs.env();
+    await expect(apply({ version, tarballPath: makeTarball('1.2.3'), env })).rejects.toMatchObject({ code: 'bad_version' });
+    expect(existsSync(versionsDir(env))).toBe(false);
   });
 });

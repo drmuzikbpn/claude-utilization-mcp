@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Even Seal Productions
 import { afterEach, describe, expect, it } from 'vitest';
 import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { EventEmitter } from 'node:events';
 import { exitQuietlyOnEpipe, run } from '../src/cli.js';
 import { daemonFilePath } from '../src/clients/http.js';
@@ -210,6 +211,16 @@ describe('config subcommand', () => {
     const r = await cli(['config'], tempConfigDir());
     expect(r.code).toBe(0);
     expect((JSON.parse(r.out) as { port: number }).port).toBe(47291);
+  });
+
+  it('never prints the bearer token (§23.60)', async () => {
+    const dir = tempConfigDir();
+    const secret = 'Zm9vYmFyLXRoaXMtaXMtdGhlLXRva2Vu-cli-config-test';
+    writeFileSync(join(dir, 'config.json'), JSON.stringify({ auth: { token: secret } }));
+    const r = await cli(['config'], dir);
+    expect(r.code).toBe(0);
+    expect(r.out + r.err).not.toContain(secret);
+    expect((JSON.parse(r.out) as { auth: { token: string } }).auth.token).toBe('<redacted>');
   });
 });
 

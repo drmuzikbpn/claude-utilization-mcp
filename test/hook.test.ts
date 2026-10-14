@@ -352,7 +352,7 @@ describe('runHook failure paths', () => {
  * life of that session.
  */
 describe('SessionStart registration (§23.23)', () => {
-  const start = { hook_event_name: 'SessionStart', session_id: 's1', cwd: '/tmp/x', source: 'startup' };
+  const start = { hook_event_name: 'SessionStart', session_id: '11111111-1111-4111-8111-111111111111', cwd: '/tmp/x', source: 'startup' };
 
   it('registers with its own deadline, not the 200 ms nudge budget', async () => {
     const calls: { path: string; timeoutMs: number | undefined }[] = [];
@@ -378,7 +378,7 @@ describe('SessionStart registration (§23.23)', () => {
   it('re-registers when the daemon answers 404 — it does not know this session', async () => {
     const posted: string[] = [];
     await runHook({
-      stdin: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 's1', cwd: '/tmp/x' }),
+      stdin: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: '11111111-1111-4111-8111-111111111111', cwd: '/tmp/x' }),
       configDir: tempConfigDir(),
       ppid: 4242,
       gitCommonDir: () => null,
@@ -391,7 +391,7 @@ describe('SessionStart registration (§23.23)', () => {
         },
       },
     });
-    expect(posted).toEqual(['/v1/sessions/s1/heartbeat', '/v1/sessions/register']);
+    expect(posted).toEqual(['/v1/sessions/11111111-1111-4111-8111-111111111111/heartbeat', '/v1/sessions/register']);
   });
 
   it('does NOT re-register when there is simply no daemon', async () => {
@@ -400,7 +400,7 @@ describe('SessionStart registration (§23.23)', () => {
     const posted: string[] = [];
     let probes = 0;
     await runHook({
-      stdin: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 's1', cwd: '/tmp/x' }),
+      stdin: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: '11111111-1111-4111-8111-111111111111', cwd: '/tmp/x' }),
       configDir: tempConfigDir(),
       ppid: 4242,
       gitCommonDir: () => {
@@ -417,14 +417,14 @@ describe('SessionStart registration (§23.23)', () => {
         },
       },
     });
-    expect(posted).toEqual(['/v1/sessions/s1/heartbeat']);
+    expect(posted).toEqual(['/v1/sessions/11111111-1111-4111-8111-111111111111/heartbeat']);
     expect(probes).toBe(0);
   });
 
   it('does not re-register when the heartbeat is accepted', async () => {
     const posted: string[] = [];
     await runHook({
-      stdin: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 's1', cwd: '/tmp/x' }),
+      stdin: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: '11111111-1111-4111-8111-111111111111', cwd: '/tmp/x' }),
       configDir: tempConfigDir(),
       ppid: 4242,
       gitCommonDir: () => null,
@@ -436,12 +436,12 @@ describe('SessionStart registration (§23.23)', () => {
         },
       },
     });
-    expect(posted).toEqual(['/v1/sessions/s1/heartbeat']);
+    expect(posted).toEqual(['/v1/sessions/11111111-1111-4111-8111-111111111111/heartbeat']);
   });
 
   it('still exits 0 when the re-register itself fails', async () => {
     const code = await runHook({
-      stdin: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 's1', cwd: '/tmp/x' }),
+      stdin: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: '11111111-1111-4111-8111-111111111111', cwd: '/tmp/x' }),
       configDir: tempConfigDir(),
       ppid: 4242,
       gitCommonDir: () => null,
@@ -481,5 +481,32 @@ describe('the hook authenticates itself (§23.55)', () => {
     }
     expect(out).toBe('');
     expect(d.sessions?.registry.all()).toEqual([]);
+  });
+});
+
+describe('a session id that is not a UUID is no session at all (§23.60)', () => {
+  it('never registers it, never builds a path from it, and so cannot delete a file outside paused/', async () => {
+    const dir = tempConfigDir();
+    const victim = join(dir, 'config.json');
+    writeFileSync(victim, '{}');
+    const posted: string[] = [];
+    const client = {
+      get: async (path: string) => {
+        posted.push(`GET ${path}`);
+        return {};
+      },
+      post: async (path: string) => {
+        posted.push(`POST ${path}`);
+        return {};
+      },
+    };
+    for (const event of ['SessionStart', 'SessionEnd', 'PreToolUse', 'UserPromptSubmit']) {
+      for (const id of ['../config.json', '../../x', 'a/b', '.hidden']) {
+        const stdin = JSON.stringify({ hook_event_name: event, session_id: id, cwd: '/tmp/x', tool_name: 'Bash' });
+        expect(await runHook({ stdin, configDir: dir, client, gitCommonDir: () => null, ppid: 4242, stdout: () => undefined })).toBe(0);
+      }
+    }
+    expect(existsSync(victim)).toBe(true);
+    expect(posted.filter((p) => p.includes('/v1/sessions'))).toEqual([]);
   });
 });

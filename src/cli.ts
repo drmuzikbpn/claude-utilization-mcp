@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Even Seal Productions
 import { DaemonClient, DaemonUnreachable, isPidAlive, readDaemonInfo } from './clients/http.js';
-import { loadConfig, resolveConfigDir } from './config.js';
+import { loadConfig, redactConfig, resolveConfigDir } from './config.js';
 import { pairingHint } from './install/pair-hint.js';
 import { serve } from './daemon.js';
 import { runHook, readStdin } from './hook.js';
@@ -455,8 +455,10 @@ export async function run(argv: readonly string[], io: CliIO = {}): Promise<numb
       return runStatusline(slIo);
     }
     case 'config': {
+      // Never the bearer itself: this output ends up in terminals, bug reports and
+      // screenshots. `config.json` is where it lives, readable by its owner only.
       const configDir = io.configDir ?? resolveConfigDir();
-      stdout(`${JSON.stringify(loadConfig(configDir), null, 2)}\n`);
+      stdout(`${JSON.stringify(redactConfig(loadConfig(configDir)), null, 2)}\n`);
       return 0;
     }
     case '--version':
