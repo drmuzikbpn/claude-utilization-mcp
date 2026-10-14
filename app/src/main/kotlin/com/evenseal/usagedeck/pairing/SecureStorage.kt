@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Even Seal Productions
 
+// androidx.security:security-crypto is deprecated upstream as a whole (1.1.0 is its final, stable
+// release) and AndroidX offers no successor. It remains the store here: Tink-backed AES-256 with a
+// key held in the AndroidKeyStore, and replacing it would mean migrating live bearer tokens.
+@file:Suppress("DEPRECATION")
+
 package com.evenseal.usagedeck.pairing
 
 import android.content.Context
