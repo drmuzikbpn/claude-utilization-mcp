@@ -1798,3 +1798,158 @@ and token counts but no 5-hour or 7-day numbers: the phone and watch showed empt
 
 **Test-first, per Part III:** `test/install/plan.test.ts`, `test/install/install.test.ts`,
 `test/install/settings-merge.test.ts`.
+
+### §23.55 Every request needs the bearer, from loopback too (2026-10-13)
+
+Overrides §16's loopback `GET`/`HEAD` exemption and §17.1's three loopback hook `POST`s
+(`LOOPBACK_HOOK_POSTS`). Loopback is not an identity: any local process, and any web page the
+user has open, can connect to `127.0.0.1`, and with the exemption a page could read every
+session's paths, register sessions, record tools through the gate and hold event-stream
+slots.
+
+- **The rule.** Every request needs `Authorization: Bearer <token>`, whatever its source.
+  Exactly two exceptions: `POST /v1/pair` (§23.47, unchanged — TLS only, one-time code,
+  rate-limited) and `GET`/`HEAD /health` with **no** `Authorization` header, which answers
+  `{ "ok": true }` and nothing else (no name, version, identity, stats, update or install
+  state). A `/health` request carrying a token that is wrong is `401`, so a paired app keeps
+  learning that its token was rotated.
+- **Local clients authenticate.** `DaemonClient` reads `auth.token` from `<configDir>/config.json`
+  (0600) on every request unless given one, but never volunteers it to a bare `baseUrl`. The
+  hook, status line, `observe`, MCP server and CLI all go through it. A hook that cannot read
+  the token gets `401` and, as with no daemon, prints nothing and exits 0.
+- **A bare `serve` mints a token** when `config.json` has none and saves it 0600, since a
+  daemon with no token would answer nothing.
+- **Fetch metadata.** A request carrying `Sec-Fetch-Site` other than `none` is `403`, token or
+  not (gate order: Host 421 → `Origin` 403 → `Sec-Fetch-Site` 403 → bearer 401).
+- **`createdBy`** can no longer be inferred from the header's absence; it is `cli` when the
+  body says so (the CLI does) and `dashboard` otherwise.
+- **`500` responses** say `internal error`; the detail goes to the daemon's log.
+- **Apps:** nothing they send changes — they always sent the bearer. A client that probed an
+  unauthenticated `/health` for identity now gets `{ "ok": true }` only.
+
+**Test-first:** `test/server-middleware.test.ts`, `test/server.test.ts`,
+`test/server/events.test.ts` (a page cannot occupy SSE slots), `test/clients-http.test.ts`,
+`test/hook.test.ts`, `test/daemon.test.ts`, `test/sessions/routes.test.ts`.
+
+### §23.56 What a token holder can make the session endpoints do (2026-10-13)
+
+The token is also what a lost phone carries. Extends §17 and §18.3.
+
+- **Session ids** must be UUID-shaped (`SESSION_ID_RE`) in `register` and in every
+  `/v1/sessions/{id}/…` path (`400` otherwise); the hook and status line treat any other
+  `session_id` as no session; the registry re-checks id and transcript path before building the
+  `custom-title.json` path.
+- **Bounded input.** Paths absolute, ≤ 4096 chars, no control characters; `transcriptPath` ends
+  `.jsonl` and is only kept inside `config.projectsDir`; `source` a short word; tool names
+  ≤ 128; scopes ≤ 4112. At most 256 registered sessions — dead ones, then the quietest pid-less
+  one, are evicted for a new id; when every slot is a live trusted session, `503`. A pid-less
+  session not heard from for two hours is reaped.
+- **Process identity.** A registered pid is kept only for a Claude Code process of the same
+  uid: `argv[0]`'s basename is exactly `claude`, or `argv[0]` is a file under
+  `…/claude/versions/`, or the command line runs `…/@anthropic-ai/claude-code/…cli.js`
+  (`isClaudeCodeCommand`). When the reported pid (the hook's parent) does not qualify, its
+  nearest qualifying ancestor up to four levels is taken; otherwise the session is registered
+  with `pid: null`. The pid's start time (`/proc/<pid>/stat` field 22 on Linux,
+  `ps -o lstart=` elsewhere) is stored as `pidStart`, and `sessions.json` records the boot id
+  (`/proc/sys/kernel/random/boot_id`, `kern.boottime`). Every freeze, thaw, hard-pause check
+  and liveness verdict re-checks the start time; persisted pids from another boot are
+  discarded unsignalled; a pid recorded without a start time (an older file) is adopted only
+  if it passes the Claude Code rule, else forgotten.
+- **Freeze safety.** `freezeTree` never signals the daemon's pid or its ancestors, records
+  `frozenPids` with start times (`frozenStarts`) to disk **before** the first `SIGSTOP`, and
+  `thaw` skips a recycled, foreign or protected pid. `ps`, `sysctl` run by absolute path.
+- **Crash path.** `uncaughtException`/`unhandledRejection` SIGCONT everything recorded (memory,
+  then `sessions.json`), remove `daemon.json` and exit 1; a daemon that fails during startup
+  thaws what its startup sweep froze.
+- **Gate.** `GET /v1/sessions/{id}/gate` only reads; `POST` with `{ "tool": … }` records the
+  tool. The hook's first poll is a `POST`.
+
+**Test-first:** `test/sessions/hardening.test.ts`, `test/sessions/registry.test.ts`,
+`test/pause/freeze.test.ts`.
+
+### §23.57 HTTPS only off the machine; v1 pairing removed; bind safety (2026-10-13)
+
+Overrides §16 (bind), §23.44 and §23.45 ("plain HTTP stays on every address").
+
+- **Plain HTTP is served on loopback only.** Every non-loopback address gets an HTTPS listener
+  or nothing; `127.0.0.1` is always bound for the local clients.
+- **`configure pairing` is removed** (the v1 QR carried the bearer). It prints a pointer to
+  `claude-usage pair` and exits 1. Nothing writes a `pairing.json`.
+- **No wildcard, no public address.** A `bind` literal that is `0.0.0.0`, `::` or publicly
+  routable is a `ConfigError` naming the entry unless `allowPublicBind: true` (a new top-level
+  key, default `false`, set by hand only); a keyword resolving to one is skipped with a warning.
+  Loopback, RFC 1918, `fc00::/7`, link-local and `100.64.0.0/10` are allowed.
+- **The `tailscale` keyword** accepts an in-range address only from an interface named
+  `tailscale*` or as printed by `tailscale ip -4`; the CLI's output is range-checked; the CLI is
+  found at known absolute paths (`TAILSCALE_PATHS`) and never through `PATH`. The MagicDNS name
+  must be a plain DNS name.
+
+**Test-first:** `test/net/bind.test.ts`, `test/net/tailscale.test.ts`,
+`test/net/daemon-network.test.ts`, `test/install/configure.test.ts`.
+
+### §23.58 Rotation reaches a foreground daemon; connection ceilings (2026-10-13)
+
+Extends §23.53. `configure rotate-token` with no service signals the daemon in `daemon.json`
+with `SIGHUP`; a reload re-reads `auth.token` first and drops every event stream. The command
+then requires the daemon to answer the new token within 3 s, and otherwise says the old token
+still works and exits 1. Each listener caps connections at 256 total and 64 per remote address.
+
+**Test-first:** `test/install/configure.test.ts`, `test/server.test.ts`.
+
+### §23.59 Signed releases (2026-10-13)
+
+Overrides §20 "Integrity".
+
+- Every release carries `SHA256SUMS.sig`: base64 of an Ed25519 signature over the exact bytes of
+  `SHA256SUMS`. The updater downloads it first, verifies it with `node:crypto` against
+  `TRUSTED_RELEASE_KEYS` (`src/update/trusted-keys.ts`; base64 SPKI; a list for rotation)
+  before parsing a checksum or extracting anything, and fails closed with `signature_missing`,
+  `signature_invalid` or `no_trusted_keys`, deleting the download. The list ships with one
+  `RELEASE_PUBLIC_KEY_PLACEHOLDER` entry that can verify nothing.
+- `release.yml`: `build` (read-only token, no secrets: `npm ci`, gates, `npm audit --omit=dev`,
+  `npm shrinkwrap`, `npm pack`, checksum) and `publish` (`needs: build`, main only,
+  `environment: release`, `contents: write`, no third-party code: refuse the placeholder, sign
+  with the `RELEASE_SIGNING_KEY` secret, verify, tag, `gh release create`). Every action pinned
+  to a commit SHA. No npm publishing; `package.json` is `private`.
+- Version directories install dependencies with `npm ci --omit=dev --ignore-scripts` from the
+  tarball's `npm-shrinkwrap.json` (a checkout's `package-lock.json`), and refuse without one.
+
+**Test-first:** `test/update/verify.test.ts`, `test/update/updater.test.ts`,
+`test/update/release-signing.test.ts`, `test/install/deps.test.ts`.
+
+### §23.60 Gaps found reading the CLI and updater (2026-10-13)
+
+`claude-usage config` printed the token (now redacted); the hook built `paused/<session_id>`
+from stdin unchecked (a `../config.json` id deleted the config — now UUID-only); update
+extraction lists the archive first and refuses absolute, `..`, dot-segment and non-`package/`
+members and symlinks, with `--no-same-owner` and an absolute `tar`; `apply()` refuses a
+non-version string. **Test-first:** `test/cli.test.ts`, `test/hook.test.ts`,
+`test/update/apply.test.ts`.
+
+### §23.61 A local listener proves itself before it gets the token (2026-10-13)
+
+`daemon.json` survives a crash and the port is fixed, so another local user could bind it first
+and be sent the bearer. A client that found the port through `daemon.json` now first sends
+`GET /health` with `x-claude-usage-challenge: <64 hex>`; the daemon answers, on loopback only,
+`proof = HMAC-SHA256(token, "claude-usage-listener-proof-v1:" + challenge)`, and the token is
+sent only after a correct proof (once per client). A `daemon.json` whose pid is dead or not ours
+is stale and nothing is sent; a starting daemon removes a stale one before binding.
+**Test-first:** `test/clients-http.test.ts`, `test/server.test.ts`, `test/daemon.test.ts`.
+
+### §23.62 Hardening from the second read-through (2026-10-13)
+
+System programs by absolute path (`security`, `launchctl`, `systemctl`, `journalctl`,
+`loginctl`; the restart watchdog runs under `PATH=/usr/bin:/bin:/usr/sbin:/sbin`); the unit's
+`PATH` keeps only absolute entries; systemd `ExecStart`/`Environment=` values are quoted per
+systemd.syntax(7) and a line break is refused; hook/statusline/observe commands shell-quote an
+unusual `binPath`; atomic writes use a random temp name opened `O_EXCL`; JSON parse errors in
+`config.json` and `settings.json` report a position, never text; the upstream usage body is
+capped at 256 KiB. **Test-first:** `test/service/*.test.ts`, `test/install/settings-merge.test.ts`,
+`test/config.test.ts`, `test/limits-client.test.ts`.
+
+### §23.63 An abandoned pairing code is revoked (2026-10-13)
+
+Extends §23.47/§23.52. `DELETE /v1/pair/code` (bearer + loopback) voids the live code;
+`claude-usage pair` calls it whenever it ends without the phone pairing. The per-source failure
+table holds at most 1024 sources (a new source beyond that is `rate_limited`) and is swept at
+most every 5 s. **Test-first:** `test/server/pairing.test.ts`, `test/install/pair.test.ts`.
