@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Even Seal Productions
 name: ci
 # The app lives on the `usage-android` branch of the daemon's repo. Scoped to that branch on purpose
 # (no wildcard): the daemon's own release job runs on `main` and must never race this one.

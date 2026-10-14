@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Even Seal Productions
 # Create (if needed) and start the API 29 arm64 emulator used for androidTests.
 # Nexus 5X-like: 1080x1920 @ 420dpi.
 #

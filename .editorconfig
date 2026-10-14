@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Even Seal Productions
 root = true
 [*.{kt,kts}]
 ktlint_code_style = android_studio

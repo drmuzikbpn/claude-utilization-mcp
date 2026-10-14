@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
+
 package com.evenseal.usagedeck.core.pairing
 
 /** IPv4 literals and DNS host names (including `.local`). Shared by the v1 and v2 pairing parsers. */

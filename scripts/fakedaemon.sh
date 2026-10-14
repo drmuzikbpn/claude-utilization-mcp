@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Even Seal Productions
 # Run the Ktor fake daemon so the deck has something to talk to without a Mac Studio.
 #
 #   scripts/fakedaemon.sh                # idle scenario on 47291

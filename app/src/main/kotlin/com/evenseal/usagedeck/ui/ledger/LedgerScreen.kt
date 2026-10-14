@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
+
 package com.evenseal.usagedeck.ui.ledger
 
 import androidx.compose.foundation.ExperimentalFoundationApi

@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: MIT
+  Copyright (c) 2026 Even Seal Productions
+-->
 <font-family xmlns:android="http://schemas.android.com/apk/res/android">
     <font
         android:font="@font/ibm_plex_sans_400"
