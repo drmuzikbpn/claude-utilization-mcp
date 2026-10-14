@@ -3,7 +3,9 @@
 # Copyright (c) 2026 Even Seal Productions
 """App Store Connect helpers for CI. The key comes from the environment and is never printed.
 
-  ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8   (GitHub secrets, sourced from 1Password usagedeck/usage-ios-ci)
+  ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8   (the workflow's `release` environment; kept in 1Password)
+
+Standard library only: the token is signed through the system's openssl (ci/es256.py).
 
 usage:
   ci/asc.py profiles "UsageDeck AppStore" "UsageWidgets AppStore" ...   install App Store profiles by name
@@ -19,9 +21,8 @@ import time
 import urllib.parse
 import urllib.request
 
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import es256  # noqa: E402
 
 API = "https://api.appstoreconnect.apple.com"
 APP_ID = "6818383053"
@@ -35,19 +36,10 @@ PROFILE_DIRS = [
 ]
 
 
-def b64(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
-
-
 def token() -> str:
-    pem = os.environ["ASC_KEY_P8"].strip().encode() + b"\n"
-    key = serialization.load_pem_private_key(pem, password=None)
-    header = {"alg": "ES256", "kid": os.environ["ASC_KEY_ID"], "typ": "JWT"}
     now = int(time.time())
     claims = {"iss": os.environ["ASC_ISSUER_ID"], "iat": now, "exp": now + 600, "aud": "appstoreconnect-v1"}
-    signing_input = f"{b64(json.dumps(header).encode())}.{b64(json.dumps(claims).encode())}".encode()
-    r, s = decode_dss_signature(key.sign(signing_input, ec.ECDSA(hashes.SHA256())))
-    return signing_input.decode() + "." + b64(r.to_bytes(32, "big") + s.to_bytes(32, "big"))
+    return es256.jwt(claims, os.environ["ASC_KEY_ID"], os.environ["ASC_KEY_P8"])
 
 
 def get(path: str) -> dict:

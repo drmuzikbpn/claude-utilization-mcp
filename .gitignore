@@ -25,3 +25,6 @@ xcuserdata/
 
 # Extra literal strings for scripts/public-check.sh; never committed
 .public-check.local
+
+__pycache__/
+*.pyc
