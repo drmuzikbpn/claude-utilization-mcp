@@ -22,8 +22,9 @@ export const SYSTEM_PATH = SYSTEM_BIN_DIRS.join(':');
 
 /**
  * The first `<dir>/<name>` that exists among `SYSTEM_BIN_DIRS`. When none does — an
- * unusual distribution — the bare name is returned and the spawn fails cleanly rather than
- * running something unexpected (there is then nothing on the system directories to find).
+ * unusual distribution — the first candidate is still returned: an absolute path that does
+ * not exist fails the spawn with ENOENT (reported as "not found"). A bare name would not:
+ * the spawn would search `PATH` for it, which is exactly what this module exists to avoid.
  */
 export function systemBin(name: string, exists: (path: string) => boolean = existsSync): string {
   for (const dir of SYSTEM_BIN_DIRS) {
@@ -34,7 +35,7 @@ export function systemBin(name: string, exists: (path: string) => boolean = exis
       // unreadable — try the next
     }
   }
-  return name;
+  return `${SYSTEM_BIN_DIRS[0] ?? '/usr/bin'}/${name}`;
 }
 
 /** `PATH` with every relative or empty entry removed (an empty entry means "the cwd"). */
