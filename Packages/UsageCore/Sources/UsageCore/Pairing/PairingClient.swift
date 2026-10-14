@@ -110,7 +110,8 @@ public struct PairingClient: Sendable {
             throw DaemonError(code: "pinning")
         }
         var paired = record
-        if let name = response.name, !name.isEmpty {
+        // The reply's name is the device's to choose; the same cap as the invite's applies.
+        if let name = response.name.map(DeviceName.clean), !name.isEmpty {
             paired.name = name
         }
         return DeviceConfig(record: paired, token: response.token)

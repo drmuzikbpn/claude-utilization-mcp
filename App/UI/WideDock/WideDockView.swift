@@ -166,7 +166,7 @@ private struct Rail: View {
                 }
                 .buttonStyle(.plain)
             } }
-            Text("team today \(Format.tokens(team.teamToday.total)) · \(team.liveSessionCount) live")
+            Text(verbatim: "team today \(Format.tokens(team.teamToday.total)) · \(team.liveSessionCount) live")
                 .font(DeckFont.mono(10))
                 .foregroundStyle(DeckColor.dim)
                 .lineLimit(1)
@@ -224,7 +224,7 @@ private struct RailUser: View {
                 RingNumber(store: store, limit: user.sevenDay, size: big * 0.6 * 0.42, ring: big * 0.6)
             }
             if user.health != .fresh {
-                Text("updated \(Format.age(user.limitsFetchedAt, now: store.now))")
+                Text(verbatim: "updated \(Format.age(user.limitsFetchedAt, now: store.now))")
                     .font(DeckFont.mono(10))
                     .foregroundStyle(DeckColor.dim)
             }

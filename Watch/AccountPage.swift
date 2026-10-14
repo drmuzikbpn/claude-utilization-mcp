@@ -101,7 +101,7 @@ struct AccountPage: View {
             RingGauge(ring: RingFace(headline), lineWidth: size.line, numeralSize: size.numeral, lively: !isLuminanceReduced)
                 .frame(width: size.diameter, height: size.diameter)
             if !isLuminanceReduced {
-                Text("\(label) · \(Format.resetCountdown(headline?.resetsAt, now: now))")
+                Text(verbatim: "\(label) · \(Format.resetCountdown(headline?.resetsAt, now: now))")
                     .font(Theme.data(12))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
@@ -114,6 +114,6 @@ struct AccountPage: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(label) window")
+        .accessibilityLabel(Text(verbatim: "\(label) window"))
     }
 }

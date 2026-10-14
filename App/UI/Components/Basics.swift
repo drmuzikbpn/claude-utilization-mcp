@@ -83,7 +83,7 @@ struct LimitBar: View {
                 .animation(.smooth(duration: 0.6), value: percent)
             }
             .frame(height: 8)
-            Text(percent.map { "\($0)%" } ?? "—")
+            Text(verbatim: percent.map { "\($0)%" } ?? "—")
                 .font(DeckFont.numeral(18, .medium))
                 .foregroundStyle(color)
                 .frame(width: 44, alignment: .trailing)

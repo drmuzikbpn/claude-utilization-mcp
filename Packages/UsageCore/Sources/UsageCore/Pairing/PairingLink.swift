@@ -66,13 +66,30 @@ public enum PairingLink: Sendable, Equatable {
     public static let scheme = "usagedeck"
     public static let supportedVersion = 2
 
-    /// The message is shown on the pairing screen verbatim.
+    /// Addresses kept from an invite; a daemon lists three or four.
+    public static let maxAddresses = 8
+
+    /// Why a string is not a pairing. Built from this app's own sentences only: the offending
+    /// value is never quoted back, so nothing a link carries can reach the screen through here.
     public struct ParseError: Error, Sendable, Equatable, CustomStringConvertible {
-        public var message: String
+        public var text: DeckText
+
+        init(_ text: DeckText) {
+            self.text = text
+        }
+
+        public var message: String {
+            text.plain
+        }
 
         public var description: String {
             message
         }
+    }
+
+    /// True for `usagedeck://pair…`, the only link this app acts on.
+    public static func isPairingURL(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == scheme && url.host()?.lowercased() == "pair"
     }
 
     /// Parses a scanned, opened or pasted pairing: a `usagedeck://pair?...` link, or the v1 JSON.
@@ -84,7 +101,7 @@ public enum PairingLink: Sendable, Equatable {
         guard let components = URLComponents(string: text),
               components.scheme?.lowercased() == scheme,
               components.host?.lowercased() == "pair"
-        else { return .failure(ParseError(message: "That isn't a Usage Deck pairing link. Run `claude-usage pair` on the device.")) }
+        else { return .failure(ParseError(.literal("That isn't a Usage Deck pairing link. Run `claude-usage pair` on the device."))) }
         return parseInvite(components).map(PairingLink.invite)
     }
 
@@ -97,36 +114,37 @@ public enum PairingLink: Sendable, Equatable {
         for item in components.queryItems ?? [] where query[item.name] == nil {
             query[item.name] = item.value ?? ""
         }
-        func fail(_ message: String) -> Result<PairingInvite, ParseError> {
-            .failure(ParseError(message: message))
+        func fail(_ text: DeckText) -> Result<PairingInvite, ParseError> {
+            .failure(ParseError(text))
         }
 
-        guard let v = query["v"].flatMap(Int.init) else { return fail("The pairing link has no version.") }
+        guard let v = query["v"].flatMap(Int.init) else { return fail(.literal("The pairing link has no version.")) }
         guard v == supportedVersion else {
-            return fail("This pairing link is version \(v); update Usage Deck to use it.")
+            return fail(.literal("This pairing link is version ") + .untrusted("\(v)") + .literal("; update Usage Deck to use it."))
         }
-        let name = (query["name"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return fail("The pairing link has no device name.") }
+        let name = DeviceName.clean(query["name"] ?? "")
+        guard !name.isEmpty else { return fail(.literal("The pairing link has no device name.")) }
         let addrs = (query["addrs"] ?? "")
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
-        guard !addrs.isEmpty else { return fail("The pairing link has no addresses.") }
-        if let bad = addrs.first(where: { !HostValidation.isValid($0) }) {
-            return fail("The pairing link has an invalid address '\(bad)'.")
+        guard !addrs.isEmpty else { return fail(.literal("The pairing link has no addresses.")) }
+        guard addrs.allSatisfy(HostValidation.isValid) else {
+            return fail(.literal("The pairing link has an invalid address."))
         }
         guard let port = query["port"].flatMap(Int.init), (1 ... 65535).contains(port) else {
-            return fail("The pairing link has an invalid port.")
+            return fail(.literal("The pairing link has an invalid port."))
         }
         let fp = (query["fp"] ?? "").lowercased()
         guard fp.count == 64, fp.allSatisfy(\.isHexDigit) else {
-            return fail("The pairing link has an invalid certificate fingerprint.")
+            return fail(.literal("The pairing link has an invalid certificate fingerprint."))
         }
         let code = query["code"] ?? ""
         guard (22 ... 256).contains(code.count),
               code.unicodeScalars.allSatisfy({ base64URL.contains($0) })
-        else { return fail("The pairing link has an invalid pairing code.") }
-        return .success(PairingInvite(name: name, addrs: deduplicated(addrs), port: port, fingerprint: fp, code: code))
+        else { return fail(.literal("The pairing link has an invalid pairing code.")) }
+        let kept = Array(deduplicated(addrs).prefix(maxAddresses))
+        return .success(PairingInvite(name: name, addrs: kept, port: port, fingerprint: fp, code: code))
     }
 
     private static let base64URL = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
@@ -146,21 +164,22 @@ public enum PairingLink: Sendable, Equatable {
 
     private static func parseLegacy(_ text: String) -> Result<LegacyPairing, ParseError> {
         guard let dto = try? JSONDecoder().decode(LegacyDTO.self, from: Data(text.utf8)) else {
-            return .failure(ParseError(message: "That isn't a Usage Deck pairing code."))
+            return .failure(ParseError(.literal("That isn't a Usage Deck pairing code.")))
         }
         guard dto.v == 1 else {
-            return .failure(ParseError(message: "Unsupported pairing version \(dto.v); update Usage Deck."))
+            let text = DeckText.literal("Unsupported pairing version ") + .untrusted("\(dto.v)") + .literal("; update Usage Deck.")
+            return .failure(ParseError(text))
         }
         guard !dto.token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return .failure(ParseError(message: "The pairing code has no token."))
+            return .failure(ParseError(.literal("The pairing code has no token.")))
         }
         guard (1 ... 65535).contains(dto.port) else {
-            return .failure(ParseError(message: "The pairing code has an invalid port \(dto.port)."))
+            return .failure(ParseError(.literal("The pairing code has an invalid port.")))
         }
         guard HostValidation.isValid(dto.addr) else {
-            return .failure(ParseError(message: "The pairing code has an invalid address '\(dto.addr)'."))
+            return .failure(ParseError(.literal("The pairing code has an invalid address.")))
         }
-        return .success(LegacyPairing(name: dto.name, addr: dto.addr, port: dto.port, token: dto.token))
+        return .success(LegacyPairing(name: DeviceName.clean(dto.name), addr: dto.addr, port: dto.port, token: dto.token))
     }
 }
 

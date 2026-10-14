@@ -39,7 +39,7 @@ struct StatusBar: View {
                     ) {
                         store.path.append(.device(device.id))
                     }
-                    .accessibilityLabel("device \(name), \(device.needsRepair ? "needs re-pair" : "\(device.health)")")
+                    .accessibilityLabel(Text(verbatim: "device \(name), \(device.needsRepair ? "needs re-pair" : "\(device.health)")"))
                 }
             }
             Text(Format.clock(store.now, use24h: store.settings.use24h))
@@ -86,7 +86,7 @@ struct DeviceWaitRow: View {
             }
             Spacer(minLength: 8)
             if !compact, let addr = device.activeAddr ?? device.record.addrs.first {
-                Text("\(addr):\(device.record.port)")
+                Text(verbatim: "\(addr):\(device.record.port)")
                     .font(DeckFont.mono(10))
                     .foregroundStyle(DeckColor.dim)
                     .lineLimit(1)

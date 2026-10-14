@@ -194,11 +194,12 @@ struct LostPairingTests {
         #expect(notices.map(\.id) == ["studio", "laptop.local"])
         #expect(notices[0].title == "studio no longer accepts this iPhone")
         #expect(notices[0].reason == "Its access token was changed.")
-        #expect(notices[0].instruction == "On studio, run `claude-usage pair`, then tap Re-pair and scan its code.")
+        #expect(notices[0].instruction.plain == "On studio, run `claude-usage pair`, then tap Re-pair and scan its code.")
+        #expect(notices[0].instruction.segments.map(\.isMarkdown) == [true, false, true], "the name is never Markdown")
         #expect(notices[1].title == "laptop no longer accepts this iPhone")
         #expect(notices[1].reason == "Its certificate changed.")
         for notice in notices {
-            #expect(!notice.title.contains("Mac") && !notice.instruction.contains("Mac"))
+            #expect(!notice.title.contains("Mac") && !notice.instruction.plain.contains("Mac"))
         }
     }
 

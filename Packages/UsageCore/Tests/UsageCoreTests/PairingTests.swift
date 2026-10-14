@@ -92,6 +92,27 @@ struct PairingLinkTests {
 
     @Test func rejectsAMissingName() {
         #expect(failure(Self.link(name: "%20")) == "The pairing link has no device name.")
+        #expect(failure(Self.link(name: "%0A%1B%E2%80%AE")) == "The pairing link has no device name.", "nothing printable")
+    }
+
+    @Test func capsTheNameAt64PrintableCharacters() throws {
+        let long = String(repeating: "n", count: 300)
+        #expect(try #require(invite(Self.link(name: long))).name.count == 64)
+        #expect(try #require(invite(Self.link(name: "stu%0Adio%1B%5B31m%E2%80%AE"))).name == "studio[31m")
+    }
+
+    @Test func keepsOnlyTheFirstEightAddresses() throws {
+        let many = (1 ... 20).map { "h\($0).example.test" }.joined(separator: ",")
+        let i = try #require(invite(Self.link(addrs: many)))
+        #expect(i.addrs == (1 ... 8).map { "h\($0).example.test" })
+    }
+
+    @Test func neverEchoesTheOffendingValue() {
+        let evil = "%5Btap%5D%28https%3A%2F%2Fexample.test%29"
+        #expect(failure(Self.link(addrs: evil)) == "The pairing link has an invalid address.")
+        let json = #"{"v":1,"name":"mbp","addr":"[tap](https://example.test)","port":8787,"token":"t"}"#
+        #expect(failure(json) == "The pairing code has an invalid address.")
+        #expect(failure(#"{"v":1,"name":"mbp","addr":"studio.local","port":70000,"token":"t"}"#) == "The pairing code has an invalid port.")
     }
 
     @Test(arguments: ["", "not a link", "https://example.com/pair?v=2", "usagedeck://open?v=2", "{}", "{\"v\":1}"])

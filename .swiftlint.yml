@@ -58,3 +58,24 @@ custom_rules:
     regex: "(print|NSLog|os_log|logger\\.[a-z]+)\\([^)]*\\btoken\\b"
     message: "Bearer tokens must never be printed or logged."
     severity: error
+  # SwiftUI draws a string literal as Markdown, interpolations included, so a device name, a
+  # session title or an address in one could plant a link or restyle a warning. Text that holds a
+  # value goes through Text(verbatim:) (or a DeckText); Markdown is for whole literals only.
+  no_interpolated_markdown:
+    name: "Interpolated text is drawn as Markdown"
+    included: "(App|Watch|WidgetShared|Widgets|Complications|SharedUI)/.*\\.swift"
+    regex: "\\b(Text|Label|Button|Toggle|Picker|Link|Section|ProgressView|Menu|LabeledContent|TextField|SecureField|SharePreview|DisclosureGroup|NavigationLink|Stepper|DatePicker|Gauge|Announcement|DisplayRepresentation)\\(\\s*+(?!verbatim:)(?:[^\\n]*|[^\")]{0,300})\"[^\"\\n]*\\\\\\("
+    message: "A literal with an interpolation is parsed as Markdown: use Text(verbatim:) or a DeckText."
+    severity: error
+  no_interpolated_markdown_modifier:
+    name: "Interpolated text is drawn as Markdown"
+    included: "(App|Watch|WidgetShared|Widgets|Complications|SharedUI)/.*\\.swift"
+    regex: "\\.(navigationTitle|accessibilityLabel|accessibilityValue|accessibilityHint|alert|confirmationDialog|help|badge)\\(\\s*+(?!Text\\(\\s*verbatim:)(?:[^\\n]*|[^\")]{0,300})\"[^\"\\n]*\\\\\\("
+    message: "A literal with an interpolation is parsed as Markdown: pass Text(verbatim:)."
+    severity: error
+  no_markdown_from_variable:
+    name: "Markdown only from a literal"
+    included: "(App|Watch|WidgetShared|Widgets|Complications|SharedUI)/.*\\.swift"
+    regex: "LocalizedStringKey\\(\\s*[^\"\\s]"
+    message: "LocalizedStringKey(variable) draws the variable as Markdown: use Text(verbatim:) or a DeckText."
+    severity: error

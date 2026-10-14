@@ -26,7 +26,7 @@ struct RepairCard: View {
             Text(notice.reason)
                 .font(DeckFont.text(12))
                 .foregroundStyle(DeckColor.fg.opacity(0.8))
-            Text(LocalizedStringKey(notice.instruction))
+            Text(notice.instruction)
                 .font(DeckFont.text(12))
                 .foregroundStyle(DeckColor.fg.opacity(0.8))
                 .fixedSize(horizontal: false, vertical: true)
@@ -35,7 +35,7 @@ struct RepairCard: View {
                 .buttonStyle(.borderedProminent)
                 .buttonBorderShape(.capsule)
                 .tint(DeckColor.accent)
-                .accessibilityLabel("Re-pair \(notice.name)")
+                .accessibilityLabel(Text(verbatim: "Re-pair \(notice.name)"))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(compact ? 12 : 14)

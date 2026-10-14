@@ -38,7 +38,9 @@ struct PauseGestureArea<Label: View>: View {
             .sensoryFeedback(.impact(weight: .light), trigger: taps)
             .sensoryFeedback(.warning, trigger: holds)
             .confirmationDialog("Freeze?", isPresented: $confirming, titleVisibility: .visible) {
-                Button("Freeze \(subject)", role: .destructive, action: onFreeze)
+                Button(role: .destructive, action: onFreeze) {
+                    Text(verbatim: "Freeze \(subject)")
+                }
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Stops the running tool now and holds the next one; the session itself stays open.")

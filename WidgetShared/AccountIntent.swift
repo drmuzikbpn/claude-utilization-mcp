@@ -24,7 +24,7 @@ struct AccountEntity: AppEntity {
     }
 
     var displayRepresentation: DisplayRepresentation {
-        DisplayRepresentation(title: "\(title)")
+        DisplayRepresentation(title: LocalizedStringResource(stringLiteral: title))
     }
 }
 

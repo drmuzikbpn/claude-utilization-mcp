@@ -20,7 +20,7 @@ struct PairingScreen: View {
                     scanner
                     pasteField
                     if let error = store.pairingError {
-                        Text(LocalizedStringKey(error))
+                        Text(error)
                             .font(DeckFont.text(13))
                             .foregroundStyle(DeckColor.warn)
                             .fixedSize(horizontal: false, vertical: true)
@@ -53,7 +53,7 @@ struct PairingScreen: View {
     @ViewBuilder
     private var scanner: some View {
         if DataScannerViewController.isSupported, DataScannerViewController.isAvailable {
-            QRScanner(active: scanning && store.pendingInvite == nil && !store.pairingInFlight) { code in
+            QRScanner(active: scanning && store.pendingOffer == nil && !store.pairingInFlight) { code in
                 store.offer(PairingInput.classify(code))
             }
             .frame(height: 280)

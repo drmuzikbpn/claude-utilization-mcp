@@ -114,7 +114,7 @@ struct EscalationCountdown: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             Text(
-                escalation.fireAt > context.date
+                verbatim: escalation.fireAt > context.date
                     ? "\(prefix) \(Format.countdown(escalation.fireAt, now: context.date))"
                     : "freeze due on the iPhone's next wake"
             )

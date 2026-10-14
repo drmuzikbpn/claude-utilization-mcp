@@ -89,7 +89,7 @@ private struct CircularGlance: View {
         .gaugeStyle(.accessoryCircular)
         .tint(Theme.color(face.fiveHour.status))
         .opacity(face.faded ? Theme.staleFade : 1)
-        .accessibilityLabel("\(face.name), five hour window \(face.fiveHour.label) percent")
+        .accessibilityLabel(Text(verbatim: "\(face.name), five hour window \(face.fiveHour.label) percent"))
     }
 }
 
@@ -144,7 +144,7 @@ private struct WindowBar: View {
                 .frame(minWidth: 24, alignment: .trailing)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title) \(ring.label) percent")
+        .accessibilityLabel(Text(verbatim: "\(title) \(ring.label) percent"))
     }
 }
 
@@ -152,7 +152,7 @@ private struct InlineGlance: View {
     let face: GlanceFace
 
     var body: some View {
-        Text("\(face.label) \(face.fiveHour.label)% · 7d \(face.sevenDay.label)% · \(face.age ?? face.fiveHourCountdown)")
+        Text(verbatim: "\(face.label) \(face.fiveHour.label)% · 7d \(face.sevenDay.label)% · \(face.age ?? face.fiveHourCountdown)")
     }
 }
 
@@ -193,9 +193,9 @@ private struct SmallGlance: View {
                 .frame(maxWidth: .infinity)
                 .opacity(face.faded ? Theme.staleFade : 1)
             HStack {
-                Text("5h \(face.fiveHourCountdown)")
+                Text(verbatim: "5h \(face.fiveHourCountdown)")
                 Spacer(minLength: 2)
-                Text("7d \(face.sevenDay.label)")
+                Text(verbatim: "7d \(face.sevenDay.label)")
                     .foregroundStyle(Theme.color(face.sevenDay.status))
             }
             .font(Theme.data(12))

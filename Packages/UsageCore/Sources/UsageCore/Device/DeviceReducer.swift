@@ -152,7 +152,7 @@ public struct DeviceReducer: Sendable {
     }
 
     public mutating func applyHealth(_ health: HealthDTO) {
-        if let name = health.name {
+        if let name = health.name.map(DeviceName.clean), !name.isEmpty {
             state.name = name
         }
         if !health.version.isEmpty {

@@ -148,8 +148,9 @@ struct PairingInputTests {
             Issue.record("expected a rejection")
             return
         }
-        #expect(message == PairingInput.androidMessage)
-        #expect(!message.contains("secret-value"))
+        #expect(message.plain == PairingInput.androidMessage)
+        #expect(!message.plain.contains("secret-value"))
+        #expect(message.isTrusted, "our own sentence, so its `code` may be styled")
     }
 
     @Test func junkCarriesTheParserMessage() {
@@ -157,7 +158,7 @@ struct PairingInputTests {
             Issue.record("expected a rejection")
             return
         }
-        #expect(message.contains("claude-usage pair"))
+        #expect(message.plain.contains("claude-usage pair"))
     }
 }
 

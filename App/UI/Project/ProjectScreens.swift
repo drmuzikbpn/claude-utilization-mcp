@@ -45,7 +45,7 @@ struct ProjectScreen: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 6) {
                     if project.worktreeCount > 1 {
-                        Text("\(project.worktreeCount) worktrees")
+                        Text(verbatim: "\(project.worktreeCount) worktrees")
                             .font(DeckFont.mono(11))
                             .foregroundStyle(DeckColor.muted)
                     }
@@ -109,7 +109,9 @@ struct ProjectScreen: View {
             .padding(.vertical, 8)
             .sensoryFeedback(.impact(weight: .light), trigger: choosing)
             .confirmationDialog(
-                "Pause \(project.name) · \(project.sessions.count) \(project.sessions.count == 1 ? "session" : "sessions")?",
+                Text(
+                    verbatim: "Pause \(project.name) · \(project.sessions.count) \(project.sessions.count == 1 ? "session" : "sessions")?"
+                ),
                 isPresented: $choosing,
                 titleVisibility: .visible
             ) {
@@ -138,13 +140,13 @@ struct ProjectScreen: View {
 
     private func breakdown(_ tokens: Tokens) -> some View {
         HStack {
-            Text("in \(Format.tokens(tokens.input))")
+            Text(verbatim: "in \(Format.tokens(tokens.input))")
             Spacer()
-            Text("out \(Format.tokens(tokens.output))")
+            Text(verbatim: "out \(Format.tokens(tokens.output))")
             Spacer()
-            Text("cache \(ProjectMath.cacheShare(tokens))%")
+            Text(verbatim: "cache \(ProjectMath.cacheShare(tokens))%")
             Spacer()
-            Text("msgs \(tokens.messages)")
+            Text(verbatim: "msgs \(tokens.messages)")
         }
         .font(DeckFont.mono(11))
         .foregroundStyle(DeckColor.muted)
@@ -190,7 +192,7 @@ private struct SessionDetailRow: View {
         let since = Format.clock(session.startedAt, use24h: store.settings.use24h)
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(session.title ?? Format.shortId(session.sessionId)) · since \(since)")
+                Text(verbatim: "\(session.title ?? Format.shortId(session.sessionId)) · since \(since)")
                     .font(DeckFont.mono(12))
                     .foregroundStyle(DeckColor.fg)
                     .lineLimit(1)
@@ -284,7 +286,7 @@ struct BurnChart: View {
                 }
             }
         }
-        .accessibilityLabel("Burn over the last five hours, up to \(Format.ratePerMin(series.max() ?? 0))")
+        .accessibilityLabel(Text(verbatim: "Burn over the last five hours, up to \(Format.ratePerMin(series.max() ?? 0))"))
     }
 }
 

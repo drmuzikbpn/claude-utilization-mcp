@@ -41,14 +41,30 @@ final class DeckStore {
     /// Ledger rows the user unfolded: `user|<key>` and `<deviceId>|<projectKey>`.
     var expanded: Set<String> = []
 
-    /// Pairing
-    var showPairing = false
-    /// A parsed invite waiting for the "Pair <name>?" confirmation.
-    var pendingInvite: PairingInvite?
-    var pairingError: String?
+    /// Pairing: the sheet, the Re-pair target, the invite awaiting confirmation and the error.
+    private(set) var pairing = PairingFlow()
     private(set) var pairingInFlight = false
-    /// Set by "Re-pair" on a device: the next redeemed invite replaces that device's token.
-    private(set) var replacingDeviceId: String?
+
+    var showPairing: Bool {
+        get { pairing.showing }
+        set { pairing.showing = newValue }
+    }
+
+    /// A parsed invite waiting for the "Pair <name>?" confirmation.
+    var pendingOffer: PairingFlow.Offer? {
+        get { pairing.pending }
+        set { pairing.pending = newValue }
+    }
+
+    var pairingError: DeckText? {
+        pairing.error
+    }
+
+    /// Set by "Re-pair" on a device: an invite scanned or pasted in the sheet replaces its token.
+    var replacingDeviceId: String? {
+        pairing.replacing
+    }
+
     /// A device just paired: "Connecting to <name>…" shows until its first full load is in.
     private(set) var connect = ConnectTracker()
 
@@ -545,61 +561,48 @@ final class DeckStore {
 
     // MARK: - pairing
 
-    /// A `usagedeck://pair?...` link opened from the Camera or another app.
+    /// A `usagedeck://` link the system handed over. Only `usagedeck://pair?…` (the Camera, or
+    /// another app) does anything; a widget's `usagedeck://open` just brought the app forward.
+    /// An invite that arrives this way never replaces the device a "Re-pair" is open for.
     func handle(url: URL) {
-        if !showPairing {
-            // A link from outside is a new pairing unless the user is mid-"Re-pair".
-            replacingDeviceId = nil
-        }
-        offer(PairingInput.classify(url.absoluteString))
+        pairing.open(url)
     }
 
-    /// A scanned or pasted pairing string.
+    /// A pairing string scanned or pasted in the pairing sheet.
     func offer(_ input: PairingInput) {
-        switch input {
-        case let .invite(invite):
-            pairingError = nil
-            pendingInvite = invite
-        case let .rejected(message):
-            pairingError = message
-            showPairing = true
-        }
+        pairing.offer(input, origin: .inApp)
     }
 
     func beginPairing(replacing id: String? = nil) {
-        replacingDeviceId = id.flatMap { id in records.contains { $0.id == id } ? id : nil }
-        pairingError = nil
-        showPairing = true
+        pairing.begin(replacing: id.flatMap { id in records.contains { $0.id == id } ? id : nil })
     }
 
     func cancelPairing() {
-        pendingInvite = nil
-        replacingDeviceId = nil
-        showPairing = false
+        pairing.cancel()
+    }
+
+    /// What the confirmation for `offer` says: plain "Pair <name>?", or, for a Re-pair, whether
+    /// the certificate about to be trusted differs from the one that was paired.
+    func prompt(for offer: PairingFlow.Offer) -> PairingPrompt {
+        PairingPrompt.make(invite: offer.invite, replacing: offer.replacing.flatMap { id in records.first { $0.id == id } })
     }
 
     /// Redeems the confirmed invite over pinned HTTPS, keeps the token in the Keychain only,
     /// connects, asks for notification permission and runs the setup check at once.
-    /// The record a "Re-pair" is about to replace, when the scanned invite does not look like the
-    /// same device (different name and addresses): the confirmation asks before replacing it.
-    func replacementConflict(_ invite: PairingInvite) -> DeviceRecord? {
-        guard let id = replacingDeviceId, let old = records.first(where: { $0.id == id }) else { return nil }
-        return RepairMatch.sameDevice(old, invite) ? nil : old
-    }
-
-    /// `replace: false` ("Pair as new") ignores the pending Re-pair and pairs the invite as its
-    /// own device (or the one already holding its certificate).
-    func confirmPairing(_ invite: PairingInvite, replace: Bool = true) async {
+    /// `replace: false` ("Pair as new") ignores the Re-pair the offer came from and pairs the
+    /// invite as its own device (or the one already holding its certificate).
+    func confirmPairing(_ offer: PairingFlow.Offer, replace: Bool = true) async {
         // One pairing at a time: a link that arrives mid-pairing waits for its confirmation
         // until the overlay has closed.
         guard !pairingInFlight, connecting == nil else {
-            pendingInvite = invite
+            pendingOffer = offer
             return
         }
-        pendingInvite = nil
+        pendingOffer = nil
         pairingInFlight = true
         defer { pairingInFlight = false }
-        let replacing = replace ? replacingDeviceId : nil
+        let invite = offer.invite
+        let replacing = replace ? offer.replacing : nil
         let reuse = replacing.flatMap { id in records.contains { $0.id == id } ? id : nil }
             ?? records.first { $0.fingerprint == invite.fingerprint }?.id
         do {
@@ -621,9 +624,7 @@ final class DeckStore {
             setupChecks[record.id] = nil
             connect(record)
             fold()
-            replacingDeviceId = nil
-            showPairing = false
-            pairingError = nil
+            pairing.paired()
             if let attempt = connect.begin(deviceId: record.id, name: record.name, now: Date()) {
                 startBootstrap(attempt)
                 armConnectTimer()
@@ -631,8 +632,7 @@ final class DeckStore {
             DiagLog.shared.log(.pairing, "paired \(record.name)\(reuse == nil ? "" : " (replacing its old record)")")
         } catch {
             DiagLog.shared.log(.pairing, "failed: \(DiagLog.describe(DaemonError.from(transport: error)))")
-            pairingError = DaemonError.from(transport: error).userMessage
-            showPairing = true
+            pairing.failed(DaemonError.from(transport: error).displayText)
         }
     }
 

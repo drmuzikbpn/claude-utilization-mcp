@@ -36,7 +36,7 @@ struct SessionRow: View {
                                 .layoutPriority(1)
                             // Led by the project, a renamed session still says who it is: PlannerApp “Zeus”.
                             if headline != nil, let title = session.title {
-                                Text("“\(title)”")
+                                Text(verbatim: "“\(title)”")
                                     .font(DeckFont.text(compact ? 12 : 13, .semibold))
                                     .foregroundStyle(DeckColor.fg)
                                     .lineLimit(1)
@@ -128,7 +128,7 @@ struct ProjectHeader: View {
                             Tag(text: "\(project.sessions.count) live")
                         }
                         if !open {
-                            Text("\(Format.tokens(project.liveTokens.total)) today")
+                            Text(verbatim: "\(Format.tokens(project.liveTokens.total)) today")
                                 .font(DeckFont.text(11))
                                 .foregroundStyle(DeckColor.muted)
                                 .rolling(project.liveTokens.total)
@@ -148,7 +148,7 @@ struct ProjectHeader: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(open ? "Collapse" : "Expand") \(project.name)")
+            .accessibilityLabel(Text(verbatim: "\(open ? "Collapse" : "Expand") \(project.name)"))
             PauseButton(
                 visual: store.visual(target),
                 subject: project.name,
@@ -164,7 +164,7 @@ struct ProjectHeader: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Open \(project.name)")
+            .accessibilityLabel(Text(verbatim: "Open \(project.name)"))
         }
         .padding(.leading, 6)
         .padding(.trailing, 2)
@@ -253,7 +253,7 @@ struct UserBlock: View {
                 .foregroundStyle(DeckColor.muted)
             RingGauge(ring: RingFace(limit: limit), lineWidth: 3, showsLabel: false, lively: true)
                 .frame(width: 18, height: 18)
-            Text(limit.map { "\($0.percent)%" } ?? "—")
+            Text(verbatim: limit.map { "\($0.percent)%" } ?? "—")
                 .font(DeckFont.numeral(16, .medium))
                 .foregroundStyle(limit.map { DeckColor.of($0.status) } ?? DeckColor.dim)
                 .lineLimit(1)
@@ -300,7 +300,7 @@ struct RenameAlert: ViewModifier {
             }
             Button("Cancel", role: .cancel) { user = nil }
         } message: { target in
-            Text("Shown instead of \(target.displayName). Leave it blank to use the name the device reports.")
+            Text(verbatim: "Shown instead of \(target.displayName). Leave it blank to use the name the device reports.")
         }
         .onChange(of: user?.key) { _, _ in
             draft = user.flatMap { store.settings.names.rename(for: $0) } ?? ""

@@ -45,7 +45,7 @@ private struct ProjectRow: View {
                 Text(project.name)
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .lineLimit(1)
-                Text(project.todayTokens.map { "today \(Format.tokens($0))" } ?? "today —")
+                Text(verbatim: project.todayTokens.map { "today \(Format.tokens($0))" } ?? "today —")
                     .font(Theme.data(12))
                     .foregroundStyle(Theme.muted)
             }

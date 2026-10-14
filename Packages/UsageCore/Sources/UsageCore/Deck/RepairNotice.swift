@@ -38,15 +38,23 @@ public struct RepairNotice: Sendable, Equatable, Identifiable {
         Alert(kind: .repair, key: "\(AlertKind.repair.rawValue)|\(id)", title: "Re-pair \(name)", body: "\(title). \(reason)")
     }
 
-    public var instruction: String {
-        "On \(name), run `claude-usage pair`, then tap Re-pair and scan its code."
+    /// The device's name is the device's to choose, so it is never drawn as Markdown.
+    public var instruction: DeckText {
+        .literal("On ") + .untrusted(name) + .literal(", run `claude-usage pair`, then tap Re-pair and scan its code.")
     }
 }
 
-/// Whether a scanned invite is plausibly the device being re-paired. The fingerprint alone cannot
-/// say (a regenerated certificate is exactly why it differs), so a shared short name or a shared
-/// address counts too.
+/// How a scanned invite compares with the device being re-paired.
+///
+/// `sameDevice` is only a guess at which device the code is from (a shared short name or address
+/// counts, since a regenerated certificate is one reason to re-pair). A name and an address are
+/// whatever the invite claims, so they never vouch for a certificate: `certificateDiffers` alone
+/// decides whether the confirmation warns that the pin is about to change.
 public enum RepairMatch {
+    public static func certificateDiffers(_ record: DeviceRecord, _ invite: PairingInvite) -> Bool {
+        record.fingerprint.lowercased() != invite.fingerprint.lowercased()
+    }
+
     public static func sameDevice(_ record: DeviceRecord, _ invite: PairingInvite) -> Bool {
         if record.fingerprint == invite.fingerprint {
             return true

@@ -39,7 +39,8 @@ struct ConnectingOverlay: View {
         .task(id: phase) {
             switch phase {
             case .ready:
-                AccessibilityNotification.Announcement("Connected to \(name)").post()
+                let spoken = "Connected to \(name)"
+                AccessibilityNotification.Announcement(spoken).post()
                 // Long enough to read the checkmark, short enough not to feel like a wait.
                 try? await Task.sleep(for: .milliseconds(reduceMotion ? 500 : 900))
                 guard !Task.isCancelled else { return }
@@ -71,11 +72,11 @@ struct ConnectingOverlay: View {
             .frame(height: 52)
             .accessibilityHidden(true)
             VStack(spacing: 6) {
-                Text(ready ? "Connected" : "Connecting to \(name)…")
+                Text(verbatim: ready ? "Connected" : "Connecting to \(name)…")
                     .font(DeckFont.text(17, .semibold))
                     .foregroundStyle(DeckColor.fg)
                     .multilineTextAlignment(.center)
-                Text(ready ? name : "Reading its limits, sessions and setup")
+                Text(verbatim: ready ? name : "Reading its limits, sessions and setup")
                     .font(DeckFont.text(13))
                     .foregroundStyle(DeckColor.muted)
                     .multilineTextAlignment(.center)
@@ -100,7 +101,7 @@ struct ConnectingOverlay: View {
         .padding(24)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(ready ? "Connected to \(name)" : "Connecting to \(name)")
+        .accessibilityLabel(Text(verbatim: ready ? "Connected to \(name)" : "Connecting to \(name)"))
         .accessibilityAddTraits(.isModal)
     }
 

@@ -37,23 +37,31 @@ struct ActionsPage: View {
                     Text("Projects")
                         .frame(maxWidth: .infinity)
                         .overlay(alignment: .trailing) {
-                            Text("\(snapshot.projects.count)")
+                            Text(verbatim: "\(snapshot.projects.count)")
                                 .font(Theme.numeral(17))
                                 .foregroundStyle(Theme.muted)
                         }
                 }
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                 ForEach(snapshot.devices.filter(\.needsRepair)) { device in
-                    Label("\(Format.hostShort(device.name)) · Re-pair on iPhone", systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(Theme.warn)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Label {
+                        Text(verbatim: "\(Format.hostShort(device.name)) · Re-pair on iPhone")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                    }
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(Theme.warn)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 ForEach(snapshot.devices.filter { $0.health == .dead && !$0.needsRepair }) { device in
-                    Label("\(Format.hostShort(device.name)) · offline", systemImage: "bolt.horizontal.circle")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(Theme.muted)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Label {
+                        Text(verbatim: "\(Format.hostShort(device.name)) · offline")
+                    } icon: {
+                        Image(systemName: "bolt.horizontal.circle")
+                    }
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(Theme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Text(snapshot.footer)
                     .font(Theme.data(12))

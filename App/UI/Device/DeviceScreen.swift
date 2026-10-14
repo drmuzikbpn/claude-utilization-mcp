@@ -173,7 +173,7 @@ private struct SetupRow: View {
                             }
                             .buttonStyle(.borderless)
                             .foregroundStyle(DeckColor.accent)
-                            .accessibilityLabel("Copy \(fix)")
+                            .accessibilityLabel(Text(verbatim: "Copy \(fix)"))
                         }
                     } else {
                         Text(fix)
@@ -184,7 +184,7 @@ private struct SetupRow: View {
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(item.title): \(statusText)")
+        .accessibilityLabel(Text(verbatim: "\(item.title): \(statusText)"))
     }
 
     private func isCommand(_ fix: String) -> Bool {
