@@ -15,7 +15,10 @@ dependencies {
     implementation(libs.ktor.server.content.negotiation)
     implementation(libs.ktor.serialization.json)
     implementation(libs.coroutines.core)
+    // HeldCertificate: a self-signed certificate without the JDK-internal or BouncyCastle APIs.
+    implementation(libs.okhttp.tls)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.okhttp)
+    testImplementation(libs.okhttp.sse)
 }

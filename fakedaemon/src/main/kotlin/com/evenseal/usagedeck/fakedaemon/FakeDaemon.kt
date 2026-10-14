@@ -14,6 +14,7 @@ import com.evenseal.usagedeck.core.daemon.PauseRequestDto
 import com.evenseal.usagedeck.core.daemon.PauseResponseDto
 import com.evenseal.usagedeck.core.daemon.PauseRuleDto
 import com.evenseal.usagedeck.core.daemon.PauseStateDto
+import com.evenseal.usagedeck.core.daemon.PinnedTls
 import com.evenseal.usagedeck.core.daemon.ProjectRefDto
 import com.evenseal.usagedeck.core.daemon.ResumeRequestDto
 import com.evenseal.usagedeck.core.daemon.ResumeResponseDto
@@ -29,15 +30,14 @@ import com.evenseal.usagedeck.core.daemon.TokensGroupDto
 import com.evenseal.usagedeck.core.daemon.UpdateDto
 import com.evenseal.usagedeck.core.daemon.UserDto
 import io.ktor.http.ContentType
-import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.ApplicationEngine
+import io.ktor.server.engine.applicationEngineEnvironment
+import io.ktor.server.engine.connector
 import io.ktor.server.engine.embeddedServer
-import io.ktor.server.plugins.origin
-import io.ktor.server.request.httpMethod
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
@@ -47,7 +47,13 @@ import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.URLEncoder
+import java.security.MessageDigest
+import java.security.SecureRandom
 import java.time.Instant
+import java.util.Base64
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
@@ -63,6 +69,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import okhttp3.tls.HeldCertificate
 
 /** Encodes defaults so empty arrays stay `[]` on the wire, as the real daemon sends them. */
 val FakeJson = Json {
@@ -273,11 +280,21 @@ private data class SnapshotBody(
     val user: UserDto,
     val limits: LimitsBodyDto,
     val summary: SummaryDto,
-    val sessions: SessionsDto,
+    /** A bare array, as the real daemon sends it — not the `/v1/sessions` body. */
+    val sessions: List<SessionDto>,
     val rules: RulesDto,
     val update: UpdateDto,
     val rev: Long
 )
+
+@Serializable
+private data class LivenessBody(val ok: Boolean = true)
+
+@Serializable
+private data class PairRequestBody(val code: String = "")
+
+@Serializable
+private data class PairResponseBody(val token: String, val name: String, val fp: String)
 
 @Serializable
 private data class HeartbeatBody(val rev: Long, val at: String)
@@ -287,29 +304,77 @@ private data class PauseEventBody(val rules: List<PauseRuleDto>, val affected: L
 
 /**
  * A Ktor stand-in for `claude-usage` implementing the dashboard contract, so the app runs on an
- * emulator with no Mac in the loop. Defaults to port 47299 — the real daemon owns 47291.
+ * emulator with no Mac in the loop.
+ *
+ * It listens the way the real daemon does: plain HTTP on loopback only ([port], default 47299 —
+ * the real daemon owns 47291) and pinned HTTPS on [tlsPort], which is the only listener a deck
+ * may use. HTTPS binds [bind], loopback unless the caller opts into another address; the Android
+ * emulator reaches the host's loopback as `10.0.2.2`, so the default already serves it.
+ *
+ * There is no well-known token: one is generated per instance unless the caller passes its own.
+ * Every request needs it as a bearer, except `POST /v1/pair` (HTTPS only; trades a one-time code
+ * from [pairingLink] for the token) and `GET /health`, which without the bearer answers liveness
+ * and nothing else.
  */
 class FakeDaemon(
     val port: Int = DEFAULT_PORT,
-    val token: String = "fake-token",
+    val token: String = newSecret(TOKEN_BYTES),
     val name: String = "fake-mbp",
-    private val scenario: Scenario = Scenarios.idle
+    private val scenario: Scenario = Scenarios.idle,
+    /** The HTTPS port; 0 picks a free one. Read it back after [start]. */
+    tlsPort: Int = 0,
+    val bind: String = LOOPBACK
 ) {
     val state = FakeState(name = name)
+
+    var tlsPort: Int = tlsPort
+        private set
+
+    private val certificate = HeldCertificate.Builder().commonName("claude-usage").ecdsa256().build()
+
+    /** What a pairing link carries as `fp`: lowercase hex SHA-256 of the certificate's public key. */
+    val fingerprint: String = PinnedTls.fingerprint(certificate.certificate)
 
     private val clients = CopyOnWriteArrayList<Channel<String>>()
     private val steps = AtomicInteger(0)
     private var scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var engine: ApplicationEngine? = null
+    private var tlsFront: TlsFront? = null
+
+    /** Where the TLS front forwards to; only requests arriving here may redeem a pairing code. */
+    private var tlsBackendPort = 0
+
+    private val pairingLock = Any()
+    private var pairingCode: String? = null
+    private var pairingFailures = 0
+
+    /** Called after a code has been redeemed, so a CLI can print the next link. */
+    var onPaired: () -> Unit = {}
 
     fun start() {
         if (engine != null) return
         scenario.init(state)
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        val server = embeddedServer(CIO, port = port, host = "0.0.0.0") { routes() }
+        tlsBackendPort = freePort()
+        val environment = applicationEngineEnvironment {
+            connector {
+                host = LOOPBACK
+                port = this@FakeDaemon.port
+            }
+            connector {
+                host = LOOPBACK
+                port = tlsBackendPort
+            }
+            module { routes() }
+        }
+        val server = embeddedServer(CIO, environment)
         server.start(wait = false)
         runBlocking { server.resolvedConnectors() }
         engine = server
+        tlsFront = TlsFront(certificate, bind, tlsPort, tlsBackendPort).also {
+            it.start()
+            tlsPort = it.port
+        }
         scope.launch {
             while (isActive) {
                 delay(HEARTBEAT_MS)
@@ -324,8 +389,22 @@ class FakeDaemon(
         scope.cancel()
         clients.forEach { it.close() }
         clients.clear()
+        tlsFront?.stop()
+        tlsFront = null
         engine?.stop(0, 0)
         engine = null
+    }
+
+    /**
+     * Mints a fresh one-time code (replacing any unredeemed one) and returns the link
+     * `claude-usage pair` would print: `usagedeck://pair?v=2&name&addrs&port&fp&code`.
+     */
+    fun pairingLink(addrs: List<String> = listOf(LOOPBACK)): String {
+        val code = newSecret(CODE_BYTES)
+        synchronized(pairingLock) { pairingCode = code }
+        fun enc(s: String) = URLEncoder.encode(s, Charsets.UTF_8.name()).replace("+", "%20")
+        return "usagedeck://pair?v=2&name=${enc(state.name)}&addrs=${enc(addrs.joinToString(","))}" +
+            "&port=$tlsPort&fp=$fingerprint&code=$code"
     }
 
     /** Pushes one frame to every connected SSE client. */
@@ -342,7 +421,12 @@ class FakeDaemon(
     // ---- routes ------------------------------------------------------------------------------
 
     private fun io.ktor.server.application.Application.routes() = routing {
-        get("/health") { guarded { call.json(state.health()) } }
+        // Liveness for anyone; the body that names the machine and its user needs the bearer.
+        get("/health") {
+            if (authorized(call)) call.json(state.health()) else call.json(LivenessBody())
+        }
+
+        post("/v1/pair") { handlePair(call) }
 
         get("/v1/summary") { guarded { call.json(state.summary()) } }
 
@@ -518,7 +602,7 @@ class FakeDaemon(
             user = state.user,
             limits = state.limitsBody(),
             summary = state.summary(),
-            sessions = state.sessionsBody(),
+            sessions = state.sessions,
             rules = state.rulesBody(),
             update = state.update,
             rev = state.rev
@@ -527,19 +611,50 @@ class FakeDaemon(
 
     // ---- helpers -----------------------------------------------------------------------------
 
-    /** Loopback GETs are exempt; every other request needs the bearer token (daemon spec §16). */
-    private fun authorized(call: ApplicationCall): Boolean {
-        // After a rotation nothing the deck holds is valid. Loopback too: the emulator reaches
-        // this server through 10.0.2.2, which arrives as loopback and would hide the rotation.
-        if (state.tokenRotated) return false
-        val safe = call.request.httpMethod == HttpMethod.Get || call.request.httpMethod == HttpMethod.Head
-        if (safe && isLoopback(call)) return true
-        return call.request.headers["Authorization"] == "Bearer $token"
+    /**
+     * `POST /v1/pair {"code"}` (daemon §23.47): no bearer, HTTPS only, single use. A wrong code is
+     * a 401, and after [MAX_PAIR_FAILURES] of them every attempt is a 429 until a new link is minted.
+     */
+    private suspend fun handlePair(call: ApplicationCall) {
+        if (call.request.local.localPort != tlsBackendPort) {
+            call.error(HttpStatusCode.NotFound, "not_found", "Pairing is served over HTTPS only")
+            return
+        }
+        val offered = runCatching { FakeJson.decodeFromString<PairRequestBody>(call.receiveText()).code }.getOrNull()
+        val outcome = synchronized(pairingLock) {
+            val expected = pairingCode
+            when {
+                pairingFailures >= MAX_PAIR_FAILURES -> HttpStatusCode.TooManyRequests
+                offered != null && expected != null && MessageDigest.isEqual(
+                    offered.toByteArray(Charsets.UTF_8),
+                    expected.toByteArray(Charsets.UTF_8)
+                ) -> {
+                    pairingCode = null
+                    pairingFailures = 0
+                    HttpStatusCode.OK
+                }
+                else -> {
+                    pairingFailures++
+                    HttpStatusCode.Unauthorized
+                }
+            }
+        }
+        when (outcome) {
+            HttpStatusCode.OK -> {
+                call.json(PairResponseBody(token, state.name, fingerprint))
+                onPaired()
+            }
+            HttpStatusCode.TooManyRequests -> call.error(outcome, "rate_limited", "Too many pairing attempts")
+            else -> call.error(outcome, "unauthorized", "Pairing code invalid or expired")
+        }
     }
 
-    private fun isLoopback(call: ApplicationCall): Boolean {
-        val host = runCatching { call.request.origin.remoteHost }.getOrNull().orEmpty()
-        return host.startsWith("127.") || host == "::1" || host == "0:0:0:0:0:0:0:1" || host == "localhost"
+    /** Every request needs the bearer token, from loopback too (daemon spec §16 as hardened). */
+    private fun authorized(call: ApplicationCall): Boolean {
+        // After a rotation nothing the deck holds is valid.
+        if (state.tokenRotated) return false
+        val offered = call.request.headers["Authorization"].orEmpty().toByteArray(Charsets.UTF_8)
+        return MessageDigest.isEqual(offered, "Bearer $token".toByteArray(Charsets.UTF_8))
     }
 
     private suspend fun io.ktor.util.pipeline.PipelineContext<Unit, ApplicationCall>.guarded(
@@ -552,11 +667,23 @@ class FakeDaemon(
         block()
     }
 
-    private companion object {
+    companion object {
         const val DEFAULT_PORT = 47299
-        const val HEARTBEAT_MS = 15_000L
-        const val SESSION_PREFIX = "session:"
-        const val PROJECT_PREFIX = "project:"
+        const val LOOPBACK = "127.0.0.1"
+
+        private const val TOKEN_BYTES = 32
+        private const val CODE_BYTES = 24
+        private const val MAX_PAIR_FAILURES = 5
+        private const val HEARTBEAT_MS = 15_000L
+        private const val SESSION_PREFIX = "session:"
+        private const val PROJECT_PREFIX = "project:"
+
+        /** Unpadded base64url of [bytes] random bytes: a token or a pairing code. */
+        fun newSecret(bytes: Int): String = Base64.getUrlEncoder().withoutPadding().encodeToString(
+            ByteArray(bytes).also { SecureRandom().nextBytes(it) }
+        )
+
+        private fun freePort(): Int = ServerSocket(0, 1, InetAddress.getByName(LOOPBACK)).use { it.localPort }
     }
 }
 

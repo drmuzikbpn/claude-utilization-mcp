@@ -3,8 +3,17 @@
 
 package com.evenseal.usagedeck.fakedaemon
 
+import com.evenseal.usagedeck.core.daemon.DaemonEvent
+import com.evenseal.usagedeck.core.daemon.DaemonEventSource
+import com.evenseal.usagedeck.core.daemon.DaemonException
+import com.evenseal.usagedeck.core.daemon.OkHttpDaemonApi
+import com.evenseal.usagedeck.core.daemon.SessionsResult
+import com.evenseal.usagedeck.core.pairing.PairingClient
+import com.evenseal.usagedeck.core.pairing.PairingInvite
 import java.net.ServerSocket
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -40,7 +49,7 @@ class FakeDaemonTest {
 
     private fun url(path: String) = "http://127.0.0.1:$port$path"
 
-    private fun get(path: String, etag: String? = null, token: String? = null): Response {
+    private fun get(path: String, etag: String? = null, token: String? = daemon.token): Response {
         val builder = Request.Builder().url(url(path)).get()
         etag?.let { builder.header("If-None-Match", it) }
         token?.let { builder.header("Authorization", "Bearer $it") }
@@ -218,6 +227,7 @@ class FakeDaemonTest {
     fun `the first SSE event is a snapshot and emitted events follow`() {
         val request = Request.Builder()
             .url(url("/v1/events"))
+            .header("Authorization", "Bearer ${daemon.token}")
             .header("Accept", "text/event-stream")
             .get()
             .build()
@@ -314,6 +324,91 @@ class FakeDaemonTest {
     }
 
     @Test
+    fun `every read needs the bearer, from loopback too`() {
+        listOf("/v1/summary", "/v1/sessions", "/v1/limits", "/v1/pause/rules", "/v1/events").forEach { path ->
+            get(path, token = null).use { r -> assertEquals(path, 401, r.code) }
+            get(path, token = "nope").use { r -> assertEquals(path, 401, r.code) }
+        }
+    }
+
+    @Test
+    fun `health without the bearer is liveness only`() {
+        get("/health", token = null).use { r ->
+            assertEquals(200, r.code)
+            assertEquals("""{"ok":true}""", r.body!!.string())
+        }
+        get("/health").use { r -> assertTrue(r.body!!.string().contains("\"name\"")) }
+    }
+
+    @Test
+    fun `no two daemons share a token and none is the old well-known one`() {
+        val other = FakeDaemon(port = 0)
+        assertTrue(daemon.token != other.token)
+        assertTrue(daemon.token.length >= 43)
+        assertTrue(daemon.token != "fake-token")
+    }
+
+    @Test
+    fun `https listens on loopback unless told otherwise`() {
+        assertEquals("127.0.0.1", daemon.bind)
+        assertEquals("127.0.0.1", Args.parse(emptyArray()).bind)
+        assertEquals("0.0.0.0", Args.parse(arrayOf("--bind", "0.0.0.0")).bind)
+    }
+
+    private fun invite(d: FakeDaemon = daemon) = PairingInvite.parse(d.pairingLink()).getOrThrow()
+
+    @Test
+    fun `a pairing link is redeemed once over pinned https for the token`() = runBlocking {
+        val link = invite()
+        assertEquals(daemon.fingerprint, link.fp)
+        assertEquals(daemon.tlsPort, link.port)
+
+        val config = PairingClient(OkHttpClient()).redeem(link)
+        assertEquals(daemon.token, config.token)
+        assertEquals(daemon.fingerprint, config.fp)
+
+        val again = runCatching { PairingClient(OkHttpClient()).redeem(link) }.exceptionOrNull()
+        assertEquals("unauthorized", (again as DaemonException).code)
+    }
+
+    @Test
+    fun `the paired config reads and streams over pinned https`() = runBlocking {
+        val config = PairingClient(OkHttpClient()).redeem(invite())
+        val api = OkHttpDaemonApi(config, OkHttpClient())
+        assertEquals("fake-mbp", api.health().name)
+        assertTrue(api.sessions(null) is SessionsResult.Changed)
+
+        val first = DaemonEventSource(config, OkHttpClient()).events().first { it is DaemonEvent.Snapshot }
+        assertEquals("fake-mbp", (first as DaemonEvent.Snapshot).name)
+    }
+
+    @Test
+    fun `a wrong fingerprint is refused before the code is sent`() = runBlocking {
+        val link = invite()
+        val forged = PairingInvite(link.name, link.addrs, link.port, "0".repeat(64), link.code)
+        val e = runCatching { PairingClient(OkHttpClient()).redeem(forged) }.exceptionOrNull()
+        assertEquals("pinning", (e as DaemonException).code)
+        // The code never left: the genuine link still works.
+        assertEquals(daemon.token, PairingClient(OkHttpClient()).redeem(link).token)
+    }
+
+    @Test
+    fun `pairing is not served on the plain http port`() {
+        val code = invite().code
+        post("/v1/pair", """{"code":"$code"}""", token = null).use { r -> assertEquals(404, r.code) }
+    }
+
+    @Test
+    fun `repeated wrong codes are rate limited`() = runBlocking {
+        val link = invite()
+        val wrong = PairingInvite(link.name, link.addrs, link.port, link.fp, "x".repeat(32))
+        val codes = (1..6).map {
+            (runCatching { PairingClient(OkHttpClient()).redeem(wrong) }.exceptionOrNull() as DaemonException).code
+        }
+        assertEquals(List(5) { "unauthorized" } + "rate_limited", codes)
+    }
+
+    @Test
     fun `scenarios resolve by name and default to idle`() {
         assertEquals("idle", Scenarios.byName("idle").name)
         assertEquals("warnCrossing", Scenarios.byName("warnCrossing").name)
@@ -333,5 +428,9 @@ class FakeDaemonTest {
         assertEquals(1234, parsed.port)
         assertEquals("freeze", parsed.scenario.name)
         assertEquals("zzz", parsed.token)
+        assertEquals(null, defaults.token)
+        assertEquals(listOf("10.0.2.2", "127.0.0.1"), defaults.addrs)
+        assertEquals(4321, Args.parse(arrayOf("--tls-port", "4321")).tlsPort)
+        assertEquals("/tmp/l", Args.parse(arrayOf("--link-file", "/tmp/l")).linkFile)
     }
 }
