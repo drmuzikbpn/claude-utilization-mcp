@@ -238,6 +238,22 @@ describe('.github/workflows (§23.59)', () => {
     expect(ci).toMatch(/^permissions:\n\s+contents: read$/m);
   });
 
+  // The first release run failed here: with a `files` list, npm 11 leaves the shrinkwrap
+  // out of the tarball unless the list names it, and the updater's `npm ci` needs it.
+  it('the tarball carries npm-shrinkwrap.json', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cu-pack-'));
+    try {
+      writeFileSync(join(dir, 'package.json'), readFileSync(join(ROOT, 'package.json')));
+      writeFileSync(join(dir, 'npm-shrinkwrap.json'), '{"lockfileVersion":3,"packages":{}}\n');
+      const out = spawnSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], { cwd: dir, encoding: 'utf8' });
+      expect(out.status).toBe(0);
+      const files = (JSON.parse(out.stdout) as { files: { path: string }[] }[])[0]?.files.map((f) => f.path);
+      expect(files).toContain('npm-shrinkwrap.json');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('the package can never be published to npm by accident', () => {
     expect((JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { private?: unknown }).private).toBe(true);
   });
