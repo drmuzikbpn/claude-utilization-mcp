@@ -97,6 +97,26 @@ class FakeState(
     /** `claude-usage configure rotate-token` happened: the deck's token is rejected from now on. */
     var tokenRotated: Boolean = false
 ) {
+    /**
+     * Swaps the person and the home directory in every path for made-up ones, so a screenshot
+     * of the deck shows nothing that belongs to anyone. The scenarios keep running unchanged.
+     */
+    fun applyDemoPersona() {
+        val home = Regex("/Users/[^/]+/")
+        val slug = Regex("-Users-[^-]+-")
+        fun neutral(path: String?) = path?.replace(home, "/Users/you/")?.replace(slug, "-Users-you-")
+        user = DEMO_USER
+        sessions = sessions.map { s ->
+            s.copy(
+                cwd = neutral(s.cwd)!!,
+                transcriptPath = neutral(s.transcriptPath),
+                worktree = neutral(s.worktree),
+                project = s.project.copy(gitCommonDir = neutral(s.project.gitCommonDir))
+            )
+        }
+        projectGroups = projectGroups.map { g -> g.copy(key = neutral(g.key)!!, label = neutral(g.label)!!) }
+    }
+
     fun limit(id: String): LimitDto? = limits.firstOrNull { it.id == id }
 
     fun setLimit(id: String, limit: LimitDto) {
@@ -141,6 +161,14 @@ class FakeState(
     )
 
     companion object {
+        /** A person who does not exist, for screenshots: see [applyDemoPersona]. */
+        val DEMO_USER = UserDto(
+            emailAddress = "sam@example.test",
+            accountUuid = "5a3e0000-0000-4000-8000-000000000001",
+            organizationUuid = "5a3e0000-0000-4000-8000-000000000002",
+            displayName = "Sam Rivera"
+        )
+
         val DEFAULT_USER = UserDto(
             emailAddress = "adam@example.test",
             accountUuid = "c0ffee00-1111-4222-8333-444455556666",
@@ -323,7 +351,9 @@ class FakeDaemon(
     private val scenario: Scenario = Scenarios.idle,
     /** The HTTPS port; 0 picks a free one. Read it back after [start]. */
     tlsPort: Int = 0,
-    val bind: String = LOOPBACK
+    val bind: String = LOOPBACK,
+    /** Show [FakeState.DEMO_USER] and neutral paths, for screenshots. */
+    private val demo: Boolean = false
 ) {
     val state = FakeState(name = name)
 
@@ -354,6 +384,7 @@ class FakeDaemon(
     fun start() {
         if (engine != null) return
         scenario.init(state)
+        if (demo) state.applyDemoPersona()
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         tlsBackendPort = freePort()
         val environment = applicationEngineEnvironment {

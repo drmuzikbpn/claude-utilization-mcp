@@ -409,6 +409,23 @@ class FakeDaemonTest {
     }
 
     @Test
+    fun `the demo persona shows a made-up person and no real home directory`() {
+        val state = FakeState(name = "fake-mbp").also { it.applyDemoPersona() }
+
+        assertEquals(FakeState.DEMO_USER, state.user)
+        val paths = state.sessions.flatMap {
+            listOfNotNull(it.cwd, it.transcriptPath, it.worktree, it.project.gitCommonDir)
+        } +
+            state.projectGroups.flatMap { listOf(it.key, it.label) }
+        assertTrue(paths.isNotEmpty())
+        paths.filter { it.contains("Users") }.forEach { path ->
+            assertTrue(path, path.startsWith("/Users/you/") || path.contains("-Users-you-"))
+        }
+        assertTrue(Args.parse(arrayOf("--demo")).demo)
+        assertTrue(!Args.parse(emptyArray()).demo)
+    }
+
+    @Test
     fun `scenarios resolve by name and default to idle`() {
         assertEquals("idle", Scenarios.byName("idle").name)
         assertEquals("warnCrossing", Scenarios.byName("warnCrossing").name)

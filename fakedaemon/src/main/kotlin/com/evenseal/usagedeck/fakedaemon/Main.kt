@@ -9,7 +9,7 @@ import java.nio.file.attribute.PosixFilePermissions
 
 /**
  * `--port 47299 --tls-port 47300 --scenario warnCrossing [--bind 0.0.0.0] [--addrs a,b]
- * [--token …] [--link-file path]`.
+ * [--token …] [--link-file path] [--demo]`.
  *
  * [bind] is where the HTTPS listener binds: loopback unless asked otherwise. [addrs] are the
  * addresses the pairing link advertises; the default suits the Android emulator, which reaches
@@ -22,7 +22,9 @@ data class Args(
     val token: String? = null,
     val bind: String = FakeDaemon.LOOPBACK,
     val addrs: List<String> = EMULATOR_ADDRS,
-    val linkFile: String? = null
+    val linkFile: String? = null,
+    /** `--demo`: a made-up person and neutral paths, for screenshots. */
+    val demo: Boolean = false
 ) {
     companion object {
         const val DEFAULT_PORT = 47299
@@ -32,6 +34,7 @@ data class Args(
 
         fun parse(args: Array<String>): Args {
             var parsed = Args()
+            if ("--demo" in args) parsed = parsed.copy(demo = true)
             var i = 0
             while (i < args.size - 1) {
                 val value = args[i + 1]
@@ -43,6 +46,7 @@ data class Args(
                     "--bind" -> parsed = parsed.copy(bind = value)
                     "--addrs" -> parsed = parsed.copy(addrs = value.split(',').filter { it.isNotBlank() })
                     "--link-file" -> parsed = parsed.copy(linkFile = value)
+                    "--demo" -> i--
                     else -> i--
                 }
                 i += 2
@@ -75,7 +79,8 @@ fun main(args: Array<String>) {
         token = parsed.token ?: FakeDaemon.newSecret(TOKEN_BYTES),
         scenario = parsed.scenario,
         tlsPort = parsed.tlsPort ?: (parsed.port + 1),
-        bind = parsed.bind
+        bind = parsed.bind,
+        demo = parsed.demo
     )
     daemon.start()
     println(

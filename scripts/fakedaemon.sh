@@ -18,6 +18,8 @@
 # A device on the network needs an explicit opt-in:
 #
 #   BIND=0.0.0.0 ADDRS=<this machine's address> scripts/fakedaemon.sh
+#
+# DEMO=1 swaps the sample person and home directory for made-up ones, for screenshots.
 set -euo pipefail
 export JAVA_HOME=${JAVA_HOME:-/opt/homebrew/opt/openjdk@17}
 SCENARIO=${1:-idle}
@@ -29,4 +31,4 @@ ADDRS=${ADDRS:-10.0.2.2,127.0.0.1}
 LINK_FILE=${LINK_FILE:-$(pwd)/build/fakedaemon/pair-link}
 mkdir -p "$(dirname "$LINK_FILE")"
 exec ./gradlew -q --console=plain :fakedaemon:run \
-  --args="--port $PORT --tls-port $TLS_PORT --bind $BIND --addrs $ADDRS --scenario $SCENARIO --link-file $LINK_FILE"
+  --args="--port $PORT --tls-port $TLS_PORT --bind $BIND --addrs $ADDRS --scenario $SCENARIO --link-file $LINK_FILE${DEMO:+ --demo}"
