@@ -28,9 +28,10 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          # The checkout is the PR merged into its base, so base..HEAD is exactly what the
+          # pull request adds.
           git fetch --no-tags --depth=1 origin "$BASE"
-          git diff --no-color --no-ext-diff -U0 --diff-filter=ACMR "$BASE" "$HEAD" > /tmp/pr.diff || true
-          bash scripts/public-check.sh --diff /tmp/pr.diff
+          git diff --no-color --no-ext-diff -U0 --diff-filter=ACMR "$BASE" HEAD > "$RUNNER_TEMP/pr.diff"
+          bash scripts/public-check.sh --diff "$RUNNER_TEMP/pr.diff"
