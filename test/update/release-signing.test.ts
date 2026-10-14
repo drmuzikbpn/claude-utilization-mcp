@@ -243,7 +243,11 @@ describe('.github/workflows (§23.59)', () => {
   it('the tarball carries npm-shrinkwrap.json', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cu-pack-'));
     try {
-      writeFileSync(join(dir, 'package.json'), readFileSync(join(ROOT, 'package.json')));
+      // Only `files` decides what is packed. The scripts go: some npm versions run `prepare`
+      // on pack even with --ignore-scripts, and its output would corrupt the JSON.
+      const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as Record<string, unknown>;
+      delete pkg['scripts'];
+      writeFileSync(join(dir, 'package.json'), JSON.stringify(pkg));
       writeFileSync(join(dir, 'npm-shrinkwrap.json'), '{"lockfileVersion":3,"packages":{}}\n');
       const out = spawnSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], { cwd: dir, encoding: 'utf8' });
       expect(out.status).toBe(0);
