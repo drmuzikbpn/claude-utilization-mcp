@@ -50,7 +50,7 @@ the pairing QR names.
 claude-usage pair
 ```
 
-That prints a QR. On the deck: **Projects → Pairing → Scan QR**, and hold the phone up to your
+That prints a QR. On the deck: **Settings › Pair a machine → Scan QR** (or **Pair** on the home screen if nothing is paired yet), and hold the phone up to your
 screen. The QR holds a one-time code (valid five minutes, usable once) plus your daemon's
 certificate pin; the deck trades the code for the token over HTTPS pinned to that certificate,
 so the QR itself is worthless once used. If the deck says the code is invalid or expired, run

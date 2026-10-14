@@ -56,7 +56,7 @@ internal fun WifiRoute(graph: DeckGraph, vm: DeckViewModel, onBack: () -> Unit) 
 }
 
 @Composable
-internal fun SettingsRoute(graph: DeckGraph, onBack: () -> Unit, onWifi: () -> Unit = {}) {
+internal fun SettingsRoute(graph: DeckGraph, onBack: () -> Unit, onWifi: () -> Unit = {}, onPair: () -> Unit = {}) {
     val settings by graph.settings.settings.collectAsStateWithLifecycle()
     val wifi by graph.wifi.status.collectAsStateWithLifecycle()
     val team by graph.team.collectAsStateWithLifecycle()
@@ -74,6 +74,7 @@ internal fun SettingsRoute(graph: DeckGraph, onBack: () -> Unit, onWifi: () -> U
         onBack = onBack,
         wifiLabel = if (wifi.connected) wifi.ssid.orEmpty() else "not connected",
         onWifi = onWifi,
+        onPair = onPair,
         users = team.usersWithData()
     )
 }

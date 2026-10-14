@@ -61,6 +61,8 @@ fun SettingsScreen(
     onBack: () -> Unit,
     wifiLabel: String = "",
     onWifi: () -> Unit = {},
+    /** Opens pairing: with a machine already paired, home offers Projects instead of Pair. */
+    onPair: () -> Unit = {},
     /** The people on the board, for the Users section; renames go through [onUpdate]. */
     users: List<UserView> = emptyList()
 ) {
@@ -118,6 +120,23 @@ fun SettingsScreen(
                 modifier = Modifier.weight(1f)
             )
             Text(text = wifiLabel, color = DeckColors.muted, fontFamily = DeckType.mono, fontSize = 12.sp)
+            Text(text = "  ›", color = DeckColors.accent, fontFamily = DeckType.text, fontSize = 18.sp)
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onPair)
+                .padding(horizontal = 10.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Pair a machine",
+                color = DeckColors.fg,
+                fontFamily = DeckType.text,
+                fontSize = 14.sp,
+                modifier = Modifier.weight(1f)
+            )
+            Text(text = "claude-usage pair", color = DeckColors.muted, fontFamily = DeckType.mono, fontSize = 12.sp)
             Text(text = "  ›", color = DeckColors.accent, fontFamily = DeckType.text, fontSize = 18.sp)
         }
 

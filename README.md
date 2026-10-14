@@ -95,7 +95,7 @@ over Tailscale):
 claude-usage pair
 ```
 
-That prints a QR code. On the deck, open **Projects → Pairing → Scan QR** and hold the phone up
+That prints a QR code. On the deck, tap **Pair** on the home screen (or, once a machine is paired, *Settings › Pair a machine*), then **Scan QR**, and hold the phone up
 to the Mac's screen. The QR carries no token: it holds the daemon's addresses, its HTTPS port,
 the SHA-256 pin of its certificate and a one-time code that expires after five minutes. The deck
 redeems the code over HTTPS pinned to that certificate (`POST /v1/pair`, daemon §23.47), and from

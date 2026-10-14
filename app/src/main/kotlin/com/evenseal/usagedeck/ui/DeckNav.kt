@@ -95,7 +95,9 @@ fun DeckNav(graph: DeckGraph, navController: NavHostController = rememberNavCont
             }
             composable(Dest.PROJECTS) { ProjectsScreen(vm, open, back) }
             composable(Dest.WIFI) { WifiRoute(graph, vm, back) }
-            composable(Dest.SETTINGS) { SettingsRoute(graph, back, onWifi = { open(Route.Wifi) }) }
+            composable(Dest.SETTINGS) {
+                SettingsRoute(graph, back, onWifi = { open(Route.Wifi) }, onPair = { open(Route.Pairing) })
+            }
             composable(Dest.PAIRING) { PairingRoute(graph, back) }
             composable(
                 Dest.REPAIR,

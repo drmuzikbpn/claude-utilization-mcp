@@ -130,7 +130,7 @@ shows whether it stuck.
 
 ## 9. Pair each machine
 
-On the Mac, `claude-usage pair` prints a QR. In the deck: *Projects → Pairing → Scan QR*, held up
+On the Mac, `claude-usage pair` prints a QR. In the deck: **Pair** on the home screen (later: *Settings › Pair a machine*) → **Scan QR**, held up
 to the Mac's screen. The deck redeems the QR's one-time code over HTTPS pinned to the daemon's
 certificate and shows "Paired <name>." — or the daemon's own hint, e.g. "run `claude-usage pair`
 again" when the five-minute code has expired or was already used.
