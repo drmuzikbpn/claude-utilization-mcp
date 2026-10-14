@@ -4,7 +4,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { EventBus } from '../../src/events/bus.js';
-import type { FreezeDeps, ProcEntry } from '../../src/pause/freeze.js';
+import { isClaudeCodeCommand, type FreezeDeps, type ProcEntry, type ProcIdentity } from '../../src/pause/freeze.js';
 import { createSessionsSubsystem, type SessionsSubsystem } from '../../src/sessions/index.js';
 import { createServer, type UsageServer } from '../../src/server/index.js';
 import {
@@ -81,21 +81,47 @@ export interface RecordedSignal {
   signal: string;
 }
 
-/** Freeze deps over a synthetic process table; records every signal instead of sending it. */
+/**
+ * Freeze deps over a synthetic process table; records every signal instead of sending it.
+ *
+ * Every pid in `table` is one of ours, started at `start-<pid>` and running `claude`,
+ * unless the options say otherwise: `uids` reassigns or removes (`null`) a pid, `starts`
+ * overrides a start time, `commands` a command line.
+ */
 export function fakeFreezeDeps(
   table: ProcEntry[],
-  opts: { uid?: number; uids?: Record<number, number | null>; signals?: RecordedSignal[] } = {},
+  opts: {
+    uid?: number;
+    uids?: Record<number, number | null>;
+    signals?: RecordedSignal[];
+    starts?: Record<number, string>;
+    commands?: Record<number, string>;
+    selfPid?: number;
+    bootId?: () => string | null;
+  } = {},
 ): FreezeDeps & { signals: RecordedSignal[] } {
   const signals = opts.signals ?? [];
   const selfUid = opts.uid ?? 501;
+  const uidOf = (pid: number): number | null => {
+    if (opts.uids !== undefined && pid in opts.uids) return opts.uids[pid] ?? null;
+    return table.some((e) => e.pid === pid) ? selfUid : null;
+  };
   return {
     signals,
     listProcesses: () => table,
-    uidOf: (pid) => {
-      if (opts.uids !== undefined && pid in opts.uids) return opts.uids[pid] ?? null;
-      return table.some((e) => e.pid === pid) ? selfUid : null;
+    inspect: (pids) => {
+      const out = new Map<number, ProcIdentity>();
+      for (const pid of pids) {
+        const uid = uidOf(pid);
+        if (uid === null) continue;
+        out.set(pid, { pid, uid, start: opts.starts?.[pid] ?? `start-${String(pid)}`, command: opts.commands?.[pid] ?? 'claude' });
+      }
+      return out;
     },
     selfUid: () => selfUid,
+    selfPid: () => opts.selfPid ?? 999_999,
+    bootId: opts.bootId ?? (() => 'boot-1'),
+    isSessionProcess: (identity) => isClaudeCodeCommand(identity.command),
     kill: (pid, signal) => {
       signals.push({ pid, signal });
     },
@@ -112,7 +138,20 @@ export interface Harness {
   signals: RecordedSignal[];
 }
 
-export function makeHarness(over: { configDir?: string; table?: ProcEntry[]; uids?: Record<number, number | null> } = {}): Harness {
+export interface HarnessOptions {
+  configDir?: string;
+  table?: ProcEntry[];
+  uids?: Record<number, number | null>;
+  /** Mutable on purpose: a test changes an entry to simulate a recycled pid. */
+  starts?: Record<number, string>;
+  commands?: Record<number, string>;
+  selfPid?: number;
+  bootId?: () => string | null;
+  maxSessions?: number;
+  transcriptRoots?: readonly string[];
+}
+
+export function makeHarness(over: HarnessOptions = {}): Harness {
   const configDir = over.configDir ?? tempDir();
   const bus = new EventBus();
   const tokens = new StubTokens();
@@ -125,7 +164,16 @@ export function makeHarness(over: { configDir?: string; table?: ProcEntry[]; uid
     tokens,
     now: () => clock.now,
     isAlive: (pid) => alive.has(pid),
-    freezeDeps: fakeFreezeDeps(over.table ?? [], { signals, ...(over.uids === undefined ? {} : { uids: over.uids }) }),
+    freezeDeps: fakeFreezeDeps(over.table ?? [], {
+      signals,
+      ...(over.uids === undefined ? {} : { uids: over.uids }),
+      ...(over.starts === undefined ? {} : { starts: over.starts }),
+      ...(over.commands === undefined ? {} : { commands: over.commands }),
+      ...(over.selfPid === undefined ? {} : { selfPid: over.selfPid }),
+      ...(over.bootId === undefined ? {} : { bootId: over.bootId }),
+    }),
+    ...(over.maxSessions === undefined ? {} : { maxSessions: over.maxSessions }),
+    ...(over.transcriptRoots === undefined ? {} : { transcriptRoots: over.transcriptRoots }),
   });
   return { subsystem, configDir, bus, tokens, clock, alive, signals };
 }

@@ -13,7 +13,8 @@ let port: number;
 let base: string;
 
 beforeEach(async () => {
-  h = makeHarness();
+  // The hook reports pid 4242: a `claude` process of ours in the fake table, so it is trusted (§23.56).
+  h = makeHarness({ table: [{ pid: 4242, ppid: 1 }] });
   const started = await startHarnessServer(h);
   server = started.server;
   port = started.port;
@@ -27,6 +28,7 @@ afterEach(async () => {
 
 /** Claude Code's session ids are UUIDs, and the routes accept nothing else (§23.56). */
 const S1 = '11111111-1111-4111-8111-111111111111';
+const GHOST = '99999999-9999-4999-8999-999999999999';
 
 interface Res {
   status: number;
@@ -162,9 +164,9 @@ describe('hook endpoints (loopback, no token)', () => {
     expect(beat.body['ok']).toBe(true);
     expect(beat.body['paused']).toBe(false);
 
-    const unknown = await call('/v1/sessions/nope/heartbeat', { body: {} });
+    const unknown = await call(`/v1/sessions/${GHOST}/heartbeat`, { body: {} });
     expect(unknown.status).toBe(404);
-    expect(String((unknown.body['error'] as Record<string, unknown>)['message'])).toContain('nope');
+    expect(String((unknown.body['error'] as Record<string, unknown>)['message'])).toContain(GHOST);
 
     const ended = await call(`/v1/sessions/${S1}/end`, { body: {} });
     expect(ended.body).toMatchObject({ ok: true, ended: true });
@@ -182,7 +184,7 @@ describe('hook endpoints (loopback, no token)', () => {
 describe('GET /v1/sessions/{id}/gate (§18.2, §23.13)', () => {
   it('reports not paused and records lastTool', async () => {
     await call('/v1/sessions/register', { body: registerBody() });
-    const gate = await call(`/v1/sessions/${S1}/gate?tool=Bash`);
+    const gate = await call(`/v1/sessions/${S1}/gate`, { body: { tool: 'Bash' } });
     expect(gate.status).toBe(200);
     expect(gate.body).toEqual({ paused: false, mode: null, ruleId: null, reason: null });
 
@@ -283,8 +285,8 @@ describe('POST /v1/pause and friends (§18.4)', () => {
 
 describe('hard-freeze refusals (§18.3)', () => {
   it('409 for a transcript-discovered session', async () => {
-    h.tokens.add('ghost', { cwd: '/tmp/x/foo' });
-    const res = await call('/v1/sessions/ghost/pause', { token: TOKEN, body: { mode: 'hard' } });
+    h.tokens.add(GHOST, { cwd: '/tmp/x/foo' });
+    const res = await call(`/v1/sessions/${GHOST}/pause`, { token: TOKEN, body: { mode: 'hard' } });
     expect(res.status).toBe(409);
     const error = res.body['error'] as Record<string, unknown>;
     expect(error['code']).toBe('conflict');
@@ -312,7 +314,7 @@ describe('hard-freeze refusals (§18.3)', () => {
   });
 
   it('410 for an unknown session and for one whose pid is gone', async () => {
-    const unknown = await call('/v1/sessions/never-seen/pause', { token: TOKEN, body: { mode: 'hard' } });
+    const unknown = await call(`/v1/sessions/${GHOST}/pause`, { token: TOKEN, body: { mode: 'hard' } });
     expect(unknown.status).toBe(410);
     expect((unknown.body['error'] as Record<string, unknown>)['code']).toBe('gone');
 

@@ -18,6 +18,8 @@ import { isPidAlive } from '../clients/http.js';
 import { writeJsonFile } from '../config.js';
 import type { EventBus } from '../events/bus.js';
 import { zeroTotals, type TokensSource } from '../server/types.js';
+import { isCleanAbsolutePath, isInside, isSessionId, MAX_SESSIONS, PIDLESS_SESSION_TTL_MS } from './validate.js';
+import { frozenProcsOf, type FrozenProc } from '../pause/freeze-records.js';
 import type {
   LastTool,
   PauseTarget,
@@ -81,6 +83,17 @@ export interface SessionRegistryOptions {
   isAlive?: (pid: number) => boolean;
   /** Called after any change that bumps `rev`. */
   onChange?: () => void;
+  /** Registered sessions held at once; `MAX_SESSIONS` (§23.56). */
+  maxSessions?: number;
+  /** The machine's boot id; persisted pids from another boot are discarded on load (§23.56). */
+  bootId?: () => string | null;
+  /**
+   * Current start time of each pid that still exists (§23.56). When given, a session whose
+   * pid now belongs to a different process is dead, not alive.
+   */
+  startTimes?: (pids: readonly number[]) => Map<number, string>;
+  /** Directories a transcript may live in; a path outside all of them is not recorded (§23.56). */
+  transcriptRoots?: readonly string[];
 }
 
 interface PersistedFile {
@@ -89,6 +102,8 @@ interface PersistedFile {
   sessions?: StoredSession[];
   /** §23.24 tombstones: `sessionId → epoch ms we last knew it was not running`. */
   ended?: Record<string, number>;
+  /** §23.56: the boot the pids below were recorded under. */
+  bootId?: string | null;
 }
 
 function isoOf(ms: number): string {
@@ -111,7 +126,11 @@ export class SessionRegistry {
   #onChange: () => void;
   #timer: NodeJS.Timeout | null = null;
   #resolvePause: (target: PauseTarget) => { pause: SessionPause | null } = () => ({ pause: null });
-  #releaseFreeze: ((pids: readonly number[]) => void) | null = null;
+  #releaseFreeze: ((procs: readonly FrozenProc[]) => void) | null = null;
+  #maxSessions: number;
+  #bootId: () => string | null;
+  #startTimes: ((pids: readonly number[]) => Map<number, string>) | null;
+  #transcriptRoots: readonly string[];
 
   constructor(opts: SessionRegistryOptions) {
     this.configDir = opts.configDir;
@@ -120,6 +139,10 @@ export class SessionRegistry {
     this.#now = opts.now ?? Date.now;
     this.#isAlive = opts.isAlive ?? isPidAlive;
     this.#onChange = opts.onChange ?? ((): void => {});
+    this.#maxSessions = opts.maxSessions ?? MAX_SESSIONS;
+    this.#bootId = opts.bootId ?? ((): string | null => null);
+    this.#startTimes = opts.startTimes ?? null;
+    this.#transcriptRoots = opts.transcriptRoots ?? [];
   }
 
   get rev(): number {
@@ -155,6 +178,9 @@ export class SessionRegistry {
     const fromStore = this.#tokens?.sessionTitle?.(sessionId) ?? null;
     if (fromStore !== null) return fromStore;
     if (transcriptPath === null || !transcriptPath.endsWith('.jsonl')) return null;
+    // §23.56: the id becomes a directory name and the path came from a request. Neither is
+    // used unless it is exactly what Claude Code would have sent.
+    if (!isSessionId(sessionId) || !isCleanAbsolutePath(transcriptPath)) return null;
     try {
       const sidecar = join(dirname(transcriptPath), sessionId, 'custom-title.json');
       const parsed = JSON.parse(readFileSync(sidecar, 'utf8')) as { customTitle?: unknown };
@@ -209,7 +235,7 @@ export class SessionRegistry {
    * `frozenPids` on the floor and its stopped tool subprocesses — now reparented to init —
    * stay stopped for good, which is exactly the invariant hard freeze is not allowed to break.
    */
-  setFreezeReleaser(fn: (pids: readonly number[]) => void): void {
+  setFreezeReleaser(fn: (procs: readonly FrozenProc[]) => void): void {
     this.#releaseFreeze = fn;
   }
 
@@ -224,21 +250,31 @@ export class SessionRegistry {
     }
     if (typeof parsed !== 'object' || parsed === null) return;
     const list = Array.isArray(parsed.sessions) ? parsed.sessions : [];
+    // §23.56: after a reboot every recorded pid names some other process, or none. Keep
+    // the sessions for the dashboard's sake, but as dead ones with no pid and no freeze —
+    // nothing here may ever be signalled on the strength of a number from another boot.
+    const boot = this.#bootId();
+    const rebooted = typeof parsed.bootId === 'string' && boot !== null && parsed.bootId !== boot;
     for (const entry of list) {
       if (typeof entry?.sessionId !== 'string' || entry.sessionId.length === 0) continue;
+      if (this.#sessions.size >= this.#maxSessions) break;
+      const pid = !rebooted && typeof entry.pid === 'number' && Number.isInteger(entry.pid) && entry.pid > 1 ? entry.pid : null;
+      const frozen = rebooted ? [] : frozenProcsOf(entry);
       this.#sessions.set(entry.sessionId, {
         sessionId: entry.sessionId,
-        pid: typeof entry.pid === 'number' ? entry.pid : null,
+        pid,
+        pidStart: pid !== null && typeof entry.pidStart === 'string' ? entry.pidStart : null,
         cwd: typeof entry.cwd === 'string' ? entry.cwd : '',
         transcriptPath: typeof entry.transcriptPath === 'string' ? entry.transcriptPath : null,
         gitCommonDir: typeof entry.gitCommonDir === 'string' ? entry.gitCommonDir : null,
         source: typeof entry.source === 'string' ? entry.source : null,
         registeredAt: typeof entry.registeredAt === 'string' ? entry.registeredAt : isoOf(this.#now()),
         lastActivityAt: typeof entry.lastActivityAt === 'string' ? entry.lastActivityAt : isoOf(this.#now()),
-        alive: entry.alive !== false,
-        deadSince: typeof entry.deadSince === 'number' ? entry.deadSince : null,
-        frozenPids: Array.isArray(entry.frozenPids) ? entry.frozenPids.filter((p) => typeof p === 'number') : [],
-        frozenPid: typeof entry.frozenPid === 'number' ? entry.frozenPid : null,
+        alive: rebooted ? false : entry.alive !== false,
+        deadSince: rebooted ? this.#now() : typeof entry.deadSince === 'number' ? entry.deadSince : null,
+        frozenPids: frozen.map((f) => f.pid),
+        frozenStarts: frozen.map((f) => f.start),
+        frozenPid: !rebooted && typeof entry.frozenPid === 'number' ? entry.frozenPid : null,
         freezes: typeof entry.freezes === 'number' && entry.freezes > 0 ? Math.floor(entry.freezes) : 0,
         pausedSince: typeof entry.pausedSince === 'string' ? entry.pausedSince : null,
         lastTool:
@@ -265,6 +301,7 @@ export class SessionRegistry {
       writeJsonFile(sessionsFilePath(this.configDir), {
         version: SESSIONS_FILE_VERSION,
         rev: this.#rev,
+        bootId: this.#bootId(),
         sessions: [...this.#sessions.values()],
         ended: Object.fromEntries(this.#ended),
       });
@@ -275,19 +312,49 @@ export class SessionRegistry {
 
   // --- mutation -------------------------------------------------------------
 
-  /** Idempotent: `claude --resume` re-registers the same id with a new pid (§17.1). */
-  register(input: RegisterInput): StoredSession {
+  /**
+   * Make room for one more session (§23.56): drop the longest-dead, then the pid-less one
+   * that has been quiet longest. A session with a live, trusted pid is never evicted.
+   */
+  #evictOne(): boolean {
+    const all = [...this.#sessions.values()];
+    const dead = all.filter((s) => !s.alive).sort((a, b) => (a.deadSince ?? 0) - (b.deadSince ?? 0))[0];
+    const victim = dead ?? all.filter((s) => s.pid === null).sort((a, b) => (a.lastActivityAt < b.lastActivityAt ? -1 : 1))[0];
+    if (victim === undefined) return false;
+    if (victim.frozenPids.length > 0) this.#releaseFreeze?.(frozenProcsOf(victim));
+    this.#sessions.delete(victim.sessionId);
+    this.#bury(victim.sessionId);
+    this.bumpRev();
+    this.publish('end', victim);
+    return true;
+  }
+
+  /**
+   * Idempotent: `claude --resume` re-registers the same id with a new pid (§17.1).
+   * Returns `null` when the registry is full of sessions that cannot be evicted (§23.56).
+   */
+  register(input: RegisterInput): StoredSession | null {
     const nowIso = isoOf(this.#now());
     const existing = this.#sessions.get(input.sessionId);
-    const samePid = existing !== undefined && existing.pid === (input.pid ?? null);
+    if (existing === undefined && this.#sessions.size >= this.#maxSessions && !this.#evictOne()) return null;
+    const pid = typeof input.pid === 'number' && input.pid > 0 ? input.pid : null;
+    const pidStart = pid === null ? null : (input.pidStart ?? null);
+    // The same number under a different start time is a different process.
+    const samePid = existing !== undefined && existing.pid === pid && existing.pidStart === pidStart;
     if (!samePid && existing !== undefined && existing.frozenPids.length > 0) {
-      this.#releaseFreeze?.(existing.frozenPids);
+      this.#releaseFreeze?.(frozenProcsOf(existing));
+    }
+    let transcriptPath = input.transcriptPath ?? existing?.transcriptPath ?? null;
+    if (transcriptPath !== null && this.#transcriptRoots.length > 0) {
+      const path = transcriptPath;
+      if (!this.#transcriptRoots.some((root) => isInside(root, path))) transcriptPath = null;
     }
     const session: StoredSession = {
       sessionId: input.sessionId,
-      pid: typeof input.pid === 'number' && input.pid > 0 ? input.pid : null,
+      pid,
+      pidStart,
       cwd: input.cwd ?? existing?.cwd ?? '',
-      transcriptPath: input.transcriptPath ?? existing?.transcriptPath ?? null,
+      transcriptPath,
       gitCommonDir: input.gitCommonDir ?? existing?.gitCommonDir ?? null,
       source: input.source ?? existing?.source ?? null,
       registeredAt: existing?.registeredAt ?? nowIso,
@@ -299,6 +366,7 @@ export class SessionRegistry {
       // tree, and `freezes` keeps counting — that is what tells a dashboard "frozen again
       // after re-register" apart from "frozen once" (§23.16).
       frozenPids: samePid ? existing.frozenPids : [],
+      frozenStarts: samePid ? existing.frozenStarts : [],
       frozenPid: existing?.frozenPid ?? null,
       freezes: existing?.freezes ?? 0,
       pausedSince: existing?.pausedSince ?? null,
@@ -310,6 +378,27 @@ export class SessionRegistry {
     this.save();
     this.publish(existing === undefined ? 'start' : 'update', session);
     return session;
+  }
+
+  /**
+   * Adopt or drop a pid recorded without a start time (§23.56) — a `sessions.json` written
+   * before start times were kept. `start: null` means the pid could not be confirmed as a
+   * Claude Code session of ours; it is then forgotten and the session reads as exited.
+   */
+  setPidIdentity(sessionId: string, start: string | null): void {
+    const session = this.#sessions.get(sessionId);
+    if (session === undefined) return;
+    if (start !== null) {
+      session.pidStart = start;
+    } else {
+      session.pid = null;
+      session.pidStart = null;
+      session.alive = false;
+      session.deadSince = this.#now();
+      this.bumpRev();
+      this.publish('update', session);
+    }
+    this.save();
   }
 
   heartbeat(sessionId: string): StoredSession | null {
@@ -354,10 +443,11 @@ export class SessionRegistry {
    * the freeze counter the dashboard reads (§23.16). `pids` may legitimately be empty — a
    * session with no tool running has nothing to stop.
    */
-  recordFreeze(sessionId: string, frozenPid: number | null, pids: readonly number[], pausedSince: string): number {
+  recordFreeze(sessionId: string, frozenPid: number | null, procs: readonly FrozenProc[], pausedSince: string): number {
     const session = this.#sessions.get(sessionId);
     if (session === undefined) return 0;
-    session.frozenPids = [...pids];
+    session.frozenPids = procs.map((p) => p.pid);
+    session.frozenStarts = procs.map((p) => p.start);
     session.frozenPid = frozenPid;
     session.freezes += 1;
     session.pausedSince = pausedSince;
@@ -373,6 +463,7 @@ export class SessionRegistry {
     const session = this.#sessions.get(sessionId);
     if (session === undefined) return;
     session.frozenPids = [];
+    session.frozenStarts = [];
     session.frozenPid = null;
     if (pausedSince === null) session.freezes = 0;
     session.pausedSince = pausedSince;
@@ -397,9 +488,29 @@ export class SessionRegistry {
     const died: StoredSession[] = [];
     const dropped: StoredSession[] = [];
     const now = this.#now();
-    for (const session of [...this.#sessions.values()]) {
-      if (session.pid === null) continue;
-      const alive = this.#isAlive(session.pid);
+    const all = [...this.#sessions.values()];
+    // §23.56: one batched look at who really holds each recorded pid.
+    const verified = all.filter((s) => s.pid !== null && s.pidStart !== null).map((s) => s.pid as number);
+    const starts = this.#startTimes !== null && verified.length > 0 ? this.#startTimes(verified) : null;
+    for (const session of all) {
+      if (session.pid === null) {
+        // No pid to watch (§23.56). One we have declared dead follows the usual retention;
+        // one that was never trusted is reaped once it has been silent for the TTL.
+        const expired =
+          !session.alive && session.deadSince !== null
+            ? now - session.deadSince >= DEAD_RETENTION_MS
+            : now - Date.parse(session.lastActivityAt) >= PIDLESS_SESSION_TTL_MS;
+        if (expired) {
+          this.#sessions.delete(session.sessionId);
+          this.#bury(session.sessionId);
+          dropped.push(session);
+          this.bumpRev();
+          this.publish('end', session);
+        }
+        continue;
+      }
+      const sameProcess = starts === null || session.pidStart === null || starts.get(session.pid) === session.pidStart;
+      const alive = sameProcess && this.#isAlive(session.pid);
       if (alive) {
         if (!session.alive) {
           session.alive = true;

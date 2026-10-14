@@ -17,6 +17,7 @@ import {
   freezeTree,
   listProcesses,
   parseProcessTable,
+  defaultFreezeDeps,
   resumeAll,
   thaw,
 } from '../../src/pause/freeze.js';
@@ -278,7 +279,9 @@ describe('safety invariants (§18.3)', () => {
       rules: [{ id: 'r_keep', scope: 'session:kept', mode: 'hard', reason: '', createdAt: '2026-09-13T12:00:00.000Z', createdBy: 'cli' }],
     });
 
-    const subsystem = createSessionsSubsystem({ configDir });
+    // The trees here are `sh`, not `claude`; everything else about identity is the real thing,
+    // so this also covers adopting a pre-§23.56 file that recorded bare pids.
+    const subsystem = createSessionsSubsystem({ configDir, freezeDeps: { ...defaultFreezeDeps(), isSessionProcess: () => true } });
     subsystem.start();
     try {
       await waitFor(() => orphanTools.every((p) => !isStopped(p)), 'the orphan tools to be resumed');

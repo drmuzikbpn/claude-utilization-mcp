@@ -52,14 +52,14 @@ describe('startDaemon + sessions', () => {
       const registered = await authFetch(`http://127.0.0.1:${handle.port}/v1/sessions/register`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sessionId: 'sess-1', pid: process.pid, cwd: '/tmp/x/foo' }),
+        body: JSON.stringify({ sessionId: '11111111-1111-4111-8111-111111111111', pid: process.pid, cwd: '/tmp/x/foo' }),
       });
       expect(registered.status).toBe(200);
       expect(seen).toEqual(['start']);
 
       const listed = await authFetch(`http://127.0.0.1:${handle.port}/v1/sessions`);
       const body = (await listed.json()) as { rev: number; sessions: { sessionId: string }[] };
-      expect(body.sessions.map((s) => s.sessionId)).toEqual(['sess-1']);
+      expect(body.sessions.map((s) => s.sessionId)).toEqual(['11111111-1111-4111-8111-111111111111']);
       expect(listed.headers.get('etag')).toBe(`W/"${body.rev}"`);
     } finally {
       await handle.stop();
@@ -76,8 +76,8 @@ describe('startDaemon + sessions', () => {
     const tools = descendantsOf(pid, listProcesses());
 
     const handle = await startDaemon({ configDir, config: testConfig({ port: 0 }), tokens: null, poll: false, port: 0 });
-    handle.sessions?.registry.register({ sessionId: 'sess-1', pid, cwd: '/tmp' });
-    const outcome = handle.sessions?.pause.pause({ scope: 'session:sess-1', mode: 'hard', reason: '', createdBy: 'cli' });
+    handle.sessions?.registry.register({ sessionId: '11111111-1111-4111-8111-111111111111', pid, cwd: '/tmp' });
+    const outcome = handle.sessions?.pause.pause({ scope: 'session:11111111-1111-4111-8111-111111111111', mode: 'hard', reason: '', createdBy: 'cli' });
     expect(outcome?.ok).toBe(true);
     for (let i = 0; i < 40 && !tools.every(stopped); i += 1) await sleepMs(50);
     expect(tools.every(stopped)).toBe(true);

@@ -97,7 +97,7 @@ describe('session tombstones (§23.24)', () => {
     registry.end('s1');
     clock += 1_000;
     const back = registry.register({ sessionId: 's1', pid: process.pid, cwd: '/tmp/qa' });
-    expect(back.alive).toBe(true);
+    expect(back?.alive).toBe(true);
     expect(registry.list().find((v) => v.sessionId === 's1')?.alive).toBe(true);
   });
 });

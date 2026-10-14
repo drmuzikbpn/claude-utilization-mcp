@@ -14,6 +14,7 @@ import { isPauseMode, parseScope, type CreatedBy } from '../pause/rules.js';
 import type { PauseController } from '../pause/controller.js';
 import type { SessionRegistry } from './registry.js';
 import type { RegisterInput } from './types.js';
+import { checkRegistration, cleanToolName, isSessionId, MAX_SCOPE_CHARS } from './validate.js';
 
 export const MAX_BODY_BYTES = 64 * 1024;
 
@@ -77,8 +78,8 @@ export function createSessionsRouter(api: SessionsApi): SessionsRouter {
       sendError(res, 400, 'bad_request', 'invalid "mode"', 'mode must be "soft" or "hard"');
       return;
     }
-    if (parseScope(scope) === null) {
-      sendError(res, 400, 'bad_request', `invalid "scope": ${scope}`, 'scope must be "all", "project:<path>" or "session:<id>"');
+    if (scope.length > MAX_SCOPE_CHARS || parseScope(scope) === null) {
+      sendError(res, 400, 'bad_request', 'invalid "scope"', 'scope must be "all", "project:<path>" or "session:<id>"');
       return;
     }
     const reason = str(body, 'reason');
@@ -95,7 +96,7 @@ export function createSessionsRouter(api: SessionsApi): SessionsRouter {
     res: ServerResponse,
     method: string,
     path: string,
-    url: URL,
+    _url: URL,
   ): Promise<boolean> {
     const parts = path.split('/').filter((p) => p.length > 0);
     if (parts[0] !== 'v1') return false;
@@ -128,21 +129,25 @@ export function createSessionsRouter(api: SessionsApi): SessionsRouter {
           sendError(res, 400, 'bad_request', 'body must be a JSON object', 'see §17.1 for the register payload');
           return true;
         }
-        const sessionId = str(body, 'sessionId');
-        if (sessionId === undefined || sessionId.length === 0) {
-          sendError(res, 400, 'bad_request', '"sessionId" is required', 'the SessionStart hook sends Claude Code\'s session_id');
+        // §23.56: nothing from the body is used until all of it has been checked.
+        const checked = checkRegistration(body);
+        if (!checked.ok) {
+          sendError(res, 400, 'bad_request', `invalid "${checked.field}": ${checked.why}`, 'the SessionStart hook sends Claude Code\'s session_id, its own parent pid and absolute paths');
           return true;
         }
-        const pid = body['pid'];
+        const sessionId = checked.value.sessionId;
+        // Only a Claude Code process of this user is kept as the session's pid; anything
+        // else registers the session without one, which a hard freeze then refuses.
+        const trusted = pause.trustPid(checked.value.pid);
         const input: RegisterInput = {
-          sessionId,
-          pid: typeof pid === 'number' ? pid : null,
-          cwd: str(body, 'cwd') ?? '',
-          transcriptPath: str(body, 'transcriptPath') ?? null,
-          gitCommonDir: str(body, 'gitCommonDir') ?? null,
-          source: str(body, 'source') ?? null,
+          ...checked.value,
+          pid: trusted?.pid ?? null,
+          pidStart: trusted?.start ?? null,
         };
-        registry.register(input);
+        if (registry.register(input) === null) {
+          sendError(res, 503, 'unavailable', 'too many sessions are registered', 'sessions that have exited are dropped after five minutes');
+          return true;
+        }
         // A rule created before this session existed applies to it (§18.1).
         pause.apply();
         const view = registry.viewOf(sessionId);
@@ -153,14 +158,28 @@ export function createSessionsRouter(api: SessionsApi): SessionsRouter {
       if (parts.length === 4) {
         const id = parts[2] as string;
         const action = parts[3];
+        const known = action === 'gate' || action === 'heartbeat' || action === 'end' || action === 'pause' || action === 'resume';
+        if (known && !isSessionId(id)) {
+          sendError(res, 400, 'bad_request', 'invalid session id', 'a session id is a UUID, as Claude Code sends it');
+          return true;
+        }
 
         if (action === 'gate') {
-          if (method !== 'GET' && method !== 'HEAD') {
-            methodNotAllowed(res, method, path, ['GET', 'HEAD']);
+          // §23.56: GET only reads. Recording the tool being gated is a write, so it is a POST.
+          if (method === 'POST') {
+            const body = await readJsonBody(req);
+            if (body === null) {
+              sendError(res, 400, 'bad_request', 'body must be a JSON object');
+              return true;
+            }
+            sendJson(res, 200, pause.gate(id, cleanToolName(body['tool'])));
             return true;
           }
-          const tool = url.searchParams.get('tool');
-          sendJson(res, 200, pause.gate(id, tool === null ? undefined : tool));
+          if (method !== 'GET' && method !== 'HEAD') {
+            methodNotAllowed(res, method, path, ['GET', 'HEAD', 'POST']);
+            return true;
+          }
+          sendJson(res, 200, pause.gate(id));
           return true;
         }
 
@@ -268,7 +287,7 @@ export function createSessionsRouter(api: SessionsApi): SessionsRouter {
         return true;
       }
       const scope = str(body, 'scope');
-      if (scope === undefined || parseScope(scope) === null) {
+      if (scope === undefined || scope.length > MAX_SCOPE_CHARS || parseScope(scope) === null) {
         sendError(res, 400, 'bad_request', 'invalid "scope"', 'scope must be "all", "project:<path>" or "session:<id>"');
         return true;
       }

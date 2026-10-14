@@ -350,13 +350,19 @@ export async function runGate(
   const startedAt = now();
   let everPaused = false;
   let consecutiveFailures = 0;
-  let query = tool === undefined || tool.length === 0 ? '' : `?tool=${encodeURIComponent(tool)}`;
+  // §23.56: reporting the tool is a write, so the first poll is a POST carrying it; every
+  // re-poll is a plain GET. A client that cannot POST simply does not report the tool.
+  let report = tool !== undefined && tool.length > 0 && typeof client.post === 'function' ? tool : null;
+  const gatePath = `/v1/sessions/${encodeURIComponent(sessionId)}/gate`;
   for (;;) {
     let body: unknown;
     try {
       // The gate has its own deadline (§18.2) — the 200 ms nudge budget is far too tight
       // for a LAN-bound daemon and a timeout here would release the pause.
-      body = await client.get(`/v1/sessions/${encodeURIComponent(sessionId)}/gate${query}`, { timeoutMs: gateDeadlineMs });
+      body =
+        report !== null && typeof client.post === 'function'
+          ? await client.post(gatePath, { tool: report }, { timeoutMs: gateDeadlineMs })
+          : await client.get(gatePath, { timeoutMs: gateDeadlineMs });
     } catch {
       // A transient failure while paused must not release the session; only a daemon that
       // stays unreachable does (fail open, §18.2).
@@ -369,7 +375,7 @@ export async function runGate(
       continue;
     }
     consecutiveFailures = 0;
-    query = '';
+    report = null;
     if (!isGateBody(body) || !body.paused) {
       setPausedMarker(configDir, sessionId, null);
       return everPaused;
@@ -450,7 +456,7 @@ async function runNudge(io: HookIO, client: HookClient, configDir: string): Prom
  * | --- | --- |
  * | `SessionStart` | register `{ sessionId, pid: ppid, cwd, transcriptPath, gitCommonDir, source }` |
  * | `UserPromptSubmit` | heartbeat → gate → limits nudge |
- * | `PreToolUse` | gate only, carrying `?tool=<tool_name>` |
+ * | `PreToolUse` | gate only; the first poll POSTs `{ tool: <tool_name> }` |
  * | `SessionEnd` | end the session |
  *
  * Any failure prints nothing and the exit code is always 0, so a hook can never slow or

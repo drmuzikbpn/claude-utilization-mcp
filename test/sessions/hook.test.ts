@@ -25,7 +25,8 @@ let client: DaemonClient;
 let printed: string;
 
 beforeEach(async () => {
-  h = makeHarness();
+  // The hook reports pid 4242: a `claude` process of ours in the fake table, so it is trusted (§23.56).
+  h = makeHarness({ table: [{ pid: 4242, ppid: 1 }] });
   const started = await startHarnessServer(h);
   server = started.server;
   client = new DaemonClient({ baseUrl: `http://127.0.0.1:${started.port}`, timeoutMs: 1_000, token: 'test-bearer-token' });
@@ -56,21 +57,21 @@ function io(over: Partial<HookIO> & { stdin: string }): HookIO {
 
 const START = JSON.stringify({
   hook_event_name: 'SessionStart',
-  session_id: 'sess-1',
+  session_id: '11111111-1111-4111-8111-111111111111',
   cwd: '/tmp/x/foo',
-  transcript_path: '/tmp/t/sess-1.jsonl',
+  transcript_path: '/tmp/t/11111111-1111-4111-8111-111111111111.jsonl',
   source: 'startup',
 });
 
 describe('SessionStart (§17.1)', () => {
   it('registers the session with ppid, cwd, transcript and the repo dir', async () => {
     expect(await runHook(io({ stdin: START }))).toBe(0);
-    const session = h.subsystem.registry.get('sess-1');
+    const session = h.subsystem.registry.get('11111111-1111-4111-8111-111111111111');
     expect(session).toMatchObject({
-      sessionId: 'sess-1',
+      sessionId: '11111111-1111-4111-8111-111111111111',
       pid: 4242,
       cwd: '/tmp/x/foo',
-      transcriptPath: '/tmp/t/sess-1.jsonl',
+      transcriptPath: '/tmp/t/11111111-1111-4111-8111-111111111111.jsonl',
       gitCommonDir: '/tmp/x/foo/.git',
       source: 'startup',
     });
@@ -79,8 +80,8 @@ describe('SessionStart (§17.1)', () => {
 
   it('registers with gitCommonDir null outside a repository', async () => {
     await runHook(io({ stdin: START, gitCommonDir: () => null }));
-    expect(h.subsystem.registry.get('sess-1')?.gitCommonDir).toBeNull();
-    expect(h.subsystem.registry.viewOf('sess-1')?.project).toEqual({ gitCommonDir: null, name: 'foo' });
+    expect(h.subsystem.registry.get('11111111-1111-4111-8111-111111111111')?.gitCommonDir).toBeNull();
+    expect(h.subsystem.registry.viewOf('11111111-1111-4111-8111-111111111111')?.project).toEqual({ gitCommonDir: null, name: 'foo' });
   });
 
   it('does nothing without a session id', async () => {
@@ -99,9 +100,9 @@ describe('SessionStart (§17.1)', () => {
 describe('SessionEnd (§17.1)', () => {
   it('ends the session and clears its paused marker', async () => {
     await runHook(io({ stdin: START }));
-    await runHook(io({ stdin: JSON.stringify({ hook_event_name: 'SessionEnd', session_id: 'sess-1' }) }));
-    expect(h.subsystem.registry.get('sess-1')).toBeNull();
-    expect(existsSync(pausedMarkerPath(h.configDir, 'sess-1'))).toBe(false);
+    await runHook(io({ stdin: JSON.stringify({ hook_event_name: 'SessionEnd', session_id: '11111111-1111-4111-8111-111111111111' }) }));
+    expect(h.subsystem.registry.get('11111111-1111-4111-8111-111111111111')).toBeNull();
+    expect(existsSync(pausedMarkerPath(h.configDir, '11111111-1111-4111-8111-111111111111'))).toBe(false);
     expect(printed).toBe('');
   });
 });
@@ -109,14 +110,14 @@ describe('SessionEnd (§17.1)', () => {
 describe('UserPromptSubmit (§17.1, §7.1)', () => {
   it('heartbeats, gates and still prints the nudge', async () => {
     await runHook(io({ stdin: START }));
-    const before = h.subsystem.registry.get('sess-1')?.lastActivityAt;
+    const before = h.subsystem.registry.get('11111111-1111-4111-8111-111111111111')?.lastActivityAt;
     h.clock.now += 30_000;
 
     const code = await runHook(
-      io({ stdin: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: '/tmp/x/foo' }) }),
+      io({ stdin: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: '11111111-1111-4111-8111-111111111111', cwd: '/tmp/x/foo' }) }),
     );
     expect(code).toBe(0);
-    expect(h.subsystem.registry.get('sess-1')?.lastActivityAt).not.toBe(before);
+    expect(h.subsystem.registry.get('11111111-1111-4111-8111-111111111111')?.lastActivityAt).not.toBe(before);
     // The fixture snapshot is over the warn threshold, so the nudge prints.
     expect(printed).toContain('Claude usage');
   });
@@ -126,10 +127,10 @@ describe('PreToolUse (§23.13)', () => {
   it('records the tool through the gate and prints nothing', async () => {
     await runHook(io({ stdin: START }));
     const code = await runHook(
-      io({ stdin: JSON.stringify({ hook_event_name: 'PreToolUse', session_id: 'sess-1', tool_name: 'Edit' }) }),
+      io({ stdin: JSON.stringify({ hook_event_name: 'PreToolUse', session_id: '11111111-1111-4111-8111-111111111111', tool_name: 'Edit' }) }),
     );
     expect(code).toBe(0);
-    expect(h.subsystem.registry.get('sess-1')?.lastTool?.name).toBe('Edit');
+    expect(h.subsystem.registry.get('11111111-1111-4111-8111-111111111111')?.lastTool?.name).toBe('Edit');
     expect(printed).toBe('');
   });
 });
@@ -142,11 +143,11 @@ describe('the soft-pause gate (§18.2)', () => {
     let sleeps = 0;
     const code = await runHook(
       io({
-        stdin: JSON.stringify({ hook_event_name: 'PreToolUse', session_id: 'sess-1', tool_name: 'Bash' }),
+        stdin: JSON.stringify({ hook_event_name: 'PreToolUse', session_id: '11111111-1111-4111-8111-111111111111', tool_name: 'Bash' }),
         sleep: async () => {
           sleeps += 1;
           // Marker exists for the status line while the gate holds the session.
-          expect(existsSync(pausedMarkerPath(h.configDir, 'sess-1'))).toBe(true);
+          expect(existsSync(pausedMarkerPath(h.configDir, '11111111-1111-4111-8111-111111111111'))).toBe(true);
           if (sleeps === 3) h.subsystem.pause.resume('all');
         },
       }),
@@ -154,19 +155,19 @@ describe('the soft-pause gate (§18.2)', () => {
 
     expect(code).toBe(0);
     expect(sleeps).toBe(3);
-    expect(existsSync(pausedMarkerPath(h.configDir, 'sess-1'))).toBe(false);
+    expect(existsSync(pausedMarkerPath(h.configDir, '11111111-1111-4111-8111-111111111111'))).toBe(false);
   });
 
   it('writes the rule into the marker file', async () => {
     await runHook(io({ stdin: START }));
-    h.subsystem.pause.pause({ scope: 'session:sess-1', mode: 'soft', reason: 'stop', createdBy: 'cli' });
+    h.subsystem.pause.pause({ scope: 'session:11111111-1111-4111-8111-111111111111', mode: 'soft', reason: 'stop', createdBy: 'cli' });
     let seen = '';
     await runHook(
       io({
-        stdin: JSON.stringify({ hook_event_name: 'PreToolUse', session_id: 'sess-1' }),
+        stdin: JSON.stringify({ hook_event_name: 'PreToolUse', session_id: '11111111-1111-4111-8111-111111111111' }),
         sleep: async () => {
-          seen = readFileSync(pausedMarkerPath(h.configDir, 'sess-1'), 'utf8');
-          h.subsystem.pause.resume('session:sess-1');
+          seen = readFileSync(pausedMarkerPath(h.configDir, '11111111-1111-4111-8111-111111111111'), 'utf8');
+          h.subsystem.pause.resume('session:11111111-1111-4111-8111-111111111111');
         },
       }),
     );
@@ -179,7 +180,7 @@ describe('the soft-pause gate (§18.2)', () => {
     let sleeps = 0;
     const code = await runHook(
       io({
-        stdin: JSON.stringify({ hook_event_name: 'PreToolUse', session_id: 'sess-1' }),
+        stdin: JSON.stringify({ hook_event_name: 'PreToolUse', session_id: '11111111-1111-4111-8111-111111111111' }),
         gateMaxMs: 2_000,
         sleep: async () => {
           sleeps += 1;
@@ -189,7 +190,7 @@ describe('the soft-pause gate (§18.2)', () => {
     );
     expect(code).toBe(0);
     expect(sleeps).toBe(2);
-    expect(existsSync(pausedMarkerPath(h.configDir, 'sess-1'))).toBe(false);
+    expect(existsSync(pausedMarkerPath(h.configDir, '11111111-1111-4111-8111-111111111111'))).toBe(false);
   });
 });
 
@@ -200,7 +201,7 @@ describe('fail open (§18.2, §10)', () => {
     for (const event of ['SessionStart', 'SessionEnd', 'UserPromptSubmit', 'PreToolUse']) {
       const code = await runHook(
         io({
-          stdin: JSON.stringify({ hook_event_name: event, session_id: 'sess-1', cwd: '/tmp/x/foo' }),
+          stdin: JSON.stringify({ hook_event_name: event, session_id: '11111111-1111-4111-8111-111111111111', cwd: '/tmp/x/foo' }),
           client: dead,
           sleep: async () => {
             sleeps += 1;
@@ -249,7 +250,7 @@ describe('gate robustness (QA findings on v0.1.65)', () => {
         throw new Error('unreachable');
       },
     };
-    await runGate(spyClient, 'sess-1', 'Bash', { now: () => h.clock.now }, h.configDir);
+    await runGate(spyClient, '11111111-1111-4111-8111-111111111111', 'Bash', { now: () => h.clock.now }, h.configDir);
     expect(seen).toEqual([GATE_DEADLINE_MS]);
     expect(GATE_DEADLINE_MS).toBeGreaterThan(HOOK_DEADLINE_MS);
   });
@@ -265,7 +266,7 @@ describe('gate robustness (QA findings on v0.1.65)', () => {
     };
     const paused = await runGate(
       flaky,
-      'sess-1',
+      '11111111-1111-4111-8111-111111111111',
       undefined,
       { now: () => h.clock.now, sleep: async () => {}, gateMaxMs: 5_000 },
       h.configDir,
@@ -273,6 +274,6 @@ describe('gate robustness (QA findings on v0.1.65)', () => {
     expect(paused).toBe(true);
     // One paused poll, then GATE_FAILURE_TOLERANCE failures before releasing.
     expect(call).toBe(1 + GATE_FAILURE_TOLERANCE);
-    expect(existsSync(pausedMarkerPath(h.configDir, 'sess-1'))).toBe(false);
+    expect(existsSync(pausedMarkerPath(h.configDir, '11111111-1111-4111-8111-111111111111'))).toBe(false);
   });
 });

@@ -11,7 +11,7 @@
 import type { EventBus } from '../events/bus.js';
 import { SessionRegistry } from '../sessions/registry.js';
 import type { PauseMode, PauseTarget, SessionPause, StoredSession } from '../sessions/types.js';
-import { defaultFreezeDeps, FreezeRefused, freezeTree, thaw, type FreezeDeps } from './freeze.js';
+import { ancestorsOf, defaultFreezeDeps, FreezeRefused, freezeTree, frozenProcsOf, thaw, type FreezeDeps } from './freeze.js';
 import { parseScope, PauseRuleStore, type CreatedBy, type PauseRule, ruleMatches } from './rules.js';
 
 export interface GateResult {
@@ -33,6 +33,9 @@ export interface PauseControllerOptions {
   freezeDeps?: FreezeDeps;
 }
 
+/** How far above the reported pid `trustPid` looks for the Claude Code process (§23.56). */
+export const TRUST_ANCESTOR_DEPTH = 4;
+
 export class PauseController {
   readonly registry: SessionRegistry;
   readonly rules: PauseRuleStore;
@@ -47,9 +50,48 @@ export class PauseController {
     this.#now = opts.now ?? Date.now;
     this.#deps = opts.freezeDeps ?? defaultFreezeDeps();
     this.registry.setPauseResolver((target) => ({ pause: this.resolvePause(target) }));
-    this.registry.setFreezeReleaser((pids) => {
-      thaw(pids, this.#deps);
+    this.registry.setFreezeReleaser((procs) => {
+      thaw(procs, this.#deps);
     });
+  }
+
+  // --- process identity (§23.56) --------------------------------------------
+
+  /**
+   * Turn the pid a hook reported into one we are prepared to signal around, or `null`.
+   *
+   * Accepted only when the process is owned by this user and is a Claude Code session
+   * (`FreezeDeps.isSessionProcess`). The hook reports its parent, which is `claude` when
+   * the hook command was exec'd directly and a short-lived shell when it was not — so when
+   * the reported pid does not qualify, its nearest qualifying ancestor (at most
+   * `TRUST_ANCESTOR_DEPTH` up) is taken instead. The start time is captured here and
+   * travels with the pid from then on.
+   */
+  trustPid(pid: number | null): { pid: number; start: string } | null {
+    if (pid === null || !Number.isInteger(pid) || pid <= 1) return null;
+    const self = this.#deps.selfUid();
+    const chain = [pid, ...ancestorsOf(pid, this.#deps.listProcesses()).slice(0, TRUST_ANCESTOR_DEPTH)].filter((p) => p > 1);
+    const identities = this.#deps.inspect(chain);
+    for (const candidate of chain) {
+      const id = identities.get(candidate);
+      if (id === undefined) continue;
+      if (id.uid === self && this.#deps.isSessionProcess(id)) return { pid: candidate, start: id.start };
+    }
+    return null;
+  }
+
+  /**
+   * Startup (§23.56): a pid recorded without a start time — a file from an older version —
+   * is either confirmed as a Claude Code session of ours and given one, or forgotten. A
+   * pid recorded *with* one is left to the liveness sweep, which compares it every tick.
+   */
+  adoptLegacyPids(): void {
+    for (const session of this.registry.all()) {
+      if (session.pid === null || session.pidStart !== null) continue;
+      const id = this.#deps.inspect([session.pid]).get(session.pid);
+      const ok = id !== undefined && id.uid === this.#deps.selfUid() && this.#deps.isSessionProcess(id);
+      this.registry.setPidIdentity(session.sessionId, ok ? id.start : null);
+    }
   }
 
   // --- resolution -----------------------------------------------------------
@@ -113,10 +155,19 @@ export class PauseController {
       const wantHard = rule !== null && rule.mode === 'hard' && session.alive && session.pid !== null;
       if (wantHard) {
         if (session.frozenPid !== session.pid || opts.refreeze === true) {
-          if (session.frozenPids.length > 0) thaw(session.frozenPids, this.#deps);
+          if (session.frozenPids.length > 0) thaw(frozenProcsOf(session), this.#deps);
           try {
-            const pids = freezeTree(session.pid, this.#deps);
-            this.registry.recordFreeze(session.sessionId, session.pid, pids, session.pausedSince ?? nowIso);
+            const since = session.pausedSince ?? nowIso;
+            let recorded = false;
+            freezeTree(session.pid, this.#deps, {
+              expectStart: session.pidStart,
+              // §23.56: on disk before the first SIGSTOP, so a crash mid-freeze strands nothing.
+              record: (procs) => {
+                this.registry.recordFreeze(session.sessionId, session.pid, procs, since);
+                recorded = true;
+              },
+            });
+            if (!recorded) this.registry.recordFreeze(session.sessionId, session.pid, [], since);
             changed = true;
           } catch (err) {
             if (!(err instanceof FreezeRefused)) throw err;
@@ -131,7 +182,7 @@ export class PauseController {
       if (session.frozenPids.length > 0 || session.frozenPid !== null) {
         // Covers the hard → soft downgrade as well as a full resume: forgetting the root pid
         // is what lets a re-escalation freeze again.
-        thaw(session.frozenPids, this.#deps);
+        thaw(frozenProcsOf(session), this.#deps);
         this.registry.clearFreeze(session.sessionId, rule === null ? null : (session.pausedSince ?? nowIso));
         changed = true;
         continue;
@@ -159,7 +210,7 @@ export class PauseController {
    */
   thawSession(session: StoredSession): number[] {
     if (session.frozenPids.length === 0) return [];
-    return thaw(session.frozenPids, this.#deps);
+    return thaw(frozenProcsOf(session), this.#deps);
   }
 
   /** §18.3: clean shutdown SIGCONTs every recorded pid first. Rules are left alone. */
@@ -167,7 +218,7 @@ export class PauseController {
     const resumed: number[] = [];
     for (const session of this.registry.all()) {
       if (session.frozenPids.length === 0) continue;
-      for (const pid of thaw(session.frozenPids, this.#deps)) resumed.push(pid);
+      for (const pid of thaw(frozenProcsOf(session), this.#deps)) resumed.push(pid);
       this.registry.clearFreeze(session.sessionId, session.pausedSince);
     }
     if (resumed.length > 0) this.registry.save();
@@ -207,7 +258,9 @@ export class PauseController {
         hint: 'no rule was created',
       };
     }
-    const owner = this.#deps.uidOf(session.pid);
+    const identity = this.#deps.inspect([session.pid]).get(session.pid);
+    // A pid that now belongs to some other process is as gone as one that exited (§23.56).
+    const owner = identity === undefined || (session.pidStart !== null && identity.start !== session.pidStart) ? null : identity.uid;
     if (owner === null) {
       return {
         ok: false,

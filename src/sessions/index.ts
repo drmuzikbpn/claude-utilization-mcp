@@ -10,7 +10,7 @@
 import type { EventBus } from '../events/bus.js';
 import { PauseController } from '../pause/controller.js';
 import { PauseRuleStore } from '../pause/rules.js';
-import type { FreezeDeps } from '../pause/freeze.js';
+import { defaultFreezeDeps, type FreezeDeps } from '../pause/freeze.js';
 import type { TokensSource } from '../server/types.js';
 import { LIVENESS_INTERVAL_MS, SessionRegistry } from './registry.js';
 import { createSessionsRouter, type SessionsRouter } from './routes.js';
@@ -27,6 +27,9 @@ export interface SessionsSubsystemOptions {
   livenessIntervalMs?: number;
   freezeDeps?: FreezeDeps;
   isAlive?: (pid: number) => boolean;
+  /** Where transcripts live (`config.projectsDir`, expanded); see `SessionRegistryOptions`. */
+  transcriptRoots?: readonly string[];
+  maxSessions?: number;
 }
 
 export interface SessionsSubsystem {
@@ -43,7 +46,12 @@ export interface SessionsSubsystem {
 
 export function createSessionsSubsystem(opts: SessionsSubsystemOptions): SessionsSubsystem {
   let unsubscribeTokens: (() => void) | null = null;
+  const deps = opts.freezeDeps ?? defaultFreezeDeps();
   const registry = new SessionRegistry({
+    bootId: () => deps.bootId(),
+    startTimes: (pids) => new Map([...deps.inspect(pids)].map(([pid, id]) => [pid, id.start] as const)),
+    ...(opts.transcriptRoots === undefined ? {} : { transcriptRoots: opts.transcriptRoots }),
+    ...(opts.maxSessions === undefined ? {} : { maxSessions: opts.maxSessions }),
     configDir: opts.configDir,
     tokens: opts.tokens ?? null,
     bus: opts.bus ?? null,
@@ -59,7 +67,7 @@ export function createSessionsSubsystem(opts: SessionsSubsystemOptions): Session
     rules,
     bus: opts.bus ?? null,
     ...(opts.now === undefined ? {} : { now: opts.now }),
-    ...(opts.freezeDeps === undefined ? {} : { freezeDeps: opts.freezeDeps }),
+    freezeDeps: deps,
   });
   const router = createSessionsRouter({ registry, pause });
 
@@ -74,6 +82,8 @@ export function createSessionsSubsystem(opts: SessionsSubsystemOptions): Session
       started = true;
       registry.load();
       rules.load();
+      // §23.56: settle who each recorded pid is before anything is signalled.
+      pause.adoptLegacyPids();
       pause.sweepOnStartup();
       registry.start(opts.livenessIntervalMs ?? LIVENESS_INTERVAL_MS);
     },

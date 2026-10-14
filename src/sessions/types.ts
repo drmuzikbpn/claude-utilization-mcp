@@ -25,6 +25,8 @@ export interface RegisterInput {
   gitCommonDir?: string | null;
   /** Claude Code's `source` field (`startup`, `resume`, `clear`, …). Advisory. */
   source?: string | null;
+  /** Start time of `pid`, when the caller has already established it (§23.56). */
+  pidStart?: string | null;
 }
 
 export interface LastTool {
@@ -56,6 +58,12 @@ export interface SessionPause {
 export interface StoredSession {
   sessionId: string;
   pid: number | null;
+  /**
+   * The start time of `pid` when it was registered (§23.56). A pid is only trusted — for
+   * liveness, for a freeze — while the process holding it still has this start time.
+   * `null` with a non-null `pid` is a record from before start times were kept.
+   */
+  pidStart: string | null;
   cwd: string;
   transcriptPath: string | null;
   gitCommonDir: string | null;
@@ -67,6 +75,8 @@ export interface StoredSession {
   deadSince: number | null;
   /** Recorded by hard freeze, nearest-first (§18.3). Never contains `pid` itself (§23.16). */
   frozenPids: number[];
+  /** Start time of each `frozenPids` entry, same order (§23.56); `null` for a pre-§23.56 record. */
+  frozenStarts: Array<string | null>;
   /** The pid whose tree the recorded freeze belongs to; `null` when nothing is frozen. */
   frozenPid: number | null;
   /** Freezes applied under the current pause; survives a re-register so `2+` means "frozen again" (§23.16). */

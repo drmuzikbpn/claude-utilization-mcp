@@ -257,16 +257,33 @@ describe('titles (§23.14)', () => {
   it('falls back to the custom-title.json sidecar next to the transcript, and is null when never renamed', () => {
     const h = makeHarness();
     const dir = mkdtempSync(join(tmpdir(), 'cu-title-'));
-    const transcriptPath = join(dir, 'sess-2.jsonl');
+    const transcriptPath = join(dir, '22222222-2222-4222-8222-222222222222.jsonl');
     writeFileSync(transcriptPath, '');
-    mkdirSync(join(dir, 'sess-2'), { recursive: true });
-    writeFileSync(join(dir, 'sess-2', 'custom-title.json'), JSON.stringify({ customTitle: '  Sidecar Title  ' }));
-    h.subsystem.registry.register({ sessionId: 'sess-2', pid: process.pid, cwd: dir, transcriptPath });
-    h.subsystem.registry.register({ sessionId: 'sess-3', pid: process.pid, cwd: dir });
+    mkdirSync(join(dir, '22222222-2222-4222-8222-222222222222'), { recursive: true });
+    writeFileSync(join(dir, '22222222-2222-4222-8222-222222222222', 'custom-title.json'), JSON.stringify({ customTitle: '  Sidecar Title  ' }));
+    h.subsystem.registry.register({ sessionId: '22222222-2222-4222-8222-222222222222', pid: process.pid, cwd: dir, transcriptPath });
+    h.subsystem.registry.register({ sessionId: '33333333-3333-4333-8333-333333333333', pid: process.pid, cwd: dir });
     const byId = new Map(h.subsystem.registry.list().map((v) => [v.sessionId, v]));
-    expect(byId.get('sess-2')?.title).toBe('Sidecar Title');
-    expect(byId.get('sess-3')?.title).toBeNull();
+    expect(byId.get('22222222-2222-4222-8222-222222222222')?.title).toBe('Sidecar Title');
+    expect(byId.get('33333333-3333-4333-8333-333333333333')?.title).toBeNull();
   });
+
+  it('never builds the sidecar path from an id or a transcript path that is not what Claude Code sends (§23.56)', () => {
+    const h = makeHarness();
+    const dir = mkdtempSync(join(tmpdir(), 'cu-title-'));
+    // A sidecar that a hostile id would reach by walking up and across.
+    mkdirSync(join(dir, 'elsewhere'), { recursive: true });
+    writeFileSync(join(dir, 'elsewhere', 'custom-title.json'), JSON.stringify({ customTitle: 'reached' }));
+    mkdirSync(join(dir, 'projects'), { recursive: true });
+    h.subsystem.registry.register({ sessionId: '../elsewhere', pid: null, cwd: dir, transcriptPath: join(dir, 'projects', 't.jsonl') });
+    mkdirSync(join(dir, 'not-a-uuid'), { recursive: true });
+    writeFileSync(join(dir, 'not-a-uuid', 'custom-title.json'), JSON.stringify({ customTitle: 'reached' }));
+    h.subsystem.registry.register({ sessionId: 'not-a-uuid', pid: null, cwd: dir, transcriptPath: join(dir, 't.jsonl') });
+    // A well-formed id with a relative transcript path is refused too.
+    h.subsystem.registry.register({ sessionId: '44444444-4444-4444-8444-444444444444', pid: null, cwd: dir, transcriptPath: 'relative/t.jsonl' });
+    for (const view of h.subsystem.registry.list()) expect(view.title, view.sessionId).toBeNull();
+  });
+
 
   it('publishes a session update when a registered session is renamed', () => {
     const h = makeHarness();

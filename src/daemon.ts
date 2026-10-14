@@ -10,6 +10,8 @@ import { bindWants, LAN_KEYWORD, resolveBindAddresses, TAILSCALE_KEYWORD } from 
 import { resolveLanIPv4, resolveLocalHostName } from './net/lan.js';
 import { resolveMagicDnsName, resolveTailscaleIPv4 } from './net/tailscale.js';
 import { loadOrCreateTlsIdentity, type TlsIdentity } from './net/tls.js';
+import { installCrashHandlers } from './crash.js';
+import type { FreezeDeps } from './pause/freeze.js';
 import { isLoopbackAddress } from './server/middleware.js';
 import { startBusPublishers } from './server/events.js';
 import { createSessionsSubsystem, type SessionsSubsystem } from './sessions/index.js';
@@ -101,6 +103,8 @@ export interface DaemonOptions {
   install?: InstallPaths;
   /** W8: the auto-updater. Pass one to inject fakes; `null` leaves `/health.update` disabled. */
   updater?: UpdaterHandle | null;
+  /** Process-table seam for the sessions subsystem (tests); the real one otherwise. */
+  freezeDeps?: FreezeDeps;
 }
 
 export interface DaemonHandle {
@@ -199,8 +203,28 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   let tokensSource: TokensSource | null = opts.tokens ?? null;
   // W3: sessions/pause subsystem — loads sessions.json / pause.json, runs the §18.3 orphan sweep,
   // starts the 15 s liveness timer. Token source is attached once the store is ready (below).
-  const sessions = opts.sessions === false ? null : createSessionsSubsystem({ configDir, bus, tokens: tokensSource });
+  const sessions =
+    opts.sessions === false
+      ? null
+      : createSessionsSubsystem({
+          configDir,
+          bus,
+          tokens: tokensSource,
+          // §23.56: a transcript path is only believed inside the directory Claude Code writes them to.
+          transcriptRoots: [expandHome(config.projectsDir)],
+          ...(opts.freezeDeps === undefined ? {} : { freezeDeps: opts.freezeDeps }),
+        });
   sessions?.start();
+  try {
+    return await bringUp();
+  } catch (err) {
+    // §23.56: the startup sweep above may already have stopped processes. A daemon that
+    // then fails to come up — port taken, bad bind — must not leave them stopped.
+    sessions?.stop();
+    throw err;
+  }
+
+  async function bringUp(): Promise<DaemonHandle> {
 
   // --- §16: which addresses, and under which Host names ----------------------
   const network = opts.network ?? defaultNetworkResolver();
@@ -608,6 +632,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     reload,
     stop,
   };
+  }
 }
 
 /**
@@ -616,9 +641,26 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
  */
 export async function serve(opts: DaemonOptions = {}): Promise<number> {
   const log = opts.log ?? ((line: string) => process.stderr.write(`${line}\n`));
-  let handle: DaemonHandle;
+  let handle: DaemonHandle | null = null;
+  // §23.56: installed before anything is started, so it also covers a crash during startup.
+  const uninstall = installCrashHandlers({
+    configDir: opts.configDir ?? resolveConfigDir(),
+    thawLive: () => {
+      handle?.sessions?.pause.thawEverything();
+    },
+    log,
+  });
   try {
-    handle = await startDaemon(opts);
+    return await run();
+  } finally {
+    uninstall();
+  }
+
+  async function run(): Promise<number> {
+  let h: DaemonHandle;
+  try {
+    h = await startDaemon(opts);
+    handle = h;
   } catch (err) {
     if (err instanceof PortInUseError) {
       log(`claude-usage: ${err.message}`);
@@ -628,19 +670,19 @@ export async function serve(opts: DaemonOptions = {}): Promise<number> {
     return 1;
   }
 
-  for (const address of handle.addresses) {
+  for (const address of h.addresses) {
     const host = address.includes(':') ? `[${address}]` : address;
-    log(`claude-usage ${handle.config.name} listening on http://${host}:${handle.port}`);
+    log(`claude-usage ${h.config.name} listening on http://${host}:${h.port}`);
   }
-  for (const listener of handle.server.listeners.filter((l) => l.tls)) {
+  for (const listener of h.server.listeners.filter((l) => l.tls)) {
     const host = listener.addr.includes(':') ? `[${listener.addr}]` : listener.addr;
-    log(`claude-usage ${handle.config.name} listening on https://${host}:${listener.port}`);
+    log(`claude-usage ${h.config.name} listening on https://${host}:${listener.port}`);
   }
 
   // §16: re-resolve the tailnet on SIGHUP; a reload never brings the daemon down.
   const reload = (): void => {
     log('claude-usage: SIGHUP received, re-resolving network addresses');
-    void handle.reload().catch((err: unknown) => {
+    void h.reload().catch((err: unknown) => {
       log(`claude-usage: reload failed — ${(err as Error).message}`);
     });
   };
@@ -650,10 +692,11 @@ export async function serve(opts: DaemonOptions = {}): Promise<number> {
     const shutdown = (signal: NodeJS.Signals): void => {
       log(`claude-usage: ${signal} received, shutting down`);
       process.removeListener('SIGHUP', reload);
-      void handle.stop().then(resolve, resolve);
+      void h.stop().then(resolve, resolve);
     };
     process.once('SIGTERM', shutdown);
     process.once('SIGINT', shutdown);
   });
   return 0;
+  }
 }
