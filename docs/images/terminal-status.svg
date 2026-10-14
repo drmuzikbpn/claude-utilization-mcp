@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="300" viewBox="0 0 760 300" role="img" aria-label="claude-usage status in a terminal: the five-hour window at 84 percent, warn; the weekly window at 34 percent">
+  <!-- SPDX-License-Identifier: MIT -->
+  <!-- Copyright (c) 2026 Even Seal Productions -->
+  <!-- Sample output with made-up numbers. -->
+  <defs>
+    <style>
+      .t { font: 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #c9d1d9; }
+      .p { fill: #7ee787; }
+      .d { fill: #8b949e; }
+      .w { fill: #f2cc60; }
+      .o { fill: #56d364; }
+    </style>
+  </defs>
+  <rect width="760" height="300" rx="12" fill="#0d1117"/>
+  <rect width="760" height="34" rx="12" fill="#161b22"/>
+  <rect y="22" width="760" height="12" fill="#161b22"/>
+  <circle cx="22" cy="17" r="6" fill="#ff5f57"/>
+  <circle cx="42" cy="17" r="6" fill="#febc2e"/>
+  <circle cx="62" cy="17" r="6" fill="#28c840"/>
+  <text x="380" y="22" text-anchor="middle" class="t d" style="font-size:12px">claude-usage</text>
+  <text x="24" y="70" class="t"><tspan class="p">$</tspan> claude-usage status</text>
+  <text x="24" y="98" class="t">daemon: <tspan class="o">running</tspan> <tspan class="d">(pid 48213, port 47291)</tspan></text>
+  <text x="24" y="122" class="t">overall: <tspan class="w">warn</tspan></text>
+  <text x="24" y="146" class="t">limits:</text>
+  <text x="24" y="170" class="t">  session               <tspan class="w">84%  warn</tspan>   <tspan class="d">resets in 1h36m</tspan></text>
+  <text x="24" y="194" class="t">  weekly_all            <tspan class="o">34%  ok</tspan>     <tspan class="d">resets Wed 14:00</tspan></text>
+  <text x="24" y="218" class="t">  weekly_scoped:opus    <tspan class="o">20%  ok</tspan>     <tspan class="d">resets Wed 14:00</tspan></text>
+  <text x="24" y="246" class="t">today: 1,909 messages · 10.6M tokens</text>
+  <text x="24" y="274" class="t"><tspan class="p">$</tspan> <tspan class="d">▌</tspan></text>
+</svg>
