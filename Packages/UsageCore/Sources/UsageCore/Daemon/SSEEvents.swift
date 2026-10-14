@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
+
 import Foundation
 
 /// One decoded frame of the daemon's `GET /v1/events` stream.

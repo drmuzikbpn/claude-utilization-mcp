@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
+
 import Foundation
 
 /// A raw server-sent event: the `event:` name (nil when the frame had none) and its joined `data:`.

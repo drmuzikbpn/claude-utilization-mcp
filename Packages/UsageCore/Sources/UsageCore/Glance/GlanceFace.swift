@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
+
 import Foundation
 
 /// One headline drawn as a ring: an arc from twelve o'clock on a faint track, the percent

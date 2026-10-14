@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
+
 // Regenerate the app icon: swift scripts/make-icon.swift App/Assets.xcassets/AppIcon.appiconset/icon-1024.png
 // (then copy it to Watch/Assets.xcassets/AppIcon.appiconset/).
 import AppKit

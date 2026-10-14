@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
+
 import Foundation
 
 /// Heartbeat aging: fresh under 30 s, stale under 2 min, dead at or past 2 min (deck spec §7).

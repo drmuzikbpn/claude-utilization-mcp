@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
+
 import Foundation
 
 /// What a pause control draws right now (deck `PauseVisual`, plus the direction of an in-flight

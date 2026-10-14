@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Even Seal Productions
 # pre-push (lefthook): MARKETING_VERSION must be the App Store version that is waiting for a build.
 # Blocks only on a real mismatch. Without 1Password, the Python dependency or a network it says so
 # and lets the push through: a hook that cannot check must not stop work.

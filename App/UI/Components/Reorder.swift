@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
+
 import SwiftUI
 
 /// Rows leapfrog as projects re-rank by live burn (deck `Reorder.kt`). The list slides every row

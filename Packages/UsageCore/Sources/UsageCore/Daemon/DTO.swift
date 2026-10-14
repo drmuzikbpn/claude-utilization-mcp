@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
+
 import Foundation
 
 // Wire shapes of the `claude-usage` daemon (daemon spec §17–§23, iOS contract v2).

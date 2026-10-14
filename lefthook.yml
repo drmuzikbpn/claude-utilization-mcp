@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Even Seal Productions
 # Installed with `lefthook install`. Never bypass with --no-verify.
 pre-commit:
   parallel: true
@@ -8,6 +10,9 @@ pre-commit:
     swiftlint:
       glob: "*.swift"
       run: swiftlint lint --strict --quiet {staged_files}
+    licence-headers:
+      glob: "*.{swift,sh,py,yml,yaml}"
+      run: scripts/check-license-headers.sh {staged_files}
     usagecore-build:
       glob: "Packages/UsageCore/**/*.swift"
       run: swift build --package-path Packages/UsageCore

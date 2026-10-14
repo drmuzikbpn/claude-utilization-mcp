@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
+
 import Foundation
 
 /// The one "Connecting to <name>…" attempt in flight after a pairing. Every attempt has its own

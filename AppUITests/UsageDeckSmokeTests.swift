@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
+
 import XCTest
 
 /// Walks every iPhone screen in demo mode (`-UsageDeckDemo`, Debug only: two made-up devices,

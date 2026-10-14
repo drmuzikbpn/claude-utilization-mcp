@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
+
 import Foundation
 
 /// The paired devices, in pairing order, as JSON in `UserDefaults`. Records hold no secret: the

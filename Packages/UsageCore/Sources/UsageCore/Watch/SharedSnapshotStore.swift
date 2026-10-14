@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
+
 import Foundation
 
 /// The latest `WatchSnapshot`, kept in the App Group container so widgets and complications can

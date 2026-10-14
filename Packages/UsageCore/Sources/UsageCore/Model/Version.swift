@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
+
 import Foundation
 
 /// `MAJOR.MINOR.<commit-count>+<short-sha>`, the scheme the daemon and both apps use. Ordering

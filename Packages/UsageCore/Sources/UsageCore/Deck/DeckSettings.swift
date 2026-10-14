@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
+
 import Foundation
 
 /// The iPhone app's own preferences (deck spec §11.5, iOS plan "Settings"). No secrets: this is

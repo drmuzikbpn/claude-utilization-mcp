@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Even Seal Productions
 name: ios
 # The iPhone + Apple Watch app lives on the `usage-ios` branch of the daemon's repo. Scoped to
 # that branch on purpose (no wildcard): the daemon releases from `main`, the Android deck from

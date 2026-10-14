@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
+
 import Foundation
 
 /// The pure half of `DeviceClient`: folds stream events and REST bodies into one `DeviceState`.

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Even Seal Productions
 """App Store Connect helpers for CI. The key comes from the environment and is never printed.
 
   ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8   (GitHub secrets, sourced from 1Password usagedeck/usage-ios-ci)
