@@ -209,10 +209,9 @@ function pauseLabel(session: SessionView): string {
   return session.pause.mode === 'hard' ? `hard(${frozen})` : 'soft';
 }
 
-/** A client that can POST/DELETE: the token comes from `config.json` (§16). */
-function authedClient(io: CliIO, configDir: string): DaemonClient {
-  const token = loadConfig(configDir).auth.token;
-  return new DaemonClient(token.length > 0 ? { configDir, token } : { configDir });
+/** Every client is authenticated: `DaemonClient` reads the token from `config.json` (§23.55). */
+function authedClient(_io: CliIO, configDir: string): DaemonClient {
+  return new DaemonClient({ configDir });
 }
 
 function unreachable(io: Required<Pick<CliIO, 'stderr'>>, err: unknown): number {

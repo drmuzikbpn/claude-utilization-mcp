@@ -3,9 +3,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 
-/** Methods that need no bearer token when they come from loopback (§16). */
-export const SAFE_METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD']);
-
 /** Normalize an IPv4-mapped IPv6 address to its IPv4 form. */
 export function normalizeAddress(addr: string | undefined | null): string | null {
   if (typeof addr !== 'string' || addr.length === 0) return null;
@@ -107,22 +104,6 @@ export function bearerMatches(header: string | undefined, expected: string): boo
   return timingSafeEqual(digest(presented), digest(expected));
 }
 
-/**
- * The three endpoints our own hooks POST to from loopback with **no token** (§17.1).
- *
- * Claude Code runs `claude-usage hook` as a bare command: it has no way to read the bearer
- * token without also handing every hook the credential, and a `SessionStart` that cannot
- * register makes the whole sessions view wrong. These three are write-only session
- * bookkeeping keyed by a session id the caller must already know, they expose no data back,
- * and the exemption is loopback-ONLY — from the tailnet they still require the token, like
- * every other mutating request. Pause/resume are deliberately NOT on this list.
- */
-export const LOOPBACK_HOOK_POSTS: readonly RegExp[] = [
-  /^\/v1\/sessions\/register$/,
-  /^\/v1\/sessions\/[^/]+\/heartbeat$/,
-  /^\/v1\/sessions\/[^/]+\/end$/,
-];
-
 /** Path of `req` with any query string and trailing slash removed. */
 export function requestPath(req: IncomingMessage): string {
   const raw = req.url ?? '/';
@@ -132,8 +113,7 @@ export function requestPath(req: IncomingMessage): string {
 }
 
 /**
- * `POST /v1/pair` (§23.47) — the one documented exception to "every mutating request needs
- * the bearer". It trades a single-use, five-minute, 128-bit code for the bearer, and the
+ * `POST /v1/pair` (§23.47) — one of the two exceptions to "every request needs the bearer". It trades a single-use, five-minute, 128-bit code for the bearer, and the
  * route itself refuses anything but TLS and rate-limits failures per source. Host and Origin
  * checks still apply.
  */
@@ -148,13 +128,37 @@ export function isTlsRequest(req: IncomingMessage): boolean {
   return (req.socket as { encrypted?: boolean }).encrypted === true;
 }
 
-export function isLoopbackHookPost(method: string, path: string): boolean {
-  if (method !== 'POST') return false;
-  return LOOPBACK_HOOK_POSTS.some((re) => re.test(path));
+/**
+ * `GET /health` (§23.55) — the second and last exception. Without a token it answers
+ * liveness only (`{ ok: true }`): no name, no version, no install state. With a valid token
+ * it answers in full. A token that is present but wrong is still a `401`, so a paired app
+ * keeps learning that its token was rotated.
+ */
+export const HEALTH_PATH = '/health';
+
+export function isHealthProbe(method: string, path: string): boolean {
+  return (method === 'GET' || method === 'HEAD') && path === HEALTH_PATH;
+}
+
+/**
+ * Fetch-metadata values that mean "a person or a non-browser client asked for this"
+ * (§23.55). Browsers attach `Sec-Fetch-Site` to every request a page makes, and scripts
+ * cannot remove or forge it; `none` is a user typing the address. Anything else —
+ * `same-origin`, `same-site`, `cross-site` — is a web page talking to us, which is never
+ * legitimate: the daemon serves no pages.
+ */
+export function isFetchSiteAllowed(value: string | string[] | undefined): boolean {
+  if (value === undefined) return true;
+  return typeof value === 'string' && value.trim().toLowerCase() === 'none';
 }
 
 export type GateOutcome =
-  | { ok: true; loopback: boolean }
+  | {
+      ok: true;
+      loopback: boolean;
+      /** `false` only for the two bearer-less exceptions; such a request gets nothing private. */
+      authenticated: boolean;
+    }
   | {
       ok: false;
       status: 401 | 403 | 421;
@@ -164,8 +168,13 @@ export type GateOutcome =
     };
 
 /**
- * The request gate, in order (§16, §23.2):
- * loopback detection → Host allowlist (421) → any Origin header (403) → auth (401).
+ * The request gate, in order (§16, §23.2, §23.55):
+ * Host allowlist (421) → any Origin header, or a browser-initiated `Sec-Fetch-Site` (403) →
+ * bearer (401).
+ *
+ * **Every request needs the bearer, from loopback too.** Loopback is not an identity: any
+ * local process, and any web page the user has open, can connect to `127.0.0.1`. The only
+ * requests answered without it are `POST /v1/pair` and a liveness-only `GET /health`.
  */
 export function checkRequest(req: IncomingMessage, policy: HostPolicy, token: string): GateOutcome {
   const loopback = isLoopbackRequest(req);
@@ -189,26 +198,36 @@ export function checkRequest(req: IncomingMessage, policy: HostPolicy, token: st
       hint: 'claude-usage is not a browser-facing API',
     };
   }
-
-  const method = (req.method ?? 'GET').toUpperCase();
-  if (loopback && SAFE_METHODS.has(method)) return { ok: true, loopback };
-
-  // Narrow exemption: the hook's own session bookkeeping, loopback only (see above).
-  if (loopback && isLoopbackHookPost(method, requestPath(req))) return { ok: true, loopback };
-
-  // §23.47: the pairing code is the credential here; the route enforces TLS and the limits.
-  if (isPairRedeem(method, requestPath(req))) return { ok: true, loopback };
-
-  if (!bearerMatches(req.headers.authorization, token)) {
+  if (!isFetchSiteAllowed(req.headers['sec-fetch-site'])) {
     return {
       ok: false,
-      status: 401,
-      code: 'unauthorized',
-      message: 'a valid Authorization: Bearer token is required',
-      hint: loopback
-        ? 'mutating requests need the token even from loopback'
-        : 'this device is not paired, or its token was changed — on that machine run `claude-usage pair` and pair again',
+      status: 403,
+      code: 'forbidden',
+      message: 'requests initiated by a web page are refused',
+      hint: 'claude-usage is not a browser-facing API',
     };
   }
-  return { ok: true, loopback };
+
+  const method = (req.method ?? 'GET').toUpperCase();
+  const path = requestPath(req);
+
+  // §23.47: the pairing code is the credential here; the route enforces TLS and the limits.
+  if (isPairRedeem(method, path)) return { ok: true, loopback, authenticated: false };
+
+  if (bearerMatches(req.headers.authorization, token)) return { ok: true, loopback, authenticated: true };
+
+  // Liveness only, and only when no token was offered at all (see `HEALTH_PATH`).
+  if (req.headers.authorization === undefined && isHealthProbe(method, path)) {
+    return { ok: true, loopback, authenticated: false };
+  }
+
+  return {
+    ok: false,
+    status: 401,
+    code: 'unauthorized',
+    message: 'a valid Authorization: Bearer token is required',
+    hint: loopback
+      ? 'every request needs the token, from this machine too — it is in config.json (0600), and `claude-usage` reads it for you'
+      : 'this device is not paired, or its token was changed — on that machine run `claude-usage pair` and pair again',
+  };
 }

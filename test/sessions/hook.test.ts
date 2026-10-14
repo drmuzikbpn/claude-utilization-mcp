@@ -28,7 +28,7 @@ beforeEach(async () => {
   h = makeHarness();
   const started = await startHarnessServer(h);
   server = started.server;
-  client = new DaemonClient({ baseUrl: `http://127.0.0.1:${started.port}`, timeoutMs: 1_000 });
+  client = new DaemonClient({ baseUrl: `http://127.0.0.1:${started.port}`, timeoutMs: 1_000, token: 'test-bearer-token' });
   printed = '';
 });
 

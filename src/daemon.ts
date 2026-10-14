@@ -4,7 +4,7 @@ import { rmSync } from 'node:fs';
 import { createTokenReader } from './credentials/index.js';
 import { EventBus } from './events/bus.js';
 import { LimitsPoller, effectivePollIntervalMs } from './limits/poller.js';
-import { effectiveTlsPort, ensureConfigDir, expandHome, loadConfig, resolveConfigDir, writeJsonFile, type Config } from './config.js';
+import { effectiveTlsPort, ensureConfigDir, expandHome, generateToken, loadConfig, resolveConfigDir, saveConfig, writeJsonFile, type Config } from './config.js';
 import { daemonFilePath } from './clients/http.js';
 import { bindWants, LAN_KEYWORD, resolveBindAddresses, TAILSCALE_KEYWORD } from './net/bind.js';
 import { resolveLanIPv4, resolveLocalHostName } from './net/lan.js';
@@ -175,6 +175,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   const config = opts.config ?? loadConfig(configDir);
   ensureConfigDir(configDir);
   debug(`config: loaded from ${configDir}`);
+  // §23.55: every request needs the bearer, so a daemon with none would answer nothing —
+  // not even its own hooks. `install` mints one; a bare `serve` on a fresh machine does too.
+  if (opts.config === undefined && config.auth.token.length === 0) {
+    config.auth = { ...config.auth, token: generateToken() };
+    saveConfig(config, configDir);
+    log('auth: generated a bearer token (config.json, mode 0600)');
+  }
 
   const poller = new LimitsPoller({
     getToken: createTokenReader(),
@@ -297,6 +304,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     sessions,
     extraHostNames: hostNames(),
     install: opts.install ?? defaultInstallPaths(),
+    log,
     tls: tlsIdentity === null ? null : { key: tlsIdentity.key, cert: tlsIdentity.cert },
     // §23.47: what `POST /v1/pair/code` offers. Read per request, so it follows rebinds.
     pairing: {

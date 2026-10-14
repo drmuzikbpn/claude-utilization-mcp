@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Even Seal Productions
+import { randomBytes } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir, hostname } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -300,6 +301,11 @@ export function writeJsonFile(file: string, value: unknown, mode: number = CONFI
 export function saveConfig(config: Config, dir: string = resolveConfigDir()): void {
   ensureConfigDir(dir);
   writeFileAtomic(configPath(dir), `${JSON.stringify(config, null, 2)}\n`, CONFIG_FILE_MODE);
+}
+
+/** 32 random bytes, base64url — the §16 bearer token. */
+export function generateToken(): string {
+  return randomBytes(32).toString('base64url');
 }
 
 /** Copy of the config with the bearer token redacted, for `/v1/config`. */

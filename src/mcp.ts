@@ -27,7 +27,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { DaemonClient, DaemonUnreachable } from './clients/http.js';
-import { loadConfig, resolveConfigDir } from './config.js';
+import { resolveConfigDir } from './config.js';
 import type { LimitStatus } from './limits/status.js';
 import type { NormalizedLimit } from './limits/types.js';
 import { TOKENS_GROUP_BY } from './server/types.js';
@@ -421,18 +421,8 @@ export async function runMcp(io: McpIo = {}): Promise<number> {
 
   let client = io.client;
   if (client === undefined) {
-    // `POST /v1/refresh` needs the bearer token even from loopback (§16).
-    let token = '';
-    try {
-      token = loadConfig(configDir).auth.token;
-    } catch (err) {
-      log(`claude-usage mcp: could not read config.json (${err instanceof Error ? err.message : String(err)})\n`);
-    }
-    client = new DaemonClient(
-      token.length > 0
-        ? { configDir, token, timeoutMs: MCP_TIMEOUT_MS }
-        : { configDir, timeoutMs: MCP_TIMEOUT_MS },
-    );
+    // Every request needs the bearer (§23.55); `DaemonClient` reads it from config.json.
+    client = new DaemonClient({ configDir, timeoutMs: MCP_TIMEOUT_MS });
   }
 
   const mcp = createMcpServer({ client, log });

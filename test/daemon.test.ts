@@ -3,10 +3,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { configPath, defaultConfig, saveConfig } from '../src/config.js';
-import { daemonFilePath, readDaemonInfo } from '../src/clients/http.js';
+import { DaemonClient, daemonFilePath, readDaemonInfo } from '../src/clients/http.js';
 import { PortInUseError, serve, startDaemon, type DaemonHandle } from '../src/daemon.js';
 import { FakeTokensSource } from './helpers/fakes.js';
 import { tempConfigDir } from './helpers/fake-daemon.js';
+import { authFetch, TEST_TOKEN } from './helpers/raw-request.js';
 
 const handles: DaemonHandle[] = [];
 
@@ -17,12 +18,14 @@ afterEach(async () => {
   }
 });
 
-async function start(configDir: string, over: Parameters<typeof startDaemon>[0] = {}): Promise<DaemonHandle> {
+async function start(configDir: string, over: Parameters<typeof startDaemon>[0] = {}, fakeTokens = true): Promise<DaemonHandle> {
+  // Every request needs the bearer (§23.55); a test that wrote no config gets the test token.
+  if (!existsSync(configPath(configDir))) saveConfig({ ...defaultConfig(), auth: { token: TEST_TOKEN } }, configDir);
   const h = await startDaemon({
     configDir,
     port: 0,
     poll: false,
-    tokens: new FakeTokensSource(),
+    ...(fakeTokens ? { tokens: new FakeTokensSource() } : {}),
     version: '9.9.9',
     log: () => undefined,
     ...over,
@@ -53,7 +56,7 @@ describe('daemon lifecycle', () => {
 
   it('serves /health on the bound port', async () => {
     const h = await start(tempConfigDir());
-    const res = await fetch(`http://127.0.0.1:${h.port}/health`);
+    const res = await authFetch(`http://127.0.0.1:${h.port}/health`);
     expect(res.status).toBe(200);
     expect(((await res.json()) as { version: string }).version).toBe('9.9.9');
   });
@@ -76,10 +79,11 @@ describe('daemon lifecycle', () => {
     const cfg = defaultConfig();
     cfg.name = 'configured-host';
     cfg.thresholds = { warn: 50, critical: 70 };
+    cfg.auth = { token: TEST_TOKEN };
     saveConfig(cfg, dir);
     const h = await start(dir);
     expect(h.config.name).toBe('configured-host');
-    const summary = (await (await fetch(`http://127.0.0.1:${h.port}/v1/summary`)).json()) as {
+    const summary = (await (await authFetch(`http://127.0.0.1:${h.port}/v1/summary`)).json()) as {
       thresholds: unknown;
     };
     expect(summary.thresholds).toMatchObject({ warn: 50, critical: 70 });
@@ -104,16 +108,9 @@ describe('daemon lifecycle', () => {
   it('attaches a tokens source built by createTokensSource', async () => {
     const dir = tempConfigDir();
     const tokens = new FakeTokensSource({ stats: { filesTracked: 77 } });
-    const h = await startDaemon({
-      configDir: dir,
-      port: 0,
-      poll: false,
-      version: '9.9.9',
-      log: () => undefined,
-      createTokensSource: async () => tokens,
-    });
+    const h = await start(dir, { createTokensSource: async () => tokens }, false);
     handles.push(h);
-    const health = (await (await fetch(`http://127.0.0.1:${h.port}/health`)).json()) as {
+    const health = (await (await authFetch(`http://127.0.0.1:${h.port}/health`)).json()) as {
       stats: { filesTracked: number; spendReady: boolean };
     };
     expect(health.stats.filesTracked).toBe(77);
@@ -121,22 +118,14 @@ describe('daemon lifecycle', () => {
   });
 
   it('still serves with no tokens source at all', async () => {
-    const h = await startDaemon({
-      configDir: tempConfigDir(),
-      port: 0,
-      poll: false,
-      version: '9.9.9',
-      log: () => undefined,
-      createTokensSource: async () => null,
-    });
-    handles.push(h);
-    const tokens = (await (await fetch(`http://127.0.0.1:${h.port}/v1/tokens`)).json()) as { ready: boolean };
+    const h = await start(tempConfigDir(), { createTokensSource: async () => null }, false);
+    const tokens = (await (await authFetch(`http://127.0.0.1:${h.port}/v1/tokens`)).json()) as { ready: boolean };
     expect(tokens.ready).toBe(false);
   });
 
   it('serves /v1/limits before the first poll completes', async () => {
     const h = await start(tempConfigDir());
-    const body = (await (await fetch(`http://127.0.0.1:${h.port}/v1/limits`)).json()) as { fetchedAt: null };
+    const body = (await (await authFetch(`http://127.0.0.1:${h.port}/v1/limits`)).json()) as { fetchedAt: null };
     expect(body.fetchedAt).toBeNull();
   });
 });
@@ -196,5 +185,28 @@ describe('serve', () => {
     expect(await promise).toBe(0);
     expect(existsSync(daemonFilePath(dir))).toBe(false);
     expect(lines.join('\n')).toMatch(/SIGTERM received/);
+  });
+});
+
+describe('the bearer token on a bare `serve` (§23.55)', () => {
+  it('mints and persists a token when config.json has none, so its own clients can reach it', async () => {
+    const dir = tempConfigDir();
+    const lines: string[] = [];
+    const h = await startDaemon({ configDir: dir, port: 0, poll: false, tokens: new FakeTokensSource(), version: '9.9.9', log: (l) => lines.push(l) });
+    handles.push(h);
+    const saved = JSON.parse(readFileSync(configPath(dir), 'utf8')) as { auth: { token: string } };
+    expect(saved.auth.token.length).toBeGreaterThanOrEqual(43);
+    expect(statSync(configPath(dir)).mode & 0o777).toBe(0o600);
+    expect(lines.join('\n')).toContain('generated a bearer token');
+    expect(lines.join('\n')).not.toContain(saved.auth.token);
+    expect((await fetch(`http://127.0.0.1:${h.port}/v1/summary`)).status).toBe(401);
+    expect(await new DaemonClient({ configDir: dir }).get('/v1/summary')).toHaveProperty('limits');
+  });
+
+  it('never replaces a token that is already there', async () => {
+    const dir = tempConfigDir();
+    const h = await start(dir);
+    expect(h.config.auth.token).toBe(TEST_TOKEN);
+    expect((JSON.parse(readFileSync(configPath(dir), 'utf8')) as { auth: { token: string } }).auth.token).toBe(TEST_TOKEN);
   });
 });

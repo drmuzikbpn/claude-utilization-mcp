@@ -8,6 +8,7 @@ import { startDaemon } from '../../src/daemon.js';
 import { descendantsOf, listProcesses, thaw } from '../../src/pause/freeze.js';
 import { testConfig } from '../helpers/fakes.js';
 import { tempDir } from './helpers.js';
+import { authFetch } from '../helpers/raw-request.js';
 
 const spawned: ChildProcess[] = [];
 
@@ -48,7 +49,7 @@ describe('startDaemon + sessions', () => {
       const seen: string[] = [];
       handle.bus.subscribe('session', (payload) => seen.push(payload.type));
 
-      const registered = await fetch(`http://127.0.0.1:${handle.port}/v1/sessions/register`, {
+      const registered = await authFetch(`http://127.0.0.1:${handle.port}/v1/sessions/register`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ sessionId: 'sess-1', pid: process.pid, cwd: '/tmp/x/foo' }),
@@ -56,7 +57,7 @@ describe('startDaemon + sessions', () => {
       expect(registered.status).toBe(200);
       expect(seen).toEqual(['start']);
 
-      const listed = await fetch(`http://127.0.0.1:${handle.port}/v1/sessions`);
+      const listed = await authFetch(`http://127.0.0.1:${handle.port}/v1/sessions`);
       const body = (await listed.json()) as { rev: number; sessions: { sessionId: string }[] };
       expect(body.sessions.map((s) => s.sessionId)).toEqual(['sess-1']);
       expect(listed.headers.get('etag')).toBe(`W/"${body.rev}"`);

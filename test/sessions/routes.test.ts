@@ -2,9 +2,9 @@
 // Copyright (c) 2026 Even Seal Productions
 import type { IncomingMessage } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { checkRequest, buildHostPolicy, isLoopbackHookPost, requestPath } from '../../src/server/middleware.js';
+import { checkRequest, buildHostPolicy, requestPath } from '../../src/server/middleware.js';
 import type { UsageServer } from '../../src/server/index.js';
-import { rawJson, rawRequest } from '../helpers/raw-request.js';
+import { rawJson, rawRequest, authFetch } from '../helpers/raw-request.js';
 import { makeHarness, startHarnessServer, TOKEN, type Harness } from './helpers.js';
 
 let h: Harness;
@@ -25,6 +25,9 @@ afterEach(async () => {
   await server.close();
 });
 
+/** Claude Code's session ids are UUIDs, and the routes accept nothing else (§23.56). */
+const S1 = '11111111-1111-4111-8111-111111111111';
+
 interface Res {
   status: number;
   body: Record<string, unknown>;
@@ -38,7 +41,7 @@ async function call(
   const headers: Record<string, string> = { ...init.headers };
   if (init.token !== undefined) headers['authorization'] = `Bearer ${init.token}`;
   if (init.body !== undefined) headers['content-type'] = 'application/json';
-  const res = await fetch(`${base}${path}`, {
+  const res = await authFetch(`${base}${path}`, {
     method: init.method ?? (init.body === undefined ? 'GET' : 'POST'),
     headers,
     ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
@@ -55,17 +58,17 @@ async function call(
 
 function registerBody(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    sessionId: 'sess-1',
+    sessionId: S1,
     pid: 4242,
     cwd: '/tmp/x/foo',
-    transcriptPath: '/tmp/t/sess-1.jsonl',
+    transcriptPath: `/tmp/t/${S1}.jsonl`,
     gitCommonDir: '/tmp/x/foo/.git',
     source: 'startup',
     ...over,
   };
 }
 
-describe('the loopback hook exemption (§16 + §17.1)', () => {
+describe('no loopback hook exemption (§23.55)', () => {
   const policy = buildHostPolicy([{ address: '127.0.0.1', port: 47291 }]);
   function req(over: { remote?: string; method?: string; url?: string; authorization?: string }): IncomingMessage {
     const headers: Record<string, string> = { host: '127.0.0.1:47291' };
@@ -78,35 +81,32 @@ describe('the loopback hook exemption (§16 + §17.1)', () => {
     } as unknown as IncomingMessage;
   }
 
-  it('covers exactly the three hook POSTs', () => {
-    expect(isLoopbackHookPost('POST', '/v1/sessions/register')).toBe(true);
-    expect(isLoopbackHookPost('POST', '/v1/sessions/abc/heartbeat')).toBe(true);
-    expect(isLoopbackHookPost('POST', '/v1/sessions/abc/end')).toBe(true);
-    expect(isLoopbackHookPost('POST', '/v1/sessions/abc/pause')).toBe(false);
-    expect(isLoopbackHookPost('POST', '/v1/pause')).toBe(false);
-    expect(isLoopbackHookPost('POST', '/v1/resume')).toBe(false);
-    expect(isLoopbackHookPost('GET', '/v1/sessions/register')).toBe(false);
-    expect(isLoopbackHookPost('POST', '/v1/sessions/a/b/end')).toBe(false);
-  });
-
   it('strips the query string before matching', () => {
-    expect(requestPath(req({ url: '/v1/sessions/abc/heartbeat?x=1' }))).toBe('/v1/sessions/abc/heartbeat');
+    expect(requestPath(req({ url: `/v1/sessions/${S1}/heartbeat?x=1` }))).toBe(`/v1/sessions/${S1}/heartbeat`);
   });
 
-  it('exempts them from loopback only — the tailnet still needs the token', () => {
-    expect(checkRequest(req({}), policy, TOKEN).ok).toBe(true);
-    const remote = checkRequest(req({ remote: '100.101.102.103' }), policy, TOKEN);
-    expect(remote.ok).toBe(false);
-    if (!remote.ok) {
-      expect(remote.status).toBe(401);
-      expect(remote.message.length).toBeGreaterThan(0);
+  it('the three hook POSTs need the token from loopback, exactly as from anywhere else', () => {
+    for (const url of ['/v1/sessions/register', `/v1/sessions/${S1}/heartbeat`, `/v1/sessions/${S1}/end`, `/v1/sessions/${S1}/pause`]) {
+      const gate = checkRequest(req({ url }), policy, TOKEN);
+      expect(gate.ok, url).toBe(false);
+      if (!gate.ok) expect(gate.status).toBe(401);
+      expect(checkRequest(req({ url, authorization: `Bearer ${TOKEN}` }), policy, TOKEN).ok, url).toBe(true);
+      expect(checkRequest(req({ url, remote: '203.0.113.9' }), policy, TOKEN).ok, url).toBe(false);
     }
-    expect(checkRequest(req({ remote: '100.101.102.103', authorization: `Bearer ${TOKEN}` }), policy, TOKEN).ok).toBe(true);
   });
 
-  it('still requires the token for pause from loopback', () => {
-    const gate = checkRequest(req({ url: '/v1/sessions/abc/pause' }), policy, TOKEN);
-    expect(gate.ok).toBe(false);
+  it('over HTTP: register, heartbeat, end and the gate are all 401 without the token', async () => {
+    for (const [method, path] of [
+      ['POST', '/v1/sessions/register'],
+      ['POST', `/v1/sessions/${S1}/heartbeat`],
+      ['POST', `/v1/sessions/${S1}/end`],
+      ['GET', `/v1/sessions/${S1}/gate?tool=Bash`],
+      ['GET', '/v1/sessions'],
+    ] as const) {
+      const res = await fetch(`${base}${path}`, { method, ...(method === 'POST' ? { body: JSON.stringify(registerBody()), headers: { 'content-type': 'application/json' } } : {}) });
+      expect(res.status, path).toBe(401);
+    }
+    expect(h.subsystem.registry.all()).toEqual([]);
   });
 });
 
@@ -151,13 +151,13 @@ describe('hook endpoints (loopback, no token)', () => {
     const registered = await call('/v1/sessions/register', { body: registerBody() });
     expect(registered.status).toBe(200);
     expect(registered.body['session']).toMatchObject({
-      sessionId: 'sess-1',
+      sessionId: S1,
       pid: 4242,
       discovered: 'hook',
       project: { name: 'foo' },
     });
 
-    const beat = await call('/v1/sessions/sess-1/heartbeat', { body: {} });
+    const beat = await call(`/v1/sessions/${S1}/heartbeat`, { body: {} });
     expect(beat.status).toBe(200);
     expect(beat.body['ok']).toBe(true);
     expect(beat.body['paused']).toBe(false);
@@ -166,9 +166,9 @@ describe('hook endpoints (loopback, no token)', () => {
     expect(unknown.status).toBe(404);
     expect(String((unknown.body['error'] as Record<string, unknown>)['message'])).toContain('nope');
 
-    const ended = await call('/v1/sessions/sess-1/end', { body: {} });
+    const ended = await call(`/v1/sessions/${S1}/end`, { body: {} });
     expect(ended.body).toMatchObject({ ok: true, ended: true });
-    const again = await call('/v1/sessions/sess-1/end', { body: {} });
+    const again = await call(`/v1/sessions/${S1}/end`, { body: {} });
     expect(again.body).toMatchObject({ ok: true, ended: false });
   });
 
@@ -182,7 +182,7 @@ describe('hook endpoints (loopback, no token)', () => {
 describe('GET /v1/sessions/{id}/gate (§18.2, §23.13)', () => {
   it('reports not paused and records lastTool', async () => {
     await call('/v1/sessions/register', { body: registerBody() });
-    const gate = await call('/v1/sessions/sess-1/gate?tool=Bash');
+    const gate = await call(`/v1/sessions/${S1}/gate?tool=Bash`);
     expect(gate.status).toBe(200);
     expect(gate.body).toEqual({ paused: false, mode: null, ruleId: null, reason: null });
 
@@ -194,14 +194,15 @@ describe('GET /v1/sessions/{id}/gate (§18.2, §23.13)', () => {
   it('reports the effective rule while paused', async () => {
     await call('/v1/sessions/register', { body: registerBody() });
     await call('/v1/pause', { token: TOKEN, body: { scope: 'all', mode: 'soft', reason: 'dinner' } });
-    const gate = await call('/v1/sessions/sess-1/gate');
+    const gate = await call(`/v1/sessions/${S1}/gate`);
     expect(gate.body).toMatchObject({ paused: true, mode: 'soft', reason: 'dinner' });
   });
 });
 
 describe('POST /v1/pause and friends (§18.4)', () => {
   it('needs the token even from loopback', async () => {
-    const res = await call('/v1/pause', { body: { scope: 'all', mode: 'soft' } });
+    const raw = await fetch(`${base}/v1/pause`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ scope: 'all', mode: 'soft' }) });
+    const res = { status: raw.status, body: (await raw.json()) as Record<string, unknown> };
     expect(res.status).toBe(401);
     const error = res.body['error'] as Record<string, unknown>;
     expect(String(error['message']).length).toBeGreaterThan(0);
@@ -216,7 +217,7 @@ describe('POST /v1/pause and friends (§18.4)', () => {
     expect(rule['scope']).toBe('all');
     expect(rule['reason']).toBe('usage-deck:1');
     expect(rule['createdBy']).toBe('dashboard');
-    expect(first.body['affected']).toEqual(['sess-1']);
+    expect(first.body['affected']).toEqual([S1]);
 
     const again = await call('/v1/pause', { token: TOKEN, body: { scope: 'all', mode: 'soft', reason: 'different' } });
     expect((again.body['rule'] as Record<string, unknown>)['id']).toBe(rule['id']);
@@ -240,7 +241,7 @@ describe('POST /v1/pause and friends (§18.4)', () => {
     const first = await call('/v1/resume', { token: TOKEN, body: { scope: 'all' } });
     expect(first.status).toBe(200);
     expect((first.body['removed'] as string[]).length).toBe(1);
-    expect(first.body['resumed']).toEqual(['sess-1']);
+    expect(first.body['resumed']).toEqual([S1]);
 
     const second = await call('/v1/resume', { token: TOKEN, body: { scope: 'all' } });
     expect(second.body).toEqual({ removed: [], resumed: [] });
@@ -249,7 +250,7 @@ describe('POST /v1/pause and friends (§18.4)', () => {
   it('deletes a rule by id, 404 for an unknown one', async () => {
     const created = await call('/v1/pause', { token: TOKEN, body: { scope: 'all', mode: 'soft' } });
     const id = (created.body['rule'] as Record<string, unknown>)['id'] as string;
-    const res = await fetch(`${base}/v1/pause/rules/${id}`, {
+    const res = await authFetch(`${base}/v1/pause/rules/${id}`, {
       method: 'DELETE',
       headers: { authorization: `Bearer ${TOKEN}` },
     });
@@ -266,15 +267,15 @@ describe('POST /v1/pause and friends (§18.4)', () => {
 
   it('session sugar pauses and resumes one session', async () => {
     await call('/v1/sessions/register', { body: registerBody() });
-    const paused = await call('/v1/sessions/sess-1/pause', { token: TOKEN, body: { mode: 'soft', reason: 'sugar' } });
-    expect((paused.body['rule'] as Record<string, unknown>)['scope']).toBe('session:sess-1');
-    expect(paused.body['affected']).toEqual(['sess-1']);
+    const paused = await call(`/v1/sessions/${S1}/pause`, { token: TOKEN, body: { mode: 'soft', reason: 'sugar' } });
+    expect((paused.body['rule'] as Record<string, unknown>)['scope']).toBe(`session:${S1}`);
+    expect(paused.body['affected']).toEqual([S1]);
 
     const listed = await call('/v1/sessions');
     const session = (listed.body['sessions'] as Record<string, unknown>[])[0];
-    expect(session?.['pause']).toMatchObject({ mode: 'soft', scope: 'session:sess-1', frozenPids: [] });
+    expect(session?.['pause']).toMatchObject({ mode: 'soft', scope: `session:${S1}`, frozenPids: [] });
 
-    const resumed = await call('/v1/sessions/sess-1/resume', { token: TOKEN, body: {} });
+    const resumed = await call(`/v1/sessions/${S1}/resume`, { token: TOKEN, body: {} });
     expect((resumed.body['removed'] as string[]).length).toBe(1);
     expect((await call('/v1/sessions')).body['sessions']).toMatchObject([{ pause: null }]);
   });
@@ -296,8 +297,8 @@ describe('hard-freeze refusals (§18.3)', () => {
     const started = await startHarnessServer(foreign);
     try {
       foreign.alive.add(4242);
-      foreign.subsystem.registry.register({ sessionId: 'sess-1', pid: 4242, cwd: '/tmp' });
-      const res = await fetch(`http://127.0.0.1:${started.port}/v1/sessions/sess-1/pause`, {
+      foreign.subsystem.registry.register({ sessionId: S1, pid: 4242, cwd: '/tmp' });
+      const res = await authFetch(`http://127.0.0.1:${started.port}/v1/sessions/${S1}/pause`, {
         method: 'POST',
         headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
         body: JSON.stringify({ mode: 'hard' }),
@@ -317,9 +318,9 @@ describe('hard-freeze refusals (§18.3)', () => {
 
     await call('/v1/sessions/register', { body: registerBody() });
     h.subsystem.registry.checkLiveness(); // the fake pid is not alive
-    const dead = await call('/v1/sessions/sess-1/pause', { token: TOKEN, body: { mode: 'hard' } });
+    const dead = await call(`/v1/sessions/${S1}/pause`, { token: TOKEN, body: { mode: 'hard' } });
     expect(dead.status).toBe(410);
-    expect(String((dead.body['error'] as Record<string, unknown>)['message'])).toContain('sess-1');
+    expect(String((dead.body['error'] as Record<string, unknown>)['message'])).toContain(S1);
     expect((await call('/v1/pause/rules')).body['rules']).toEqual([]);
   });
 
@@ -333,8 +334,8 @@ describe('hard-freeze refusals (§18.3)', () => {
     const started = await startHarnessServer(live);
     try {
       live.alive.add(4242);
-      live.subsystem.registry.register({ sessionId: 'sess-1', pid: 4242, cwd: '/tmp/x/foo' });
-      const res = await fetch(`http://127.0.0.1:${started.port}/v1/sessions/sess-1/pause`, {
+      live.subsystem.registry.register({ sessionId: S1, pid: 4242, cwd: '/tmp/x/foo' });
+      const res = await authFetch(`http://127.0.0.1:${started.port}/v1/sessions/${S1}/pause`, {
         method: 'POST',
         headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
         body: JSON.stringify({ mode: 'hard', reason: 'stop now' }),
@@ -342,17 +343,17 @@ describe('hard-freeze refusals (§18.3)', () => {
       expect(res.status).toBe(200);
       // 4242 is the `claude` process: it keeps running so the user keeps their terminal.
       expect(live.signals).toEqual([{ pid: 4251, signal: 'SIGSTOP' }]);
-      expect(live.subsystem.registry.get('sess-1')?.frozenPids).toEqual([4251]);
-      expect(live.subsystem.registry.get('sess-1')?.freezes).toBe(1);
+      expect(live.subsystem.registry.get(S1)?.frozenPids).toEqual([4251]);
+      expect(live.subsystem.registry.get(S1)?.freezes).toBe(1);
 
       live.signals.length = 0;
-      await fetch(`http://127.0.0.1:${started.port}/v1/sessions/sess-1/resume`, {
+      await authFetch(`http://127.0.0.1:${started.port}/v1/sessions/${S1}/resume`, {
         method: 'POST',
         headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
         body: '{}',
       });
       expect(live.signals).toEqual([{ pid: 4251, signal: 'SIGCONT' }]);
-      expect(live.subsystem.registry.get('sess-1')?.freezes).toBe(0);
+      expect(live.subsystem.registry.get(S1)?.freezes).toBe(0);
     } finally {
       live.subsystem.stop();
       await started.server.close();
@@ -371,17 +372,17 @@ describe('hard-freeze refusals (§18.3)', () => {
     try {
       live.alive.add(4242);
       live.alive.add(4390);
-      live.subsystem.registry.register({ sessionId: 'sess-1', pid: 4242, cwd: '/tmp/x/foo' });
-      expect(live.subsystem.pause.pause({ scope: 'session:sess-1', mode: 'hard', createdBy: 'cli' }).ok).toBe(true);
-      expect(live.subsystem.registry.get('sess-1')?.freezes).toBe(1);
+      live.subsystem.registry.register({ sessionId: S1, pid: 4242, cwd: '/tmp/x/foo' });
+      expect(live.subsystem.pause.pause({ scope: `session:${S1}`, mode: 'hard', createdBy: 'cli' }).ok).toBe(true);
+      expect(live.subsystem.registry.get(S1)?.freezes).toBe(1);
 
       // `claude --resume`: same session id, new pid. The old tree is gone; the new one is
       // frozen, and the counter is what tells the two states apart.
       live.signals.length = 0;
-      live.subsystem.registry.register({ sessionId: 'sess-1', pid: 4390, cwd: '/tmp/x/foo' });
+      live.subsystem.registry.register({ sessionId: S1, pid: 4390, cwd: '/tmp/x/foo' });
       live.subsystem.pause.apply();
-      expect(live.subsystem.registry.get('sess-1')?.frozenPids).toEqual([4391]);
-      expect(live.subsystem.registry.get('sess-1')?.freezes).toBe(2);
+      expect(live.subsystem.registry.get(S1)?.frozenPids).toEqual([4391]);
+      expect(live.subsystem.registry.get(S1)?.freezes).toBe(2);
       // 4251 belonged to the pid that just went away. Dropping it from the record without a
       // SIGCONT would leave it stopped under init for good.
       expect(live.signals).toEqual([
@@ -403,8 +404,8 @@ describe('hard-freeze refusals (§18.3)', () => {
     const started = await startHarnessServer(live);
     try {
       live.alive.add(4242);
-      live.subsystem.registry.register({ sessionId: 'sess-1', pid: 4242, cwd: '/tmp/x/foo' });
-      await fetch(`http://127.0.0.1:${started.port}/v1/sessions/sess-1/pause`, {
+      live.subsystem.registry.register({ sessionId: S1, pid: 4242, cwd: '/tmp/x/foo' });
+      await authFetch(`http://127.0.0.1:${started.port}/v1/sessions/${S1}/pause`, {
         method: 'POST',
         headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
         body: JSON.stringify({ mode: 'hard' }),
@@ -412,7 +413,7 @@ describe('hard-freeze refusals (§18.3)', () => {
       live.signals.length = 0;
 
       // The SessionEnd hook posts this with no token, from loopback.
-      const ended = await fetch(`http://127.0.0.1:${started.port}/v1/sessions/sess-1/end`, {
+      const ended = await authFetch(`http://127.0.0.1:${started.port}/v1/sessions/${S1}/end`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: '{}',

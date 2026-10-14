@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Even Seal Productions
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { writeJsonFile } from '../../src/config.js';
+import { saveConfig, writeJsonFile } from '../../src/config.js';
 import { daemonFilePath } from '../../src/clients/http.js';
 import { createServer, type UsageServer } from '../../src/server/index.js';
 import { createSessionsSubsystem, type SessionsSubsystem } from '../../src/sessions/index.js';
@@ -48,6 +48,8 @@ export async function startFakeDaemon(opts: FakeDaemonOptions = {}): Promise<Fak
     sessions,
   });
   const port = await server.listen(0, '127.0.0.1');
+  // Every request needs the bearer (§23.55): clients find it where the real ones do.
+  if (!existsSync(join(configDir, 'config.json'))) saveConfig(testConfig(), configDir);
   if (opts.writeDaemonFile !== false) {
     writeJsonFile(daemonFilePath(configDir), {
       pid: process.pid,

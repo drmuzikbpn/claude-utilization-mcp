@@ -13,6 +13,7 @@ import type { TokenTotals, TokensQuery, TokensResponse, TokensSource } from '../
 import { FIXTURES_DIR } from '../helpers/fixtures.js';
 import { FakeTimers } from '../helpers/fake-timers.js';
 import { FakeLimitsProvider, FakeTokensSource, fixtureSnapshot, snapshotWithPercents, testConfig } from '../helpers/fakes.js';
+import { authFetch } from '../helpers/raw-request.js';
 
 /** 2026-09-13T14:00:00.000Z — the clock every test starts from. */
 const T0 = Date.parse('2026-09-13T14:00:00.000Z');
@@ -69,7 +70,8 @@ class SseClient {
     const client = new SseClient();
     return new Promise<SseClient>((resolve, reject) => {
       const req = request(
-        { host: '127.0.0.1', port, path: '/v1/events', method: 'GET', agent: false, headers },
+        // Every request needs the bearer (§23.55); a test may override it to prove that.
+        { host: '127.0.0.1', port, path: '/v1/events', method: 'GET', agent: false, headers: { authorization: `Bearer ${TOKEN}`, ...headers } },
         (res) => {
           client.res = res;
           client.status = res.statusCode ?? 0;
@@ -288,11 +290,11 @@ describe('GET /v1/events — connect', () => {
     expect(Object.keys(body['limits'] as Record<string, unknown>)).not.toContain('raw');
 
     // `summary` is byte-for-byte the `/v1/summary` body.
-    const summaryText = await (await fetch(url('/v1/summary'))).text();
+    const summaryText = await (await authFetch(url('/v1/summary'))).text();
     expect(JSON.stringify(body['summary'])).toBe(summaryText);
 
     // `update` is the `/health.update` object.
-    const health = (await (await fetch(url('/health'))).json()) as Record<string, unknown>;
+    const health = (await (await authFetch(url('/health'))).json()) as Record<string, unknown>;
     expect(body['update']).toEqual(health['update']);
   });
 
@@ -306,12 +308,12 @@ describe('GET /v1/events — connect', () => {
 
   it('answers HEAD with 200 and no body, and POST with 405', async () => {
     const { url } = await start();
-    const head = await fetch(url('/v1/events'), { method: 'HEAD' });
+    const head = await authFetch(url('/v1/events'), { method: 'HEAD' });
     expect(head.status).toBe(200);
     expect(head.headers.get('content-type')).toBe('text/event-stream; charset=utf-8');
     expect(await head.text()).toBe('');
 
-    const post = await fetch(url('/v1/events'), { method: 'POST', headers: { authorization: `Bearer ${TOKEN}` } });
+    const post = await authFetch(url('/v1/events'), { method: 'POST', headers: { authorization: `Bearer ${TOKEN}` } });
     expect(post.status).toBe(405);
     expect(post.headers.get('allow')).toContain('GET');
   });
@@ -403,19 +405,44 @@ describe('GET /v1/events — forwarding', () => {
   });
 });
 
+describe('GET /v1/events — who may hold a stream (§23.55)', () => {
+  it('a web page cannot occupy the stream slots: no token, an Origin or fetch metadata is refused before a slot is taken', async () => {
+    const { port, url, server } = await start({ config: testConfig({ events: { maxClients: 2 } }) });
+    for (let i = 0; i < 6; i += 1) {
+      expect((await fetch(url('/v1/events'), { headers: { accept: 'text/event-stream' } })).status).toBe(401);
+      expect((await authFetch(url('/v1/events'), { headers: { origin: 'http://page.example.test' } })).status).toBe(403);
+      expect((await authFetch(url('/v1/events'), { headers: { 'sec-fetch-site': 'cross-site' } })).status).toBe(403);
+    }
+    const anonymous = await connect(port, { authorization: '' });
+    expect(anonymous.status).toBe(401);
+    expect(server.events.clientCount).toBe(0);
+
+    // Every slot is still there for the real dashboards.
+    const a = await connect(port);
+    const b = await connect(port);
+    expect((await a.waitFor('snapshot')).event).toBe('snapshot');
+    expect((await b.waitFor('snapshot')).event).toBe('snapshot');
+    expect(server.events.clientCount).toBe(2);
+  });
+});
+
 describe('GET /v1/events — limits and lifecycle', () => {
   it('refuses more than config.events.maxClients streams with a 503 envelope', async () => {
-    const { port, url } = await start({ config: testConfig({ events: { maxClients: 2 } }) });
+    const { port, url, server } = await start({ config: testConfig({ events: { maxClients: 2 } }) });
     const a = await connect(port);
     const b = await connect(port);
     await a.waitFor('snapshot');
     await b.waitFor('snapshot');
 
-    const res = await fetch(url('/v1/events'));
+    const res = await authFetch(url('/v1/events'));
     expect(res.status).toBe(503);
     const body = (await res.json()) as { error: { code: string; message: string; hint?: string } };
     expect(body.error.code).toBe('unavailable');
     expect(body.error.message.length).toBeGreaterThan(0);
+
+    // §23.55: a caller without the token — which is what any web page is — never held a
+    // slot in the first place, however many times it asks.
+    expect(server.events.clientCount).toBe(2);
 
     // A freed slot is reusable.
     a.destroy();

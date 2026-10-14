@@ -35,10 +35,9 @@ async function daemon(opts: { withSessions?: boolean } = {}): Promise<FakeDaemon
   return d;
 }
 
-/** An MCP server over a real fake daemon; `token` omitted ⇒ unauthenticated client. */
+/** An MCP server over a real fake daemon; `token: ''` ⇒ an unauthenticated client. */
 function mcpFor(d: FakeDaemon, opts: { token?: string } = {}): UsageMcpServer {
-  const base = { baseUrl: `http://127.0.0.1:${String(d.port)}`, timeoutMs: 2_000 };
-  const client = new DaemonClient(opts.token === undefined ? base : { ...base, token: opts.token });
+  const client = new DaemonClient({ baseUrl: `http://127.0.0.1:${String(d.port)}`, timeoutMs: 2_000, token: opts.token ?? TOKEN });
   return createMcpServer({ client, log: () => {} });
 }
 
@@ -112,7 +111,7 @@ describe('get_limits', () => {
     expect(headline(result)).toBe('session 34% · weekly 29% · weekly_scoped:fable 10%');
     const payload = body(result);
     expect(payload['raw']).toBeUndefined();
-    expect(payload['limits']).toEqual((await new DaemonClient({ baseUrl: `http://127.0.0.1:${String(d.port)}` }).get('/v1/limits') as Record<string, unknown>)['limits']);
+    expect(payload['limits']).toEqual((await new DaemonClient({ baseUrl: `http://127.0.0.1:${String(d.port)}`, token: TOKEN }).get('/v1/limits') as Record<string, unknown>)['limits']);
     expect(payload).toHaveProperty('legacyWindows');
     expect(payload).toHaveProperty('fetchedAt');
   });
@@ -295,7 +294,7 @@ describe('get_sessions', () => {
 describe('refresh_limits', () => {
   it('needs the bearer token — an unauthenticated client is refused', async () => {
     const d = await daemon();
-    const result = await mcpFor(d).callTool('refresh_limits');
+    const result = await mcpFor(d, { token: '' }).callTool('refresh_limits');
     expect(result.isError).toBe(true);
     expect(text(result)).toContain('unauthorized');
     expect(d.limits.refreshCalls).toBe(0);

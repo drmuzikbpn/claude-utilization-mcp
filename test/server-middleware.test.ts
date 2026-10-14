@@ -6,6 +6,7 @@ import {
   bearerMatches,
   buildHostPolicy,
   checkRequest,
+  isFetchSiteAllowed,
   isHostAllowed,
   isLoopbackAddress,
   normalizeAddress,
@@ -22,12 +23,16 @@ function fakeReq(over: {
   host?: string;
   origin?: string;
   authorization?: string;
+  url?: string;
+  secFetchSite?: string;
 }): IncomingMessage {
   const headers: Record<string, string> = { host: over.host ?? '127.0.0.1:47291' };
   if (over.origin !== undefined) headers['origin'] = over.origin;
   if (over.authorization !== undefined) headers['authorization'] = over.authorization;
+  if (over.secFetchSite !== undefined) headers['sec-fetch-site'] = over.secFetchSite;
   return {
     method: over.method ?? 'GET',
+    url: over.url ?? '/',
     headers,
     socket: { remoteAddress: over.remote ?? '127.0.0.1' },
   } as unknown as IncomingMessage;
@@ -108,42 +113,89 @@ describe('bearerMatches', () => {
 });
 
 describe('checkRequest gate order', () => {
-  it('exempts a loopback GET', () => {
-    expect(checkRequest(fakeReq({}), policy, TOKEN)).toEqual({ ok: true, loopback: true });
+  const authed = { authorization: `Bearer ${TOKEN}` };
+
+  it('refuses a tokenless loopback GET — loopback is not an identity (§23.55)', () => {
+    for (const url of ['/v1/limits', '/v1/summary', '/v1/tokens', '/v1/config', '/v1/sessions', '/v1/events', '/v1/pause/rules']) {
+      expect(checkRequest(fakeReq({ url }), policy, TOKEN), url).toMatchObject({ ok: false, status: 401 });
+    }
   });
 
-  it('requires the token for a loopback POST', () => {
-    expect(checkRequest(fakeReq({ method: 'POST' }), policy, TOKEN)).toMatchObject({ ok: false, status: 401 });
-    expect(checkRequest(fakeReq({ method: 'POST', authorization: `Bearer ${TOKEN}` }), policy, TOKEN)).toMatchObject({
-      ok: true,
-    });
+  it('refuses the hook endpoints and the gate without the token, from loopback too', () => {
+    const id = '11111111-2222-4333-8444-555555555555';
+    for (const [method, url] of [
+      ['POST', '/v1/sessions/register'],
+      ['POST', `/v1/sessions/${id}/heartbeat`],
+      ['POST', `/v1/sessions/${id}/end`],
+      ['GET', `/v1/sessions/${id}/gate?tool=Bash`],
+      ['POST', `/v1/sessions/${id}/gate`],
+    ] as const) {
+      expect(checkRequest(fakeReq({ method, url }), policy, TOKEN), url).toMatchObject({ ok: false, status: 401 });
+      expect(checkRequest(fakeReq({ method, url, ...authed }), policy, TOKEN), url).toEqual({ ok: true, loopback: true, authenticated: true });
+    }
   });
 
-  it('requires the token for a non-loopback GET', () => {
-    const remote = { remote: '100.101.102.103', host: '100.101.102.103:47291' };
+  it('accepts the token on every method, loopback or not', () => {
+    expect(checkRequest(fakeReq({ url: '/v1/limits', ...authed }), policy, TOKEN)).toEqual({ ok: true, loopback: true, authenticated: true });
+    expect(checkRequest(fakeReq({ method: 'POST', url: '/v1/refresh', ...authed }), policy, TOKEN)).toMatchObject({ ok: true });
+    const remote = { remote: '203.0.113.9', url: '/v1/limits' };
     expect(checkRequest(fakeReq(remote), policy, TOKEN)).toMatchObject({ ok: false, status: 401 });
-    expect(checkRequest(fakeReq({ ...remote, authorization: `Bearer ${TOKEN}` }), policy, TOKEN)).toMatchObject({
-      ok: true,
-      loopback: false,
-    });
+    expect(checkRequest(fakeReq({ ...remote, ...authed }), policy, TOKEN)).toEqual({ ok: true, loopback: false, authenticated: true });
   });
 
-  it('rejects a wrong token from a non-loopback GET', () => {
-    const req = fakeReq({ remote: '100.101.102.103', host: '100.101.102.103:47291', authorization: 'Bearer nope' });
+  it('lets a tokenless GET /health through as an unauthenticated liveness probe only', () => {
+    expect(checkRequest(fakeReq({ url: '/health' }), policy, TOKEN)).toEqual({ ok: true, loopback: true, authenticated: false });
+    expect(checkRequest(fakeReq({ url: '/health', method: 'HEAD' }), policy, TOKEN)).toMatchObject({ ok: true, authenticated: false });
+    expect(checkRequest(fakeReq({ url: '/health?x=1' }), policy, TOKEN)).toMatchObject({ ok: true, authenticated: false });
+    expect(checkRequest(fakeReq({ url: '/health', ...authed }), policy, TOKEN)).toMatchObject({ ok: true, authenticated: true });
+    // Not a prefix match, and not for any other method.
+    expect(checkRequest(fakeReq({ url: '/health/x' }), policy, TOKEN)).toMatchObject({ ok: false, status: 401 });
+    expect(checkRequest(fakeReq({ url: '/healthz' }), policy, TOKEN)).toMatchObject({ ok: false, status: 401 });
+    expect(checkRequest(fakeReq({ url: '/health', method: 'POST' }), policy, TOKEN)).toMatchObject({ ok: false, status: 401 });
+  });
+
+  it('a wrong token is a 401 even on /health, so a paired app learns its token was rotated', () => {
+    expect(checkRequest(fakeReq({ url: '/health', authorization: 'Bearer nope' }), policy, TOKEN)).toMatchObject({ ok: false, status: 401 });
+    const req = fakeReq({ remote: '203.0.113.9', url: '/v1/limits', authorization: 'Bearer nope' });
     expect(checkRequest(req, policy, TOKEN)).toMatchObject({ ok: false, status: 401 });
   });
 
-  it('never trusts a forged X-Forwarded-For style Host to claim loopback', () => {
-    const req = fakeReq({ remote: '100.101.102.103', host: 'localhost:47291' });
+  it('lets POST /v1/pair through unauthenticated (the route enforces TLS and the code)', () => {
+    expect(checkRequest(fakeReq({ method: 'POST', url: '/v1/pair' }), policy, TOKEN)).toEqual({ ok: true, loopback: true, authenticated: false });
+    expect(checkRequest(fakeReq({ method: 'GET', url: '/v1/pair' }), policy, TOKEN)).toMatchObject({ ok: false, status: 401 });
+    expect(checkRequest(fakeReq({ method: 'POST', url: '/v1/pair/code' }), policy, TOKEN)).toMatchObject({ ok: false, status: 401 });
+  });
+
+  it('never trusts a forged Host to claim loopback', () => {
+    const req = fakeReq({ remote: '203.0.113.9', host: 'localhost:47291', url: '/v1/limits' });
     expect(checkRequest(req, policy, TOKEN)).toMatchObject({ ok: false, status: 401 });
   });
 
-  it('checks Host, then Origin, then auth', () => {
+  it.each(['cross-site', 'same-site', 'same-origin', 'CROSS-SITE', ''])('refuses Sec-Fetch-Site: "%s" even with a valid token', (site) => {
+    const res = checkRequest(fakeReq({ url: '/v1/limits', ...authed, secFetchSite: site }), policy, TOKEN);
+    expect(res).toMatchObject({ ok: false, status: 403, code: 'forbidden' });
+    expect(checkRequest(fakeReq({ url: '/health', secFetchSite: site }), policy, TOKEN)).toMatchObject({ ok: false, status: 403 });
+    expect(checkRequest(fakeReq({ method: 'POST', url: '/v1/pair', secFetchSite: site }), policy, TOKEN)).toMatchObject({ ok: false, status: 403 });
+  });
+
+  it('accepts Sec-Fetch-Site: none, which is a person typing the address', () => {
+    expect(checkRequest(fakeReq({ url: '/v1/limits', ...authed, secFetchSite: 'none' }), policy, TOKEN)).toMatchObject({ ok: true });
+    expect(isFetchSiteAllowed(undefined)).toBe(true);
+    expect(isFetchSiteAllowed(['none', 'cross-site'])).toBe(false);
+  });
+
+  it('checks Host, then Origin, then fetch metadata, then auth', () => {
     expect(checkRequest(fakeReq({ host: 'evil.com', origin: 'x', method: 'POST' }), policy, TOKEN)).toMatchObject({
       status: 421,
     });
     expect(checkRequest(fakeReq({ origin: 'x', method: 'POST' }), policy, TOKEN)).toMatchObject({ status: 403 });
+    expect(checkRequest(fakeReq({ secFetchSite: 'cross-site', method: 'POST' }), policy, TOKEN)).toMatchObject({ status: 403 });
     expect(checkRequest(fakeReq({ method: 'POST' }), policy, TOKEN)).toMatchObject({ status: 401 });
+  });
+
+  it('never matches anything when no token is configured', () => {
+    expect(checkRequest(fakeReq({ url: '/v1/limits', authorization: 'Bearer ' }), policy, '')).toMatchObject({ ok: false, status: 401 });
+    expect(checkRequest(fakeReq({ url: '/v1/limits' }), policy, '')).toMatchObject({ ok: false, status: 401 });
   });
 });
 

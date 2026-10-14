@@ -4,8 +4,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { startDaemon, type DaemonHandle } from '../../src/daemon.js';
 import type { UpdateStatus } from '../../src/server/snapshot.js';
 import type { UpdaterHandle } from '../../src/update/index.js';
-import { FakeTokensSource } from '../helpers/fakes.js';
+import { FakeTokensSource, testConfig } from '../helpers/fakes.js';
 import { tempConfigDir } from '../helpers/fake-daemon.js';
+import { authFetch } from '../helpers/raw-request.js';
 
 const handles: DaemonHandle[] = [];
 afterEach(async () => {
@@ -47,6 +48,7 @@ function fakeUpdater(initial: Partial<UpdateStatus> = {}): UpdaterHandle & { sta
 async function start(updater?: UpdaterHandle | null): Promise<DaemonHandle> {
   const h = await startDaemon({
     configDir: tempConfigDir(),
+    config: testConfig(),
     port: 0,
     poll: false,
     tokens: new FakeTokensSource(),
@@ -59,7 +61,7 @@ async function start(updater?: UpdaterHandle | null): Promise<DaemonHandle> {
 }
 
 async function health(h: DaemonHandle): Promise<Record<string, unknown>> {
-  const res = await fetch(`http://127.0.0.1:${h.port}/health`);
+  const res = await authFetch(`http://127.0.0.1:${h.port}/health`);
   return (await res.json()) as Record<string, unknown>;
 }
 
@@ -103,7 +105,7 @@ describe('daemon ↔ updater wiring (§15, §20)', () => {
   it('the SSE snapshot embeds the same live update object (§19)', async () => {
     const updater = fakeUpdater({ state: 'downloading', available: '9.9.10+abc' });
     const h = await start(updater);
-    const res = await fetch(`http://127.0.0.1:${h.port}/v1/events`, { headers: { accept: 'text/event-stream' } });
+    const res = await authFetch(`http://127.0.0.1:${h.port}/v1/events`, { headers: { accept: 'text/event-stream' } });
     const body = res.body;
     if (body === null) throw new Error('no SSE body');
     const reader = body.getReader();

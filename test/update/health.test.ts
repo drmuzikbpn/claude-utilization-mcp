@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createServer, type UsageServer } from '../../src/server/index.js';
 import { updateBody, type UpdateStatus } from '../../src/server/snapshot.js';
 import { EmptyLimitsProvider, testConfig } from '../helpers/fakes.js';
+import { authFetch } from '../helpers/raw-request.js';
 
 const started: UsageServer[] = [];
 afterEach(async () => {
@@ -23,7 +24,7 @@ async function health(update?: () => UpdateStatus): Promise<Record<string, unkno
   });
   started.push(server);
   const port = await server.listen(0, '127.0.0.1');
-  const res = await fetch(`http://127.0.0.1:${port}/health`);
+  const res = await authFetch(`http://127.0.0.1:${port}/health`);
   return (await res.json()) as Record<string, unknown>;
 }
 
@@ -77,7 +78,7 @@ describe('/health.update (§15, §20)', () => {
     });
     started.push(server);
     const port = await server.listen(0, '127.0.0.1');
-    const read = async (): Promise<unknown> => ((await (await fetch(`http://127.0.0.1:${port}/health`)).json()) as Record<string, unknown>)['update'];
+    const read = async (): Promise<unknown> => ((await (await authFetch(`http://127.0.0.1:${port}/health`)).json()) as Record<string, unknown>)['update'];
 
     await expect(read()).resolves.toMatchObject({ state: 'idle' });
     live = status({ state: 'downloading', available: '9.9.10+abc' });

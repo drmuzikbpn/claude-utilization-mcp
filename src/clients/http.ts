@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Even Seal Productions
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { resolveConfigDir } from '../config.js';
+import { configPath, resolveConfigDir } from '../config.js';
 
 export const DAEMON_FILE = 'daemon.json';
 
@@ -68,6 +68,28 @@ export function isPidAlive(pid: number): boolean {
   }
 }
 
+/**
+ * The bearer token straight out of `<configDir>/config.json` — `''` when the file is
+ * missing, unreadable or has none. Never throws and never validates the rest of the file:
+ * the hook and the status line call this on every prompt and must stay silent and cheap
+ * whatever state the config is in (§23.55).
+ *
+ * The file is 0600 in a 0700 directory, so being able to read it *is* the proof that the
+ * caller runs as the daemon's own user — which is the identity the token stands for.
+ */
+export function readAuthToken(configDir: string = resolveConfigDir()): string {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(configPath(configDir), 'utf8'));
+    if (typeof parsed !== 'object' || parsed === null) return '';
+    const auth = (parsed as { auth?: unknown }).auth;
+    if (typeof auth !== 'object' || auth === null) return '';
+    const token = (auth as { token?: unknown }).token;
+    return typeof token === 'string' ? token : '';
+  } catch {
+    return '';
+  }
+}
+
 export interface FetchResponseLike {
   ok: boolean;
   status: number;
@@ -83,6 +105,11 @@ export interface DaemonClientOptions {
   configDir?: string;
   /** Skips `daemon.json` discovery (tests, and callers that already know the port). */
   baseUrl?: string;
+  /**
+   * The bearer. Omitted ⇒ read from `<configDir>/config.json` on each request (§23.55) —
+   * but only for a daemon found through that directory, or when `configDir` was given: the
+   * token is never volunteered to a bare `baseUrl` the caller made up.
+   */
   token?: string;
   timeoutMs?: number;
   fetchImpl?: ClientFetch;
@@ -90,15 +117,20 @@ export interface DaemonClientOptions {
 
 export const DEFAULT_CLIENT_TIMEOUT_MS = 2_000;
 
-/** Thin HTTP client for the local daemon; discovers the port from `daemon.json`. */
+/**
+ * Thin HTTP client for the local daemon; discovers the port from `daemon.json` and the
+ * bearer from `config.json`. Every request carries the token — loopback is not exempt.
+ */
 export class DaemonClient {
   readonly timeoutMs: number;
   private readonly configDir: string;
   private readonly explicitBase: string | undefined;
   private readonly token: string | undefined;
   private readonly fetchImpl: ClientFetch;
+  private readonly readsToken: boolean;
 
   constructor(opts: DaemonClientOptions = {}) {
+    this.readsToken = opts.token === undefined && (opts.baseUrl === undefined || opts.configDir !== undefined);
     this.configDir = opts.configDir ?? resolveConfigDir();
     this.explicitBase = opts.baseUrl;
     this.token = opts.token;
@@ -132,7 +164,8 @@ export class DaemonClient {
   ): Promise<unknown> {
     const url = `${this.baseUrl()}${path}`;
     const headers: Record<string, string> = { accept: 'application/json' };
-    if (this.token !== undefined && this.token.length > 0) headers['authorization'] = `Bearer ${this.token}`;
+    const token = this.token ?? (this.readsToken ? readAuthToken(this.configDir) : '');
+    if (token.length > 0) headers['authorization'] = `Bearer ${token}`;
     if (body !== undefined) headers['content-type'] = 'application/json';
 
     const timeoutMs = opts.timeoutMs ?? this.timeoutMs;

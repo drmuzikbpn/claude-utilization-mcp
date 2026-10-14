@@ -222,7 +222,7 @@ describe('POST /v1/pair/code (§23.47)', () => {
 
   it('needs the bearer even from loopback', async () => {
     const { port } = await make();
-    expect((await rawRequest({ port, method: 'POST', path: '/v1/pair/code' })).status).toBe(401);
+    expect((await rawRequest({ port, method: 'POST', path: '/v1/pair/code', auth: false })).status).toBe(401);
   });
 
   it('answers code, expiry, link and the link’s parts — and never the token', async () => {
@@ -323,7 +323,7 @@ describe('POST /v1/pair (§23.47)', () => {
 
   it('the bearer exemption covers /v1/pair only', async () => {
     const { tlsPort } = await make();
-    const res = await rawRequest({ port: tlsPort, tls: true, method: 'POST', path: '/v1/refresh', headers: { host: `127.0.0.1:${tlsPort}` } });
+    const res = await rawRequest({ port: tlsPort, tls: true, method: 'POST', path: '/v1/refresh', headers: { host: `127.0.0.1:${tlsPort}` }, auth: false });
     expect(res.status).toBe(401);
   });
 });

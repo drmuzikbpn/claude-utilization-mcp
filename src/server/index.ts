@@ -18,7 +18,7 @@ import {
 } from './events.js';
 import { sendError, sendJson } from './errors.js';
 import { createUserReader, defaultClaudeJsonPath } from './identity.js';
-import { buildHostPolicy, checkRequest, isLoopbackRequest, isTlsRequest, normalizeAddress, PAIR_REDEEM_PATH, type HostPolicy } from './middleware.js';
+import { buildHostPolicy, checkRequest, HEALTH_PATH, isLoopbackRequest, isTlsRequest, normalizeAddress, PAIR_REDEEM_PATH, requestPath, type HostPolicy } from './middleware.js';
 import { createInstallReader, type InstallPaths } from './install-state.js';
 import { buildPairingLink, createPairingCodes, type PairingCodes } from './pairing.js';
 import { parseTokensQuery } from './query.js';
@@ -39,6 +39,15 @@ export const PAIR_CODE_PATH = '/v1/pair/code';
 
 /** 5 s request timeout (§4). */
 export const REQUEST_TIMEOUT_MS = 5_000;
+/**
+ * §23.58: connection ceilings, per listener. Legitimate load is a handful of dashboards
+ * holding an event stream each plus short-lived hook and CLI requests; these numbers are an
+ * order of magnitude above that and far below what would exhaust file descriptors.
+ */
+export const MAX_CONNECTIONS = 256;
+export const MAX_CONNECTIONS_PER_ADDRESS = 64;
+/** The whole body of a bearer-less `GET /health` (§23.55). */
+export const LIVENESS_BODY: Readonly<{ ok: true }> = Object.freeze({ ok: true });
 
 /** What the server needs from the limits poller. */
 export interface LimitsProvider {
@@ -79,6 +88,12 @@ export interface ServerOptions {
   pairingCodes?: PairingCodes;
   /** §23.48: where to look for our hooks/statusLine/MCP entry; absent ⇒ no `/health.install`. */
   install?: InstallPaths;
+  /** Where the detail of a `500` goes — the response itself never carries it (§23.55). */
+  log?: (line: string) => void;
+  /** Total open connections per listener; `MAX_CONNECTIONS` by default (§23.58). */
+  maxConnections?: number;
+  /** Open connections one remote address may hold per listener; `MAX_CONNECTIONS_PER_ADDRESS`. */
+  maxConnectionsPerAddress?: number;
 }
 
 export interface BoundAddress {
@@ -157,6 +172,9 @@ export function createServer(opts: ServerOptions): UsageServer {
   const version = opts.version ?? getVersion();
   const startedAt = opts.startedAt ?? now();
   const requestTimeoutMs = opts.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+  const logError = opts.log ?? ((line: string) => process.stderr.write(`${line}\n`));
+  const maxConnections = opts.maxConnections ?? MAX_CONNECTIONS;
+  const maxConnectionsPerAddress = opts.maxConnectionsPerAddress ?? MAX_CONNECTIONS_PER_ADDRESS;
   const readUser = createUserReader(opts.claudeJsonPath ?? defaultClaudeJsonPath(), now);
 
   let tokens: TokensSource | null = opts.tokens ?? null;
@@ -284,7 +302,7 @@ export function createServer(opts: ServerOptions): UsageServer {
     sendJson(res, 200, { code, expiresAt, link: buildPairingLink(parts), name: parts.name, addrs: parts.addrs, port: parts.port, fp: parts.fp });
   }
 
-  /** §23.52: has the latest code been used? Loopback only; the answer carries no secret. */
+  /** §23.52: has the latest code been used? Bearer (the gate) and loopback only. */
   function pairingCodeStatus(req: IncomingMessage, res: ServerResponse): void {
     if (!isLoopbackRequest(req)) {
       sendError(res, 403, 'forbidden', 'pairing status is only available on this machine', 'run `claude-usage pair` on the machine running the daemon');
@@ -331,9 +349,10 @@ export function createServer(opts: ServerOptions): UsageServer {
     });
 
     void dispatch(req, res).catch((err: unknown) => {
-      if (!res.writableEnded) {
-        sendError(res, 500, 'internal_error', err instanceof Error ? err.message : 'unhandled error');
-      }
+      // The detail stays on this machine: an exception message can carry a path, a pid or
+      // a fragment of someone else's request (§23.55).
+      logError(`http: ${req.method ?? 'GET'} ${requestPath(req)} failed — ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
+      if (!res.writableEnded) sendError(res, 500, 'internal_error', 'internal error', 'the detail is in the daemon log on that machine');
     });
   }
 
@@ -364,8 +383,9 @@ export function createServer(opts: ServerOptions): UsageServer {
     }
 
     switch (path) {
-      case '/health':
-        sendJson(res, 200, healthBody(snapshotDeps));
+      case HEALTH_PATH:
+        // §23.55: without the bearer this is a liveness probe and nothing else.
+        sendJson(res, 200, gate.authenticated ? healthBody(snapshotDeps) : LIVENESS_BODY);
         return;
       case '/v1/limits':
         sendJson(res, 200, limitsBody(snapshotDeps));
@@ -417,6 +437,24 @@ export function createServer(opts: ServerOptions): UsageServer {
     const server: Server = tls && opts.tls ? createHttpsServer({ key: opts.tls.key, cert: opts.tls.cert }, handle) : createHttpServer(handle);
     server.requestTimeout = requestTimeoutMs;
     server.headersTimeout = requestTimeoutMs;
+    // §23.58: a ceiling on the listener, and a lower one per remote address so a single
+    // peer cannot take every slot. Over either, the socket is closed before any request.
+    server.maxConnections = maxConnections;
+    const perAddress = new Map<string, number>();
+    server.on('connection', (socket) => {
+      const remote = normalizeAddress(socket.remoteAddress) ?? 'unknown';
+      const open = perAddress.get(remote) ?? 0;
+      if (open >= maxConnectionsPerAddress) {
+        socket.destroy();
+        return;
+      }
+      perAddress.set(remote, open + 1);
+      socket.once('close', () => {
+        const left = (perAddress.get(remote) ?? 1) - 1;
+        if (left <= 0) perAddress.delete(remote);
+        else perAddress.set(remote, left);
+      });
+    });
 
     const actual = await new Promise<number>((resolve, reject) => {
       const onError = (err: Error): void => {

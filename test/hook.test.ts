@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Even Seal Productions
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DaemonClient, DaemonUnreachable } from '../src/clients/http.js';
 import {
@@ -334,7 +334,7 @@ describe('runHook failure paths', () => {
       stdin: '{}',
       stdout: (t) => (out += t),
       configDir: join(blocker, 'config'),
-      client: { get: async () => (await new DaemonClient({ baseUrl: `http://127.0.0.1:${d.port}` }).get('/v1/summary')) },
+      client: { get: async () => (await new DaemonClient({ baseUrl: `http://127.0.0.1:${d.port}`, token: 'test-bearer-token' }).get('/v1/summary')) },
       now: () => NOW,
     });
     expect(code).toBe(0);
@@ -454,5 +454,32 @@ describe('SessionStart registration (§23.23)', () => {
       },
     });
     expect(code).toBe(0);
+  });
+});
+
+describe('the hook authenticates itself (§23.55)', () => {
+  const SESSION = '22222222-2222-4222-8222-222222222222';
+  const start = JSON.stringify({ hook_event_name: 'SessionStart', session_id: SESSION, cwd: '/tmp/x', transcript_path: null, source: 'startup' });
+
+  it('registers through the real client using the token in config.json', async () => {
+    const d = await startFakeDaemon({ withSessions: true });
+    daemons.push(d);
+    const code = await runHook({ stdin: start, configDir: d.configDir, gitCommonDir: () => null, ppid: 4242 });
+    expect(code).toBe(0);
+    expect(d.sessions?.registry.get(SESSION)).not.toBeNull();
+  });
+
+  it('exits 0, prints nothing and registers nothing when it cannot read the token', async () => {
+    const d = await startFakeDaemon({ withSessions: true });
+    daemons.push(d);
+    d.setPercents({ session: 96 });
+    rmSync(join(d.configDir, 'config.json'));
+    let out = '';
+    for (const event of ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'SessionEnd']) {
+      const stdin = JSON.stringify({ hook_event_name: event, session_id: SESSION, cwd: '/tmp/x', tool_name: 'Bash' });
+      expect(await runHook({ stdin, stdout: (t) => (out += t), configDir: d.configDir, gitCommonDir: () => null, ppid: 4242 })).toBe(0);
+    }
+    expect(out).toBe('');
+    expect(d.sessions?.registry.all()).toEqual([]);
   });
 });

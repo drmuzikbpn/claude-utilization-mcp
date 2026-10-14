@@ -91,7 +91,7 @@ describe('claude-usage pause / resume', () => {
     const rules = h.subsystem.rules.list();
     expect(rules).toHaveLength(1);
     expect(rules[0]?.reason).toBe('dinner');
-    expect(rules[0]?.createdBy).toBe('dashboard');
+    expect(rules[0]?.createdBy).toBe('cli');
   });
 
   it('passes --hard through', async () => {

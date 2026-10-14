@@ -71,15 +71,16 @@ describe('listen with several addresses', () => {
     }
   });
 
-  it.runIf(HAS_IPV6)('treats the IPv6 loopback as loopback: GET needs no token, POST does', async () => {
+  it.runIf(HAS_IPV6)('the IPv6 loopback needs the token like everything else (§23.55)', async () => {
     const server = make();
     const port = await server.listen(0, ['127.0.0.1', '::1']);
     const headers = { host: `[::1]:${port}` };
 
-    const get = await rawRequest({ port, host: '::1', path: '/v1/limits', headers });
-    expect(get.status).toBe(200);
+    const get = await rawRequest({ port, host: '::1', path: '/v1/limits', headers, auth: false });
+    expect(get.status).toBe(401);
+    expect((await rawRequest({ port, host: '::1', path: '/v1/limits', headers })).status).toBe(200);
 
-    const post = await rawRequest({ port, host: '::1', method: 'POST', path: '/v1/refresh', headers });
+    const post = await rawRequest({ port, host: '::1', method: 'POST', path: '/v1/refresh', headers, auth: false });
     expect(post.status).toBe(401);
 
     const authed = await rawRequest({
@@ -191,16 +192,16 @@ describe('non-loopback authentication (§16)', () => {
     expect(gate.hint).toBe('this device is not paired, or its token was changed — on that machine run `claude-usage pair` and pair again');
   });
 
-  it('keeps the loopback hint for a tokenless mutating request', () => {
+  it('tells a tokenless local caller that this machine needs the token too', () => {
     const gate = checkRequest(fakeReq({ remote: '127.0.0.1', method: 'POST', host: 'localhost:47291' }), policy, TOKEN);
     expect(gate.ok).toBe(false);
     if (gate.ok) return;
     expect(gate.status).toBe(401);
-    expect(gate.hint).toContain('loopback');
+    expect(gate.hint).toContain('from this machine too');
   });
 
   it('accepts the token from the tailnet, on the MagicDNS Host', () => {
     const gate = checkRequest(fakeReq({ host: MAGIC_DNS, authorization: `Bearer ${TOKEN}` }), policy, TOKEN);
-    expect(gate).toEqual({ ok: true, loopback: false });
+    expect(gate).toEqual({ ok: true, loopback: false, authenticated: true });
   });
 });

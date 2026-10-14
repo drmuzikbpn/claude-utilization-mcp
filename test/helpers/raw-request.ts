@@ -20,13 +20,33 @@ export interface RawRequestOptions {
   body?: string;
   /** Speak HTTPS. The daemon's cert is self-signed and pinned, so it is not CA-verified here. */
   tls?: boolean;
+  /**
+   * The bearer. Every request needs one (§23.55), so the test token is sent by default;
+   * `false` sends none — the case under test — and a string sends that token instead.
+   */
+  auth?: false | string;
+}
+
+/** The token `testConfig()` configures. */
+export const TEST_TOKEN = 'test-bearer-token';
+
+/** `fetch` with the test bearer added unless the caller set its own `authorization`. */
+export function authFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  if (!headers.has('authorization')) headers.set('authorization', `Bearer ${TEST_TOKEN}`);
+  return fetch(url, { ...init, headers });
 }
 
 /** Minimal HTTP/1.1 client so tests can set forbidden headers such as `Host`. */
 export function rawRequest(opts: RawRequestOptions): Promise<RawResponse> {
   const method = opts.method ?? 'GET';
   const path = opts.path ?? '/';
-  const headers: Record<string, string> = { host: `127.0.0.1:${opts.port}`, connection: 'close', ...opts.headers };
+  const headers: Record<string, string> = {
+    host: `127.0.0.1:${opts.port}`,
+    connection: 'close',
+    ...(opts.auth === false ? {} : { authorization: `Bearer ${opts.auth ?? TEST_TOKEN}` }),
+    ...opts.headers,
+  };
   if (opts.body !== undefined) headers['content-length'] = String(Buffer.byteLength(opts.body));
   const lines = [`${method} ${path} HTTP/1.1`];
   for (const [k, v] of Object.entries(headers)) lines.push(`${k}: ${v}`);

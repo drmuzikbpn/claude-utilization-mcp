@@ -4,9 +4,8 @@
  * The §18.4 endpoint surface. Registered by `createServer` as one block so the rest of the
  * server file stays untouched; every route's real work lives in `src/sessions` / `src/pause`.
  *
- * Auth: the generic gate in `src/server/middleware.ts` has already run. Mutating requests
- * therefore carry the bearer token — except the three loopback hook endpoints called by
- * `claude-usage hook`, which are exempted there (see `LOOPBACK_HOOK_POSTS`).
+ * Auth: the generic gate in `src/server/middleware.ts` has already run, so every request
+ * that reaches this file carried the bearer token — the hook's own calls included (§23.55).
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -69,12 +68,10 @@ export function createSessionsRouter(api: SessionsApi): SessionsRouter {
   }
 
   /** `POST /v1/pause` and its `/v1/sessions/{id}/pause` sugar share this. */
-  function doPause(
-    res: ServerResponse,
-    body: Record<string, unknown>,
-    scope: string,
-    createdBy: CreatedBy,
-  ): void {
+  function doPause(res: ServerResponse, body: Record<string, unknown>, scope: string): void {
+    // Every caller presents the bearer now, so the Authorization header no longer tells
+    // the CLI from a dashboard (§23.55). The CLI says so itself; the label is advisory.
+    const createdBy: CreatedBy = body['createdBy'] === 'cli' ? 'cli' : 'dashboard';
     const mode = body['mode'] ?? 'soft';
     if (!isPauseMode(mode)) {
       sendError(res, 400, 'bad_request', 'invalid "mode"', 'mode must be "soft" or "hard"');
@@ -102,8 +99,6 @@ export function createSessionsRouter(api: SessionsApi): SessionsRouter {
   ): Promise<boolean> {
     const parts = path.split('/').filter((p) => p.length > 0);
     if (parts[0] !== 'v1') return false;
-    const createdBy: CreatedBy = req.headers.authorization === undefined ? 'cli' : 'dashboard';
-
     // ---- /v1/sessions ------------------------------------------------------
     if (parts[1] === 'sessions') {
       if (parts.length === 2) {
@@ -200,7 +195,7 @@ export function createSessionsRouter(api: SessionsApi): SessionsRouter {
             return true;
           }
           if (action === 'pause') {
-            doPause(res, body, `session:${id}`, createdBy);
+            doPause(res, body, `session:${id}`);
             return true;
           }
           const result = pause.resume(`session:${id}`);
@@ -230,7 +225,7 @@ export function createSessionsRouter(api: SessionsApi): SessionsRouter {
           sendError(res, 400, 'bad_request', '"scope" is required', 'scope must be "all", "project:<path>" or "session:<id>"');
           return true;
         }
-        doPause(res, body, scope, createdBy);
+        doPause(res, body, scope);
         return true;
       }
 

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Even Seal Productions
-import { randomBytes } from 'node:crypto';
 import { DaemonClient } from '../clients/http.js';
-import { loadConfig, resolveConfigDir, saveConfig, type Config } from '../config.js';
+import { generateToken, loadConfig, resolveConfigDir, saveConfig, type Config } from '../config.js';
 import { currentBin, claudeJsonPath, settingsPath } from '../paths.js';
 import { createServiceManager, type ExecRunner, type ServiceManager } from '../service/index.js';
 import type { LaunchdService } from '../service/launchd.js';
@@ -95,10 +94,7 @@ export function asSystemd(service: ServiceManager): SystemdService | null {
   return service.kind === 'systemd' ? (service as SystemdService) : null;
 }
 
-/** 32 random bytes, base64url — the §16 bearer token. */
-export function generateToken(): string {
-  return randomBytes(32).toString('base64url');
-}
+export { generateToken };
 
 /** Load config, minting `auth.token` if it is missing. Never rotates an existing one. */
 export function loadConfigWithToken(configDir: string, mint: () => string = generateToken): { config: Config; minted: boolean } {
