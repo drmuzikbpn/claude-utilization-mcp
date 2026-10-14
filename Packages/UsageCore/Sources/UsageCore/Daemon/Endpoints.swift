@@ -45,7 +45,7 @@ public final class Endpoints: Sendable {
             return s.preferred != url
         }
         if changed {
-            DiagLog.shared.log(.network, "\(url.host() ?? "?") answers")
+            DiagLog.shared.log(.network, "\(DiagLog.host(url.host() ?? "?")) answers")
         }
     }
 
@@ -78,7 +78,10 @@ public final class Endpoints: Sendable {
                     throw CancellationError()
                 }
                 let mapped = DaemonError.from(transport: error)
-                DiagLog.shared.log(.network, "\(base.host() ?? "?") failed: \(DiagLog.describe(error)) → \(mapped.code)")
+                DiagLog.shared.log(
+                    .network,
+                    "\(DiagLog.host(base.host() ?? "?")) failed: \(DiagLog.describe(error)) → \(DiagLog.safeCode(mapped.code))"
+                )
                 switch mapped.code {
                 case "network": sawNetwork = true
                 case "pinning": sawPinning = true

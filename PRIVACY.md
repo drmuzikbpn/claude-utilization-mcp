@@ -11,10 +11,23 @@ Usage Deck collects nothing.
   not shared with the watch, widgets or any other app).
 - **What reaches your watch and widgets:** usage percentages, reset times, project and session
   names and token counts — the same numbers the iPhone shows. Never the access token.
-- **Debug log:** the app keeps a short record of pairing, connection and alert events on your
-  iPhone to help with troubleshooting. It names your paired devices and their addresses, and
-  never holds access tokens or pairing codes. It leaves the iPhone only when you choose
-  Settings › Send debug log, to whoever you send it to; you can clear it there too.
+- **Debug log:** the app keeps a short record (at most 800 lines) of pairing, connection and
+  alert events on your iPhone to help with troubleshooting. It is excluded from device backups
+  and leaves the iPhone only when you choose Settings › Send debug log, to whoever you send it
+  to; you can clear it there too. Exactly what an exported log contains:
+  - the time of each event; the app version, iOS version and how many devices are paired;
+  - when the app entered or left the foreground and when a background refresh ran;
+  - pairing attempts: how many addresses were tried, how many attempts it took, and an error
+    code if it failed;
+  - which address answered or failed, with an error code (never an error's text);
+  - each change in a device's health or pairing state;
+  - each alert's kind and its identifier (a device, session, limit or account id) — never the
+    alert's text, an account name or an e-mail address.
+
+  Device names and addresses are replaced with placeholders (`device-1`, `host-1`) in the copy
+  you send unless you turn off "Hide device names and addresses". The log never contains access
+  tokens, pairing codes, certificate fingerprints, project names, session titles or usage
+  figures.
 - **Camera:** used only to scan a pairing QR code when you choose to; no image is stored.
 - **Local network:** used only to reach the devices you pair.
 

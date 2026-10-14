@@ -32,9 +32,18 @@ enum AppGraph {
     }
 
     static func boot() {
-        if let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+        if let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            // Logs written before names and addresses were marked (and alert text left out) are
+            // not carried over: that file is deleted, and the diary starts again in a new one.
+            try? FileManager.default.removeItem(at: support.appending(path: "diagnostics.log"))
+            // Its own folder, kept out of device backups (the file itself is rewritten atomically,
+            // which would drop the flag from it).
+            var folder = support.appending(path: "Logs", directoryHint: .isDirectory)
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            DiagLog.shared.attach(file: folder.appending(path: "diagnostics.log"))
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try? folder.setResourceValues(values)
+            DiagLog.shared.attach(file: folder.appending(path: "debug.log"))
         }
         let info = Bundle.main.infoDictionary
         DiagLog.shared.log(

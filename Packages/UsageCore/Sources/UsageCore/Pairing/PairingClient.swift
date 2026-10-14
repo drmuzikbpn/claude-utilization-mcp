@@ -60,7 +60,7 @@ public struct PairingClient: Sendable {
     ) async throws -> DeviceConfig {
         var spent: TimeInterval = 0
         var attempt = 1
-        DiagLog.shared.log(.pairing, "redeeming for \(invite.name), \(invite.addrs.count) address(es)")
+        DiagLog.shared.log(.pairing, "redeeming for \(DiagLog.name(invite.name)), \(invite.addrs.count) address(es)")
         while true {
             let began = patience.now()
             do {

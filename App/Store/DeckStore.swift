@@ -418,7 +418,7 @@ final class DeckStore {
         let raised = ledger.admit(admitted) + repairLedger.review(next, now: at)
         guard !raised.isEmpty else { return }
         for alert in raised {
-            DiagLog.shared.log(.alerts, "\(alert.kind.rawValue) raised: \(alert.body)")
+            DiagLog.shared.log(.alerts, "\(alert.kind.rawValue) raised: \(DiagLog.safeKey(alert.key))")
         }
         let quiet = settings.isQuiet(at: at)
         for alert in raised {
@@ -438,7 +438,7 @@ final class DeckStore {
             let repair = device.repairReason.map { ", needs re-pair (\($0))" } ?? ""
             DiagLog.shared.log(
                 .device,
-                "\(device.displayName) \(was.map { "\($0.health)" } ?? "new") → \(device.health), last heard \(age)\(repair)"
+                "\(DiagLog.name(device.displayName)) \(was.map { "\($0.health)" } ?? "new") → \(device.health), last heard \(age)\(repair)"
                     + (isForeground ? "" : ", app in background")
             )
         }
@@ -629,7 +629,7 @@ final class DeckStore {
                 startBootstrap(attempt)
                 armConnectTimer()
             }
-            DiagLog.shared.log(.pairing, "paired \(record.name)\(reuse == nil ? "" : " (replacing its old record)")")
+            DiagLog.shared.log(.pairing, "paired \(DiagLog.name(record.name))\(reuse == nil ? "" : " (replacing its old record)")")
         } catch {
             DiagLog.shared.log(.pairing, "failed: \(DiagLog.describe(DaemonError.from(transport: error)))")
             pairing.failed(DaemonError.from(transport: error).displayText)

@@ -9,6 +9,8 @@ import UsageCore
 struct SettingsScreen: View {
     @Bindable var store: DeckStore
     @State private var renaming: UserView?
+    /// Sending the debug log leaves device names and addresses out unless this is turned off.
+    @State private var redactLog = true
 
     var body: some View {
         List {
@@ -109,8 +111,9 @@ struct SettingsScreen: View {
             .listRowBackground(DeckColor.surface)
 
             Section {
+                Toggle("Hide device names and addresses", isOn: $redactLog)
                 ShareLink(
-                    item: DiagLog.shared.text,
+                    item: DiagLog.shared.export(redacting: redactLog),
                     subject: Text("Usage Deck debug log"),
                     preview: SharePreview("Usage Deck debug log")
                 ) {
@@ -122,8 +125,11 @@ struct SettingsScreen: View {
                 Text("Troubleshooting")
             } footer: {
                 Text(
-                    "A short record of pairing, connection and alert events, kept on this iPhone until you send it. "
-                        + "It names your devices and their addresses; it never holds access tokens or pairing codes."
+                    "A short record of pairing, connection and alert events, kept on this iPhone until you send it: times, "
+                        + "error codes, the kind of each alert, and your devices' names and addresses. The copy you send "
+                        + "replaces those names and addresses with placeholders (device-1, host-1) unless you turn that off. "
+                        + "It never holds access tokens, pairing codes, certificate fingerprints, account names, "
+                        + "project names or the text of an alert."
                 )
             }
             .listRowBackground(DeckColor.surface)
