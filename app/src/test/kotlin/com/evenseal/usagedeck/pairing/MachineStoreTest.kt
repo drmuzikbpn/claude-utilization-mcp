@@ -132,6 +132,19 @@ class MachineStoreTest {
         assertFalse(prefs.getString("machines", "")!!.contains("old-bearer"))
     }
 
+    @Test
+    fun `an unreadable store is dropped without its contents reaching the log`() {
+        val prefs = context.getSharedPreferences("corrupt-rows", Context.MODE_PRIVATE)
+        prefs.edit().putString("machines", """[{"id":"m1","name":"mbp","token":"leaky-bearer-value",""").commit()
+
+        assertTrue(MachineStore(prefs).machines.value.isEmpty())
+
+        val logged = org.robolectric.shadows.ShadowLog.getLogs()
+            .joinToString("\n") { "${it.msg} ${it.throwable?.let(android.util.Log::getStackTraceString).orEmpty()}" }
+        assertTrue(logged.contains("unreadable machine store"))
+        assertFalse(logged.contains("leaky-bearer-value"))
+    }
+
     private val invite = PairingInvite("studio-new", pinned.addrs, 47292, "c".repeat(64), "AbCdEfGhIjKlMnOpQrSt_-")
 
     @Test

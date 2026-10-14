@@ -118,7 +118,9 @@ class MachineStore(private val prefs: SharedPreferences) {
     private fun load(): List<MachineConfig> {
         val raw = prefs.getString(KEY_MACHINES, null) ?: return emptyList()
         val stored = runCatching { json.decodeFromString(listSerializer, raw) }
-            .onFailure { Log.w(TAG, "dropping unreadable machine store", it) }
+            // Only the kind of failure: a parser's message quotes the text it choked on, and
+            // that text is a list of bearer tokens.
+            .onFailure { Log.w(TAG, "dropping unreadable machine store (${it.javaClass.simpleName})") }
             .getOrDefault(emptyList())
         // A retired row keeps its place and its name, never its bearer: that token was only ever
         // good for plain HTTP, which the deck no longer speaks.

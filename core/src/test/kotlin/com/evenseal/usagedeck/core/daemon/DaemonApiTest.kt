@@ -52,6 +52,17 @@ class DaemonApiTest {
     }
 
     @Test
+    fun `a redirect is an error, never followed with the bearer`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", server.url("/elsewhere")))
+        server.enqueue(MockResponse().setBody(fixture("health.json")))
+
+        val e = assertThrows(DaemonException::class.java) { runBlocking { api.health() } }
+
+        assertEquals("http_302", e.code)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
     fun `a reply that is not the expected json is bad_response, not a crash`() = runTest {
         server.enqueue(MockResponse().setBody("<html>captive portal</html>"))
         val e = assertThrows(DaemonException::class.java) { runBlocking { api.summary() } }

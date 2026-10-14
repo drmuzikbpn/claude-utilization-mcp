@@ -33,12 +33,18 @@ object PinnedTls {
      */
     val TLS_ONLY: List<ConnectionSpec> = listOf(ConnectionSpec.MODERN_TLS)
 
-    /** [base] with its TLS trust replaced by the pin on [fp], and no cleartext fallback. */
+    /**
+     * [base] with its TLS trust replaced by the pin on [fp], no cleartext fallback, and no
+     * redirects: a daemon never sends one, and following one would carry the request — bearer
+     * and all — wherever the reply pointed.
+     */
     fun client(base: OkHttpClient, fp: String): OkHttpClient {
         val trust = PinnedTrustManager(fp)
         val context = SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), null) }
         return base.newBuilder()
             .connectionSpecs(TLS_ONLY)
+            .followRedirects(false)
+            .followSslRedirects(false)
             .sslSocketFactory(context.socketFactory, trust)
             .hostnameVerifier { _, _ -> true }
             .build()
