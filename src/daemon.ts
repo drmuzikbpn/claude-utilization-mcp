@@ -5,7 +5,7 @@ import { createTokenReader } from './credentials/index.js';
 import { EventBus } from './events/bus.js';
 import { LimitsPoller, effectivePollIntervalMs } from './limits/poller.js';
 import { effectiveTlsPort, ensureConfigDir, expandHome, generateToken, loadConfig, resolveConfigDir, saveConfig, writeJsonFile, type Config } from './config.js';
-import { daemonFilePath } from './clients/http.js';
+import { daemonFilePath, readAuthToken } from './clients/http.js';
 import { bindWants, LAN_KEYWORD, resolveBindAddresses, TAILSCALE_KEYWORD } from './net/bind.js';
 import { resolveLanIPv4, resolveLocalHostName } from './net/lan.js';
 import { resolveMagicDnsName, resolveTailscaleIPv4 } from './net/tailscale.js';
@@ -55,11 +55,32 @@ export const TAILNET_RETRY_MAX_MS = 600_000;
 export const LAN_WATCH_MS = 30_000;
 
 /**
- * §23.45: which bound addresses also get an HTTPS listener — every non-loopback one, and
- * loopback too only when `tls.loopback` asks (tests and the iOS contract job).
+ * §23.45: which addresses get an HTTPS listener — every non-loopback one, and loopback too
+ * only when `tls.loopback` asks (tests and the iOS contract job).
  */
 export function wantsTls(host: string, loopback: boolean): boolean {
   return loopback || !isLoopbackAddress(host);
+}
+
+/**
+ * §23.57: which addresses get a plain-HTTP listener — loopback, and nothing else. Anything
+ * that leaves this machine is HTTPS with the pinned certificate or it is not served at all.
+ */
+export function wantsHttp(host: string): boolean {
+  return isLoopbackAddress(host);
+}
+
+/** The loopback address the local clients (hook, CLI, MCP server) always use. */
+export const LOCAL_HTTP_ADDRESS = '127.0.0.1';
+
+/**
+ * §23.57: the listeners for a resolved `bind` list. `127.0.0.1` is always first and always
+ * plain HTTP, because every local client talks to it whatever `bind` says.
+ */
+export function planListeners(addresses: readonly string[], tlsLoopback: boolean): { http: string[]; tls: string[] } {
+  const http = [LOCAL_HTTP_ADDRESS, ...addresses.filter((a) => wantsHttp(a) && a !== LOCAL_HTTP_ADDRESS)];
+  const all = [...http, ...addresses.filter((a) => !wantsHttp(a))];
+  return { http, tls: all.filter((a) => wantsTls(a, tlsLoopback)) };
 }
 
 export function defaultNetworkResolver(): NetworkResolver {
@@ -251,8 +272,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   const keywordsBound = (): boolean =>
     wantedKeywords.every((k) => {
       const a = keywordAddress.get(k) ?? null;
-      if (a === null || !boundHosts.includes(a)) return false;
-      return tlsIdentity === null || !wantsTls(a, tlsLoopback) || tlsHosts.has(a);
+      if (a === null) return false;
+      // §23.57: a non-loopback address is served over HTTPS or not at all.
+      if (wantsHttp(a) && !boundHosts.includes(a)) return false;
+      return !wantsTls(a, tlsLoopback) || tlsHosts.has(a);
     });
   const resolveTailscale = async (): Promise<string | null> => {
     const a = await network.tailscaleIPv4();
@@ -264,7 +287,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     keywordAddress.set(LAN_KEYWORD, a);
     return a;
   };
-  const resolvers = { resolveTailscale, resolveLan, log };
+  const resolvers = { resolveTailscale, resolveLan, log, allowPublicBind: config.allowPublicBind };
   const addresses = await resolveBindAddresses(config.bind, resolvers);
   let magicDnsName = wantsTailnet ? await network.magicDnsName() : null;
   if (magicDnsName !== null) debug(`net: MagicDNS name ${magicDnsName}`);
@@ -361,7 +384,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   }
   // The first address decides the port and is fatal if it cannot be bound; every further
   // address is best-effort, because a tailnet that is down must not stop the daemon (§16).
-  const [primary, ...secondary] = addresses as [string, ...string[]];
+  // §23.57: plain HTTP is for loopback only; the rest of `bind` is reached over HTTPS below.
+  const plan = planListeners(addresses, tlsLoopback);
+  /** Non-loopback addresses we are asked to serve; each has an HTTPS listener or nothing. */
+  const remoteHosts: string[] = addresses.filter((a) => !wantsHttp(a));
+  if (remoteHosts.length > 0 && tlsIdentity === null) {
+    log(`net: not listening on ${remoteHosts.join(', ')} — there is no TLS identity, and plain HTTP never leaves this machine`);
+  }
+  const [primary, ...secondary] = plan.http as [string, ...string[]];
   let bound: number;
   try {
     bound = await server.listen(port, [primary]);
@@ -400,7 +430,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
       logBindFailure(host, target, err, 'https');
     }
   }
-  for (const host of boundHosts) await bindTls(host);
+  for (const host of [...boundHosts, ...remoteHosts]) await bindTls(host);
 
   const startedAtIso = new Date().toISOString();
   let recordedTlsPort: number | null = server.tlsPort;
@@ -450,7 +480,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   /**
    * `SIGHUP` (§16): the keyword addresses and Host names can appear, change or vanish while
    * the daemon runs. Re-resolve them, bind whatever is newly available, drop what is gone —
-   * and never let any of it be fatal. `config.json` itself is not re-read. Runs are
+   * and never let any of it be fatal. Of `config.json`, only `auth.token` is re-read
+   * (§23.58). Runs are
    * serialised: SIGHUP, the §23.21 retry and the §23.44 interface watch can all ask at once.
    */
   let reloading: Promise<void> = Promise.resolve();
@@ -458,8 +489,21 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     reloading = reloading.then(reloadOnce, reloadOnce);
     return reloading;
   }
+  /**
+   * §23.58: `configure rotate-token` writes the new token and signals us. Until this runs
+   * the old token keeps working, so it is the first thing a reload does — and every open
+   * event stream was authenticated with the old one, so they are all dropped.
+   */
+  function adoptToken(): void {
+    const onDisk = readAuthToken(configDir);
+    if (onDisk.length === 0 || onDisk === config.auth.token) return;
+    config.auth = { ...config.auth, token: onDisk };
+    server.events.close();
+    log('auth: bearer token re-read from config.json — devices paired with the old one must pair again');
+  }
   async function reloadOnce(): Promise<void> {
     if (stopped) return;
+    adoptToken();
     let next: string[];
     try {
       next = await resolveBindAddresses(config.bind, resolvers);
@@ -472,6 +516,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
 
     for (const host of next) {
       if (stopped) return;
+      // §23.57: only loopback gets plain HTTP.
+      if (!wantsHttp(host)) {
+        if (!remoteHosts.includes(host)) remoteHosts.push(host);
+        continue;
+      }
       if (boundHosts.includes(host)) continue;
       try {
         await server.bind(host, bound);
@@ -484,17 +533,31 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     }
 
     for (const host of [...boundHosts]) {
-      if (next.includes(host)) continue;
+      // The local clients' address stays whatever `bind` resolves to.
+      if (next.includes(host) || host === LOCAL_HTTP_ADDRESS) continue;
       await server.unbind(host);
       boundHosts.splice(boundHosts.indexOf(host), 1);
       tlsHosts.delete(host);
       log(`http: stopped listening on ${host}:${bound}`);
     }
+    for (const host of [...remoteHosts]) {
+      if (next.includes(host)) continue;
+      remoteHosts.splice(remoteHosts.indexOf(host), 1);
+      if (!tlsHosts.has(host)) continue;
+      await server.unbind(host);
+      tlsHosts.delete(host);
+      log(`https: stopped listening on ${host}`);
+    }
 
-    // HTTPS follows HTTP: new hosts get one, and an earlier failure gets another try.
-    for (const host of [...boundHosts]) {
+    // New hosts get their HTTPS listener, and an earlier failure gets another try.
+    for (const host of [...boundHosts, ...remoteHosts]) {
       if (stopped) return;
+      const had = tlsHosts.has(host);
       await bindTls(host);
+      if (!had && tlsHosts.has(host)) {
+        reportedBindFailures.clear();
+        if (!wantsHttp(host)) log(`https: now also listening on ${host}:${String(server.tlsPort)}`);
+      }
     }
     if (stopped) return;
     if (server.tlsPort !== recordedTlsPort) writeDaemonFile();
@@ -617,7 +680,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     sessions,
     updater,
     get addresses() {
-      return boundHosts;
+      // Loopback (HTTP) first, then whatever is being served over HTTPS only (§23.57).
+      return [...boundHosts, ...remoteHosts.filter((h) => tlsHosts.has(h))];
     },
     get magicDnsName() {
       return magicDnsName;
@@ -670,9 +734,9 @@ export async function serve(opts: DaemonOptions = {}): Promise<number> {
     return 1;
   }
 
-  for (const address of h.addresses) {
-    const host = address.includes(':') ? `[${address}]` : address;
-    log(`claude-usage ${h.config.name} listening on http://${host}:${h.port}`);
+  for (const listener of h.server.listeners.filter((l) => !l.tls)) {
+    const host = listener.addr.includes(':') ? `[${listener.addr}]` : listener.addr;
+    log(`claude-usage ${h.config.name} listening on http://${host}:${listener.port}`);
   }
   for (const listener of h.server.listeners.filter((l) => l.tls)) {
     const host = listener.addr.includes(':') ? `[${listener.addr}]` : listener.addr;

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Even Seal Productions
-import { isIP } from 'node:net';
-import { networkInterfaces } from 'node:os';
-import { ConfigError, loadConfig, validateConfig, type Config } from '../config.js';
-import { buildUnit, defaultExec, type ExecRunner } from '../service/index.js';
+import { DaemonClient, isPidAlive, readDaemonInfo } from '../clients/http.js';
+import { ConfigError, validateConfig, type Config } from '../config.js';
+import { buildUnit } from '../service/index.js';
 import { addMcpServer, removeMcpServer } from './claude-json.js';
 import {
   generateToken,
@@ -25,96 +24,13 @@ function isToggle(v: string): v is Toggle {
   return (TOGGLES as readonly string[]).includes(v);
 }
 
-/** `100.64.0.0/10` — the CGNAT range Tailscale hands out (§16). */
-export function isTailscaleIPv4(addr: string): boolean {
-  const parts = addr.split('.');
-  if (parts.length !== 4) return false;
-  const a = Number(parts[0]);
-  const b = Number(parts[1]);
-  return a === 100 && b >= 64 && b <= 127;
-}
-
-/** First IPv4 in the tailnet range across all interfaces, or `null`. */
-export function firstTailscaleIPv4(interfaces = networkInterfaces()): string | null {
-  for (const addrs of Object.values(interfaces)) {
-    for (const a of addrs ?? []) {
-      if (a.family === 'IPv4' && isTailscaleIPv4(a.address)) return a.address;
-    }
-  }
-  return null;
-}
-
-export interface PairingAddr {
-  addr: string;
-  warning: string | null;
-}
-
-/** Interface scan → `tailscale ip -4` → loopback with a warning (§16). */
-export async function resolvePairingAddr(opts: { exec?: ExecRunner; interfaces?: ReturnType<typeof networkInterfaces> } = {}): Promise<PairingAddr> {
-  const direct = firstTailscaleIPv4(opts.interfaces ?? networkInterfaces());
-  if (direct !== null) return { addr: direct, warning: null };
-
-  const exec = opts.exec ?? defaultExec;
-  const result = await exec('tailscale', ['ip', '-4']);
-  const line = result.stdout.split('\n')[0]?.trim() ?? '';
-  if (result.code === 0 && isTailscaleIPv4(line)) return { addr: line, warning: null };
-
-  return {
-    addr: '127.0.0.1',
-    warning: 'no Tailscale address found — pairing will only work from this machine',
-  };
-}
-
-export interface PairingPayload {
-  v: 1;
-  name: string;
-  addr: string;
-  port: number;
-  token: string;
-}
-
-/** The QR renderer is CLI-only and imported lazily — the daemon never loads it. */
-async function renderQr(text: string): Promise<string> {
-  const mod = await import('qrcode-terminal');
-  // `generate` reads `this.error` for the error-correction level, so it must be
-  // called as a method — detaching it yields "errorCorrectLevel: undefined".
-  const qrcode = (mod as unknown as { default?: typeof mod }).default ?? mod;
-  if (typeof qrcode.generate !== 'function') return '';
-  return new Promise<string>((resolve) => {
-    qrcode.generate(text, { small: true }, (qr: string) => {
-      resolve(qr);
-    });
-  });
-}
-
-export async function runPairing(io: InstallIO, ctx: ResolvedContext, json: boolean, addrOverride: string | null = null): Promise<number> {
-  const config = loadConfig(ctx.configDir);
-  if (config.auth.token.length === 0) {
-    io.stderr('claude-usage: no bearer token yet — run `claude-usage install` or `configure rotate-token`\n');
-    return 1;
-  }
-  const resolved = addrOverride === null ? await resolvePairingAddr(ctx.exec === undefined ? {} : { exec: ctx.exec }) : { addr: addrOverride, warning: null };
-  const { addr, warning } = resolved;
-  const payload: PairingPayload = { v: 1, name: config.name, addr, port: config.port, token: config.auth.token };
-  const text = JSON.stringify(payload);
-  io.stdout(`${text}\n`);
-  if (!json) {
-    const qr = await renderQr(text);
-    if (qr.length > 0) io.stdout(`${qr}\n`);
-  }
-  if (warning !== null) io.stderr(`warning: ${warning}\n`);
-  return 0;
-}
-
-function flagString(argv: readonly string[], name: string): string | null {
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i];
-    if (arg === undefined) continue;
-    if (arg === name) return argv[i + 1] ?? null;
-    if (arg.startsWith(`${name}=`)) return arg.slice(name.length + 1);
-  }
-  return null;
-}
+/**
+ * What `configure pairing` says now (§23.57). It used to print a QR code carrying the
+ * bearer token itself, to be scanned over plain HTTP; both halves of that are gone.
+ */
+export const PAIRING_REMOVED =
+  'claude-usage: `configure pairing` has been removed — it put the bearer token in a QR code.\n' +
+  '  Run `claude-usage pair` instead: a one-time, five-minute code over pinned HTTPS.\n';
 
 function flagNumber(argv: readonly string[], name: string): number | null {
   for (let i = 0; i < argv.length; i += 1) {
@@ -129,6 +45,41 @@ function flagNumber(argv: readonly string[], name: string): number | null {
     return n;
   }
   return null;
+}
+
+export type AdoptOutcome = { state: 'no-daemon' } | { state: 'adopted'; pid: number } | { state: 'failed'; pid: number; why: string };
+
+/** How long a signalled daemon is given to start answering to the new token. */
+export const ADOPT_TIMEOUT_MS = 3_000;
+
+/**
+ * §23.58: make a running, unsupervised daemon take the token that was just written.
+ * `SIGHUP` asks it to re-read `auth.token`; the proof that it did is that it now answers a
+ * request carrying the new token — which is exactly what `DaemonClient` sends.
+ */
+export async function adoptRotatedToken(
+  configDir: string,
+  deps: { kill?: (pid: number, signal: NodeJS.Signals) => void; timeoutMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<AdoptOutcome> {
+  const info = readDaemonInfo(configDir);
+  if (info === null || !isPidAlive(info.pid)) return { state: 'no-daemon' };
+  try {
+    (deps.kill ?? ((pid, signal) => process.kill(pid, signal)))(info.pid, 'SIGHUP');
+  } catch (err) {
+    return { state: 'failed', pid: info.pid, why: `it could not be signalled (${(err as NodeJS.ErrnoException).code ?? 'error'})` };
+  }
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const deadline = Date.now() + (deps.timeoutMs ?? ADOPT_TIMEOUT_MS);
+  const client = new DaemonClient({ configDir, timeoutMs: 1_000 });
+  for (;;) {
+    try {
+      await client.get('/v1/config');
+      return { state: 'adopted', pid: info.pid };
+    } catch {
+      if (Date.now() >= deadline) return { state: 'failed', pid: info.pid, why: 'it did not answer to the new token' };
+      await sleep(100);
+    }
+  }
 }
 
 /** Turn one integration on or off, doing exactly what install did / undoing it. */
@@ -251,18 +202,15 @@ export async function runConfigure(argv: readonly string[], io: InstallIO): Prom
 
   try {
     if (sub === 'pairing') {
-      const addrOverride = flagString(rest, '--addr');
-      if (addrOverride !== null && isIP(addrOverride) === 0) {
-        io.stderr(`claude-usage: --addr must be an IP literal, got "${addrOverride}"\n`);
-        return 1;
-      }
-      return await runPairing(io, ctx, rest.includes('--json'), addrOverride);
+      io.stderr(PAIRING_REMOVED);
+      return 1;
     }
 
     const { config } = loadConfigWithToken(ctx.configDir, io.randomToken);
     const changes: string[] = [];
     /** Restart the service once the new config is on disk — never before (§23.44). */
     let restart = false;
+    let rotated = false;
     const bindBefore = JSON.stringify(config.bind);
 
     if (sub === undefined) {
@@ -310,13 +258,14 @@ export async function runConfigure(argv: readonly string[], io: InstallIO): Prom
     } else if (sub === 'rotate-token') {
       config.auth = { ...config.auth, token: (io.randomToken ?? generateToken)() };
       changes.push('bearer token rotated — re-pair every device: claude-usage pair');
-      // The daemon holds the token in memory; without a restart the old one keeps working.
+      // The daemon holds the token in memory; until it re-reads it the old one keeps working.
       restart = true;
+      rotated = true;
     } else {
       io.stderr(`claude-usage configure: unknown setting "${sub}"\n`);
       io.stderr('  configure [service|hook|mcp|statusline|autoupdate|lan] <on|off>\n');
       io.stderr('  configure thresholds --warn N --critical N\n');
-      io.stderr('  configure port N | rotate-token | pairing [--json] [--addr <ip>]\n');
+      io.stderr('  configure port N | rotate-token\n');
       return 1;
     }
 
@@ -336,6 +285,20 @@ export async function runConfigure(argv: readonly string[], io: InstallIO): Prom
     if (restart && config.integrations.service) await ctx.service.restart();
     if (changes.length === 0) io.stdout('no changes\n');
     for (const change of changes) io.stdout(`${change}\n`);
+    // §23.58: a daemon nobody supervises — `claude-usage serve` in a terminal — was not
+    // restarted above. Tell it to re-read the token, and say so plainly if that fails.
+    if (rotated && !config.integrations.service) {
+      const outcome = await (io.adoptToken ?? adoptRotatedToken)(ctx.configDir);
+      if (outcome.state === 'adopted') {
+        io.stdout(`the running daemon (pid ${String(outcome.pid)}) has taken the new token\n`);
+      } else if (outcome.state === 'failed') {
+        io.stderr(
+          `claude-usage: the running daemon (pid ${String(outcome.pid)}) is STILL ACCEPTING THE OLD TOKEN — ${outcome.why}.\n` +
+            '  Stop it and start it again; until then the old token works.\n',
+        );
+        return 1;
+      }
+    }
     return 0;
   } catch (err) {
     if (err instanceof InstallError) {

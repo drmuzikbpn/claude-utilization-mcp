@@ -7,7 +7,7 @@ import { defaultExec, type ExecRunner } from '../service/index.js';
 /**
  * A version directory is a copy of the package *without* `node_modules` (the checkout
  * copy skips it; the release tarball never had it). The daemon is stdlib-only, but the
- * `mcp` and `configure pairing` subcommands lazily import real dependencies, so every
+ * `mcp` and `pair` subcommands lazily import real dependencies, so every
  * version directory needs its production `node_modules` before it becomes `current`.
  */
 export const RUNTIME_DEP_SENTINEL = join('node_modules', '@modelcontextprotocol', 'sdk', 'package.json');

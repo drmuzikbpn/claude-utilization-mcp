@@ -5,12 +5,9 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'nod
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInstall } from '../../src/install/apply.js';
-import {
-  firstTailscaleIPv4,
-  isTailscaleIPv4,
-  resolvePairingAddr,
-  runConfigure,
-} from '../../src/install/configure.js';
+import { defaultConfig, saveConfig } from '../../src/config.js';
+import { startDaemon, type DaemonHandle } from '../../src/daemon.js';
+import { adoptRotatedToken, PAIRING_REMOVED, runConfigure } from '../../src/install/configure.js';
 import type { InstallIO } from '../../src/install/context.js';
 import { MCP_KEY } from '../../src/install/claude-json.js';
 import { hookCommand } from '../../src/install/settings-merge.js';
@@ -314,77 +311,157 @@ describe('interactive menu', () => {
   });
 });
 
-describe('pairing (§16)', () => {
-  it('recognises the 100.64.0.0/10 range', () => {
-    expect(isTailscaleIPv4('100.64.0.1')).toBe(true);
-    expect(isTailscaleIPv4('100.127.255.254')).toBe(true);
-    expect(isTailscaleIPv4('100.63.0.1')).toBe(false);
-    expect(isTailscaleIPv4('100.128.0.1')).toBe(false);
-    expect(isTailscaleIPv4('192.168.1.5')).toBe(false);
-    expect(isTailscaleIPv4('not-an-ip')).toBe(false);
-  });
+describe('`configure pairing` is gone (§23.57)', () => {
+  it.each([[['pairing']], [['pairing', '--json']], [['pairing', '--json', '--addr', '192.0.2.42']]])(
+    '%j prints nothing on stdout, points at `claude-usage pair`, and exits 1',
+    async (argv) => {
+      const b = bed();
+      await runInstall(['--yes'], b.io);
+      b.out = '';
+      b.err = '';
+      expect(await b.configure(argv)).toBe(1);
+      expect(b.out).toBe('');
+      expect(b.err).toBe(PAIRING_REMOVED);
+      expect(b.err).toContain('claude-usage pair');
+      // The whole point: the bearer never reaches a terminal or a QR code again.
+      expect(b.out + b.err).not.toContain('first-token');
+      expect(existsSync(join(b.configDir, 'pairing.json'))).toBe(false);
+    },
+  );
 
-  it('picks the first tailnet IPv4 from the interface list', () => {
-    const ifaces = {
-      lo0: [{ address: '127.0.0.1', family: 'IPv4' as const, internal: true, netmask: '', mac: '', cidr: null }],
-      en0: [{ address: '192.168.1.5', family: 'IPv4' as const, internal: false, netmask: '', mac: '', cidr: null }],
-      tailscale0: [{ address: '100.101.102.103', family: 'IPv4' as const, internal: false, netmask: '', mac: '', cidr: null }],
-    };
-    expect(firstTailscaleIPv4(ifaces)).toBe('100.101.102.103');
-    expect(firstTailscaleIPv4({ lo0: ifaces.lo0 })).toBeNull();
+  it('is no longer offered by the usage text', async () => {
+    const b = bed();
+    await b.configure(['frobnicate']);
+    expect(b.err).not.toContain('pairing');
   });
+});
 
-  it('falls back to `tailscale ip -4`, then to loopback with a warning', async () => {
-    const viaCli = await resolvePairingAddr({
-      interfaces: {},
-      exec: fakeExec(() => ({ stdout: '100.70.1.2\n' })).runner,
+describe('rotate-token reaches a daemon nobody supervises (§23.58)', () => {
+  async function rotate(b: Bed, adopt: NonNullable<InstallIO['adoptToken']>): Promise<number> {
+    await b.configure(['service', 'off']);
+    b.out = '';
+    b.io.randomToken = () => 'rotated-token';
+    b.io.adoptToken = adopt;
+    return b.configure(['rotate-token']);
+  }
+
+  it('signals the running daemon and says it took the new token', async () => {
+    const b = bed();
+    const dirs: string[] = [];
+    const code = await rotate(b, async (dir) => {
+      dirs.push(dir);
+      // The new token is on disk before the daemon is asked to read it.
+      expect((config(b) as unknown as { auth: { token: string } }).auth.token).toBe('rotated-token');
+      return { state: 'adopted', pid: 4242 };
     });
-    expect(viaCli).toEqual({ addr: '100.70.1.2', warning: null });
-
-    const none = await resolvePairingAddr({ interfaces: {}, exec: fakeExec(() => ({ code: 127 })).runner });
-    expect(none.addr).toBe('127.0.0.1');
-    expect(none.warning).toContain('no Tailscale address');
+    expect(code).toBe(0);
+    expect(dirs).toEqual([b.configDir]);
+    expect(b.out).toContain('pid 4242');
+    expect(b.out).toContain('taken the new token');
+    expect(b.service.calls).not.toContain('restart');
   });
 
-  it('--json prints exactly { v, name, addr, port, token } and no QR', async () => {
+  it('exits non-zero and says plainly that the old token still works when the daemon did not take it', async () => {
     const b = bed();
+    const code = await rotate(b, async () => ({ state: 'failed', pid: 4242, why: 'it did not answer to the new token' }));
+    expect(code).toBe(1);
+    expect(b.err).toContain('STILL ACCEPTING THE OLD TOKEN');
+    expect(b.err).toContain('pid 4242');
+    expect(b.err).toContain('Stop it and start it again');
+    // The new token is saved all the same: the next start uses it.
+    expect((config(b) as unknown as { auth: { token: string } }).auth.token).toBe('rotated-token');
+    expect(b.out + b.err).not.toContain('rotated-token');
+  });
+
+  it('is quiet when no daemon is running', async () => {
+    const b = bed();
+    expect(await rotate(b, async () => ({ state: 'no-daemon' }))).toBe(0);
+    expect(b.err).toBe('');
+  });
+
+  it('leaves a supervised daemon to the service restart', async () => {
+    const b = bed({ settings: 'settings-empty.json' });
     await runInstall(['--yes'], b.io);
-    b.out = '';
-    expect(await b.configure(['pairing', '--json'])).toBe(0);
+    let asked = false;
+    b.io.adoptToken = async () => {
+      asked = true;
+      return { state: 'no-daemon' };
+    };
+    b.service.calls.length = 0;
+    expect(await b.configure(['rotate-token'])).toBe(0);
+    expect(b.service.calls).toEqual(['restart']);
+    expect(asked).toBe(false);
+  });
+});
 
-    const lines = b.out.trim().split('\n');
-    expect(lines).toHaveLength(1);
-    const payload = JSON.parse(lines[0] ?? '') as Record<string, unknown>;
-    expect(Object.keys(payload)).toEqual(['v', 'name', 'addr', 'port', 'token']);
-    expect(payload['v']).toBe(1);
-    expect(payload['port']).toBe(47291);
-    expect(payload['token']).toBe('first-token');
-    expect(typeof payload['addr']).toBe('string');
+describe('adoptRotatedToken against a real daemon (§23.58)', () => {
+  const handles: DaemonHandle[] = [];
+  afterAll(async () => {
+    for (const h of handles.splice(0)) await h.stop();
   });
 
-  it('--addr overrides the resolved address and rejects non-IP values', async () => {
-    const b = bed();
-    await runInstall(['--yes'], b.io);
-    b.out = '';
-    expect(await b.configure(['pairing', '--json', '--addr', '192.168.1.42'])).toBe(0);
-    const payload = JSON.parse(b.out.trim()) as Record<string, unknown>;
-    expect(payload['addr']).toBe('192.168.1.42');
-    expect(await b.configure(['pairing', '--json', '--addr', 'not-an-ip'])).toBe(1);
+  async function daemonWithToken(token: string): Promise<DaemonHandle> {
+    const dir = tempHome().configDir;
+    saveConfig({ ...defaultConfig(), auth: { token } }, dir);
+    const h = await startDaemon({ configDir: dir, port: 0, poll: false, sessions: false, tokens: null, updater: null, log: () => undefined });
+    handles.push(h);
+    return h;
+  }
+  const status = async (h: DaemonHandle, token: string): Promise<number> =>
+    (await fetch(`http://127.0.0.1:${String(h.port)}/v1/config`, { headers: { authorization: `Bearer ${token}` } })).status;
+
+  it('no daemon.json means there is nothing to do', async () => {
+    expect(await adoptRotatedToken(tempHome().configDir)).toEqual({ state: 'no-daemon' });
   });
 
-  it('renders a QR without --json', async () => {
-    const b = bed();
-    await runInstall(['--yes'], b.io);
-    b.out = '';
-    expect(await b.configure(['pairing'])).toBe(0);
-    const lines = b.out.trim().split('\n');
-    expect(lines.length).toBeGreaterThan(5);
-    expect(JSON.parse(lines[0] ?? '')).toMatchObject({ v: 1 });
+  it('after SIGHUP the daemon answers to the new token and refuses the old one', async () => {
+    const h = await daemonWithToken('old-token-old-token');
+    expect(await status(h, 'old-token-old-token')).toBe(200);
+    saveConfig({ ...defaultConfig(), auth: { token: 'new-token-new-token' } }, h.configDir);
+    // Not signalled yet: the daemon still holds the old token in memory.
+    expect(await status(h, 'new-token-new-token')).toBe(401);
+
+    const signals: Array<[number, string]> = [];
+    const outcome = await adoptRotatedToken(h.configDir, {
+      kill: (pid, signal) => {
+        signals.push([pid, signal]);
+        void h.reload(); // what `serve` does on SIGHUP
+      },
+    });
+    expect(signals).toEqual([[process.pid, 'SIGHUP']]);
+    expect(outcome).toEqual({ state: 'adopted', pid: process.pid });
+    expect(await status(h, 'new-token-new-token')).toBe(200);
+    expect(await status(h, 'old-token-old-token')).toBe(401);
   });
 
-  it('refuses before a token exists', async () => {
-    const b = bed();
-    expect(await b.configure(['pairing', '--json'])).toBe(1);
-    expect(b.err).toContain('rotate-token');
+  it('reports failure when the daemon ignores the signal', async () => {
+    const h = await daemonWithToken('old-token-old-token');
+    saveConfig({ ...defaultConfig(), auth: { token: 'new-token-new-token' } }, h.configDir);
+    const outcome = await adoptRotatedToken(h.configDir, { kill: () => undefined, timeoutMs: 150, sleep: async () => undefined });
+    expect(outcome).toMatchObject({ state: 'failed', pid: process.pid });
+    expect(await status(h, 'old-token-old-token')).toBe(200);
+  });
+
+  it('reports failure when the daemon cannot be signalled at all', async () => {
+    const h = await daemonWithToken('old-token-old-token');
+    const outcome = await adoptRotatedToken(h.configDir, {
+      kill: () => {
+        throw Object.assign(new Error('nope'), { code: 'EPERM' });
+      },
+    });
+    expect(outcome).toMatchObject({ state: 'failed', why: expect.stringContaining('EPERM') as string });
+  });
+
+  it('a reload drops the event streams that were opened with the old token', async () => {
+    const h = await daemonWithToken('old-token-old-token');
+    const res = await fetch(`http://127.0.0.1:${String(h.port)}/v1/events`, { headers: { authorization: 'Bearer old-token-old-token' } });
+    expect(res.status).toBe(200);
+    const reader = res.body?.getReader();
+    await reader?.read();
+    expect(h.server.events.clientCount).toBe(1);
+    saveConfig({ ...defaultConfig(), auth: { token: 'new-token-new-token' } }, h.configDir);
+    await h.reload();
+    expect(h.server.events.clientCount).toBe(0);
+    await reader?.cancel().catch(() => undefined);
   });
 });

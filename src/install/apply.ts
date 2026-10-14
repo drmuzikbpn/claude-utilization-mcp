@@ -89,7 +89,7 @@ export async function runInstall(argv: readonly string[], io: InstallIO): Promis
   // §23.44: LAN reachability for the iPhone app. Interactive default yes; `--yes` alone
   // never widens reachability — a scripted install gets it only with `--lan`.
   let lan = flags.lan;
-  if (!lan && interactive && ask !== undefined) lan = await ask('LAN access for the iPhone app?', true);
+  if (!lan && interactive && ask !== undefined) lan = await ask('Let phones on this network reach the daemon? (HTTPS only, pinned certificate; pairing still needs a one-time code)', true);
 
   // 3. Config: mint the bearer token if there is none, record the choices, 0600.
   const { config, minted } = loadConfigWithToken(ctx.configDir, io.randomToken);

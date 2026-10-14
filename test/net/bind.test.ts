@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Even Seal Productions
 import { describe, expect, it } from 'vitest';
 import { ConfigError } from '../../src/config.js';
-import { LAN_KEYWORD, resolveBindAddresses, TAILSCALE_KEYWORD } from '../../src/net/bind.js';
+import { addressScope, isBindAllowed, LAN_KEYWORD, resolveBindAddresses, TAILSCALE_KEYWORD } from '../../src/net/bind.js';
 
 const noTailnet = async (): Promise<string | null> => null;
 const tailnet = async (): Promise<string | null> => '100.101.102.103';
@@ -110,3 +110,86 @@ describe('resolveBindAddresses', () => {
     expect((err as ConfigError).message).toContain('"tailscale"');
   });
 });
+
+describe('addressScope (§23.57)', () => {
+  it.each([
+    ['127.0.0.1', 'loopback'],
+    ['127.8.9.10', 'loopback'],
+    ['::1', 'loopback'],
+    ['0:0:0:0:0:0:0:1', 'loopback'],
+    ['::ffff:127.0.0.1', 'loopback'],
+    ['10.0.0.1', 'private'],
+    ['172.16.0.1', 'private'],
+    ['172.31.255.254', 'private'], // public-check:allow
+    ['192.168.0.1', 'private'],
+    ['fd00::1', 'private'],
+    ['fc00::1', 'private'],
+    ['::ffff:192.168.0.1', 'private'],
+    ['100.64.0.0', 'cgnat'],
+    ['169.254.0.0', 'link-local'],
+    ['fe80::1', 'link-local'],
+    ['fe80::1%en0', 'link-local'],
+    ['0.0.0.0', 'wildcard'],
+    ['::', 'wildcard'],
+    ['0:0:0:0:0:0:0:0', 'wildcard'],
+    ['::ffff:0.0.0.0', 'wildcard'],
+    ['192.0.2.1', 'public'],
+    ['198.51.100.7', 'public'],
+    ['203.0.113.9', 'public'],
+    ['172.15.0.0', 'public'], // public-check:allow
+    ['172.32.0.0', 'public'], // public-check:allow
+    ['192.169.0.0', 'public'], // public-check:allow
+    ['100.63.255.255', 'public'], // public-check:allow
+    ['100.128.0.0', 'public'], // public-check:allow
+    ['2001:db8::1', 'public'],
+    ['::ffff:203.0.113.9', 'public'],
+    ['not-an-address', 'public'],
+    ['', 'public'],
+  ] as const)('%s is %s', (address, scope) => {
+    expect(addressScope(address)).toBe(scope);
+  });
+
+  it('isBindAllowed refuses wildcard and public unless told otherwise', () => {
+    for (const a of ['0.0.0.0', '::', '203.0.113.9', '2001:db8::1']) {
+      expect(isBindAllowed(a, false), a).toBe(false);
+      expect(isBindAllowed(a, true), a).toBe(true);
+    }
+    for (const a of ['127.0.0.1', '::1', '192.168.0.1', '10.0.0.1', 'fd00::1', '100.64.0.0']) expect(isBindAllowed(a, false), a).toBe(true);
+  });
+});
+
+describe('resolveBindAddresses refuses to listen where it should not (§23.57)', () => {
+  it.each(['0.0.0.0', '::', '203.0.113.9', '2001:db8::1', '::ffff:203.0.113.9'])('refuses %s with a ConfigError naming the entry', async (entry) => {
+    const attempt = resolveBindAddresses(['127.0.0.1', entry], { resolveTailscale: noTailnet });
+    await expect(attempt).rejects.toBeInstanceOf(ConfigError);
+    await expect(attempt).rejects.toMatchObject({ key: 'bind[1]' });
+    await expect(attempt).rejects.toThrow(/allowPublicBind/);
+  });
+
+  it('says which of the two it is', async () => {
+    await expect(resolveBindAddresses(['0.0.0.0'], {})).rejects.toThrow(/every interface/);
+    await expect(resolveBindAddresses(['203.0.113.9'], {})).rejects.toThrow(/publicly routable/);
+  });
+
+  it('allows them only with allowPublicBind', async () => {
+    await expect(resolveBindAddresses(['127.0.0.1', '0.0.0.0', '203.0.113.9'], { allowPublicBind: true })).resolves.toEqual(['127.0.0.1', '0.0.0.0', '203.0.113.9']);
+  });
+
+  it.each([
+    [TAILSCALE_KEYWORD, '203.0.113.9'],
+    [TAILSCALE_KEYWORD, '0.0.0.0'],
+    [LAN_KEYWORD, '198.51.100.7'],
+    [LAN_KEYWORD, 'garbage'],
+  ])('skips the %s keyword, with a warning, when it resolves to %s', async (keyword, address) => {
+    const { lines, log } = collect();
+    const resolver = async (): Promise<string | null> => address;
+    await expect(resolveBindAddresses(['127.0.0.1', keyword], { resolveTailscale: resolver, resolveLan: resolver, log })).resolves.toEqual(['127.0.0.1']);
+    expect(lines.join('\n')).toContain('not a private address');
+  });
+
+  it('still accepts private, link-local and loopback literals', async () => {
+    const bind = ['127.0.0.1', '::1', '192.168.0.1', '10.0.0.1', 'fd00::1'];
+    await expect(resolveBindAddresses(bind, {})).resolves.toEqual(bind);
+  });
+});
+

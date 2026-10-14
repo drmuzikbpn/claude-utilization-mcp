@@ -67,6 +67,11 @@ export interface Config {
   autoUpdate: AutoUpdateConfig;
   events: EventsConfig;
   tls: TlsConfig;
+  /**
+   * §23.57: let `bind` name a wildcard (`0.0.0.0`, `::`) or a publicly routable address.
+   * Off unless someone writes it into `config.json` by hand; nothing in the CLI sets it.
+   */
+  allowPublicBind: boolean;
   [key: string]: unknown;
 }
 
@@ -106,6 +111,7 @@ export function defaultConfig(): Config {
     autoUpdate: { enabled: true, intervalMs: 600_000, repo: 'drmuzikbpn/claude-utilization-mcp' },
     events: { maxClients: 16 },
     tls: { port: null, loopback: false },
+    allowPublicBind: false,
   };
 }
 
@@ -232,6 +238,7 @@ export function validateConfig(input: unknown): Config {
       port: tlsRaw['port'] === undefined || tlsRaw['port'] === null ? null : nestedInt(tlsRaw, 'port', 'tls.port', 0, 0, 65_535),
       loopback: reqBool(tlsRaw, 'loopback', 'tls.loopback', d.tls.loopback),
     },
+    allowPublicBind: reqBool(raw, 'allowPublicBind', 'allowPublicBind', d.allowPublicBind),
   };
   // §23.45: HTTPS needs a port of its own.
   if (config.tls.port !== null && config.port !== 0 && config.tls.port === config.port) {

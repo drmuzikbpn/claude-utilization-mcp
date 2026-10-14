@@ -271,7 +271,7 @@ describe('confirmation', () => {
       'Claude Code hooks?',
       'MCP server?',
       'live limits?',
-      'LAN access for the iPhone app?',
+      'Let phones on this network reach the daemon? (HTTPS only, pinned certificate; pairing still needs a one-time code)',
       'Open the pairing page now?',
     ]);
     expect(config(b)['integrations']).toEqual({ service: true, hook: false, mcp: false, statusline: true });

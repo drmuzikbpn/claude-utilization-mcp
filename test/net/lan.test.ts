@@ -112,7 +112,7 @@ describe('resolveLocalHostName (§23.46)', () => {
       hostname: () => 'ignored.example',
     });
     expect(name).toBe('adams-macbook-pro.local');
-    expect(calls).toEqual(['scutil --get LocalHostName']);
+    expect(calls).toEqual(['/usr/sbin/scutil --get LocalHostName']);
   });
 
   it('falls back to the first label of os.hostname() when scutil fails', async () => {

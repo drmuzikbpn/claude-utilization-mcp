@@ -1,23 +1,55 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Even Seal Productions
 /**
- * Tailnet discovery (§16).
+ * Tailnet discovery (§16, §23.57).
  *
  * Two questions, both answered best-effort and never fatal:
  * - which IPv4 address is this machine's tailnet address (`100.64.0.0/10`)?
  * - what is its MagicDNS name, so the `Host` allowlist can accept it?
  *
- * The interface table is the cheap path; the `tailscale` CLI is the fallback and may be
- * missing entirely. Anything unexpected — no binary, a timeout, garbage output — resolves
- * to `null`. Nothing here ever throws, because the daemon must still start without Tailscale.
+ * `100.64.0.0/10` is carrier-grade NAT space, not Tailscale's own: an ISP or another VPN
+ * can put such an address on any interface. So being in range is necessary and not
+ * sufficient — the address must also be on an interface Tailscale names after itself
+ * (`tailscale0`, Linux), or be the one the `tailscale` CLI reports. Anything unexpected —
+ * no binary, a timeout, garbage output, an out-of-range answer — resolves to `null`.
+ * Nothing here ever throws, because the daemon must still start without Tailscale.
  */
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { isIPv4 } from 'node:net';
 import { networkInterfaces, type NetworkInterfaceInfo } from 'node:os';
 
 /** How long the `tailscale` CLI is given before it is killed (§16). */
 export const TAILSCALE_TIMEOUT_MS = 2_000;
 export const TAILSCALE_BIN = 'tailscale';
+/**
+ * Where the `tailscale` CLI is installed, most specific first (§23.57). The daemon binds a
+ * listener on the strength of what this program prints, so it is found at a known absolute
+ * path rather than through whatever `PATH` the service or the shell happened to have.
+ */
+export const TAILSCALE_PATHS: readonly string[] = [
+  '/Applications/Tailscale.app/Contents/MacOS/Tailscale',
+  '/usr/local/bin/tailscale',
+  '/opt/homebrew/bin/tailscale',
+  '/usr/bin/tailscale',
+  '/usr/sbin/tailscale',
+  '/snap/bin/tailscale',
+  '/run/current-system/sw/bin/tailscale',
+];
+/** Interface names Tailscale creates under its own name (Linux, the BSDs). */
+export const TAILSCALE_INTERFACE = /^tailscale\d*$/;
+
+/** The first installed CLI, or `null`: there is no falling back to a bare `PATH` lookup. */
+export function findTailscaleBin(exists: (path: string) => boolean = existsSync): string | null {
+  for (const path of TAILSCALE_PATHS) {
+    try {
+      if (exists(path)) return path;
+    } catch {
+      // unreadable directory — try the next one
+    }
+  }
+  return null;
+}
 
 export type InterfaceTable = NodeJS.Dict<NetworkInterfaceInfo[]>;
 export type InterfacesFn = () => InterfaceTable;
@@ -41,10 +73,14 @@ export function isTailscaleIPv4(address: string): boolean {
   return parts[0] === '100' && second >= 64 && second <= 127;
 }
 
-/** First `100.64.0.0/10` address in an `os.networkInterfaces()` table, else `null`. */
-export function findTailscaleIPv4(table: InterfaceTable): string | null {
-  for (const entries of Object.values(table)) {
+/**
+ * First `100.64.0.0/10` address in an `os.networkInterfaces()` table, else `null`. With
+ * `onlyTailscaleInterfaces`, only interfaces Tailscale names after itself are considered.
+ */
+export function findTailscaleIPv4(table: InterfaceTable, onlyTailscaleInterfaces = false): string | null {
+  for (const [name, entries] of Object.entries(table)) {
     if (!Array.isArray(entries)) continue;
+    if (onlyTailscaleInterfaces && !TAILSCALE_INTERFACE.test(name)) continue;
     for (const entry of entries) {
       if (entry === null || typeof entry !== 'object') continue;
       // Node has reported `family` as both 'IPv4' and 4 across versions.
@@ -61,42 +97,63 @@ export interface TailscaleOptions {
   interfaces?: InterfacesFn;
   exec?: ExecFn;
   timeoutMs?: number;
+  /** The CLI to run; `null` means none is installed. Defaults to `findTailscaleBin()`. */
+  bin?: string | null;
 }
 
-async function run(exec: ExecFn, args: readonly string[], timeoutMs: number): Promise<string | null> {
+/**
+ * Which CLI to run. An injected `exec` (tests) decides for itself what a name means, so it
+ * is handed the bare name; the real one only ever gets an absolute path, or nothing.
+ */
+function cliFor(opts: { exec?: ExecFn; bin?: string | null }): string | null {
+  if (opts.bin !== undefined) return opts.bin;
+  return opts.exec === undefined ? findTailscaleBin() : TAILSCALE_BIN;
+}
+
+async function run(exec: ExecFn, bin: string | null, args: readonly string[], timeoutMs: number): Promise<string | null> {
+  if (bin === null) return null;
   try {
-    return await exec(TAILSCALE_BIN, args, { timeoutMs });
+    return await exec(bin, args, { timeoutMs });
   } catch {
-    // No tailscale binary, a timeout, or a non-zero exit — all mean "no tailnet answer".
+    // A timeout or a non-zero exit — both mean "no tailnet answer".
     return null;
   }
 }
 
 /**
- * This machine's tailnet IPv4 address, or `null`.
+ * This machine's tailnet IPv4 address, or `null` (§23.57).
  *
- * Interfaces first; `tailscale ip -4` only when no interface is in range (§16).
+ * 1. an in-range address on an interface named `tailscale*` — Tailscale's own, no question;
+ * 2. otherwise what `tailscale ip -4` prints, **if** that is inside `100.64.0.0/10`. On
+ *    macOS the interface is an anonymous `utun`, so the CLI is the only confirmation there
+ *    is. The CLI also answers while Tailscale is switched off (§23.21) — the bind then
+ *    fails and is retried, which is the intended behaviour.
+ *
+ * An in-range address on some other interface that the CLI does not vouch for is **not**
+ * the tailnet, and is never returned.
  */
 export async function resolveTailscaleIPv4(opts: TailscaleOptions = {}): Promise<string | null> {
   const interfaces = opts.interfaces ?? networkInterfaces;
   try {
-    const found = findTailscaleIPv4(interfaces());
+    const found = findTailscaleIPv4(interfaces(), true);
     if (found !== null) return found;
   } catch {
-    // A platform that cannot enumerate interfaces still gets the CLI fallback.
+    // A platform that cannot enumerate interfaces still gets the CLI.
   }
 
   const exec = opts.exec ?? defaultExec;
-  const out = await run(exec, ['ip', '-4'], opts.timeoutMs ?? TAILSCALE_TIMEOUT_MS);
+  const bin = cliFor(opts);
+  const out = await run(exec, bin, ['ip', '-4'], opts.timeoutMs ?? TAILSCALE_TIMEOUT_MS);
   if (out === null) return null;
   const first = out.split('\n')[0]?.trim() ?? '';
-  return isIPv4(first) ? first : null;
+  return isTailscaleIPv4(first) ? first : null;
 }
 
 /** `Self.DNSName` from `tailscale status --json`, trailing dot stripped, else `null`. */
-export async function resolveMagicDnsName(opts: { exec?: ExecFn; timeoutMs?: number } = {}): Promise<string | null> {
+export async function resolveMagicDnsName(opts: { exec?: ExecFn; timeoutMs?: number; bin?: string | null } = {}): Promise<string | null> {
   const exec = opts.exec ?? defaultExec;
-  const out = await run(exec, ['status', '--json'], opts.timeoutMs ?? TAILSCALE_TIMEOUT_MS);
+  const bin = cliFor(opts);
+  const out = await run(exec, bin, ['status', '--json'], opts.timeoutMs ?? TAILSCALE_TIMEOUT_MS);
   if (out === null) return null;
   let parsed: unknown;
   try {
@@ -109,6 +166,7 @@ export async function resolveMagicDnsName(opts: { exec?: ExecFn; timeoutMs?: num
   if (typeof self !== 'object' || self === null) return null;
   const raw = (self as { DNSName?: unknown }).DNSName;
   if (typeof raw !== 'string') return null;
-  const name = raw.trim().replace(/\.$/, '');
-  return name.length === 0 ? null : name;
+  const name = raw.trim().replace(/\.$/, '').toLowerCase();
+  // It becomes an accepted `Host` value, so it must look like a DNS name and nothing else.
+  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(name) && name.length <= 253 ? name : null;
 }

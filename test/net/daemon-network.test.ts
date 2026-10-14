@@ -5,7 +5,7 @@ import { createServer as createNetServer, type Server as NetServer } from 'node:
 import { saveConfig, defaultConfig } from '../../src/config.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { serve, startDaemon, PortInUseError, wantsTls, type DaemonHandle, type DaemonOptions, type NetworkResolver } from '../../src/daemon.js';
+import { planListeners, serve, startDaemon, PortInUseError, wantsHttp, wantsTls, type DaemonHandle, type DaemonOptions, type NetworkResolver } from '../../src/daemon.js';
 import { FakeTokensSource } from '../helpers/fakes.js';
 import { tempConfigDir } from '../helpers/fake-daemon.js';
 import { rawRequest } from '../helpers/raw-request.js';
@@ -40,8 +40,14 @@ class FakeNetwork implements NetworkResolver {
   }
 }
 
-/** An address that is guaranteed not to exist on this machine. */
-const UNROUTABLE = '203.0.113.7';
+/**
+ * An address that is not on this machine and that the bind policy still allows (§23.57):
+ * link-local, which nothing assigns unless DHCP has failed.
+ */
+const UNROUTABLE = '169.254.201.77'; // public-check:allow
+/** §23.57: the only listener a non-loopback address ever gets is HTTPS. */
+const HTTPS_BIND_FAILED = new RegExp(`https: could not bind ${UNROUTABLE.replaceAll('.', '\\.')}`);
+const HTTP_BIND_ATTEMPT = new RegExp(`http: (could not bind|now also listening on) ${UNROUTABLE.replaceAll('.', '\\.')}`);
 
 async function start(bind: string[], network: NetworkResolver, over: DaemonOptions = {}): Promise<DaemonHandle> {
   const configDir = tempConfigDir();
@@ -89,7 +95,8 @@ describe('startDaemon binding (§16)', () => {
     const h = await start(['127.0.0.1', 'tailscale'], net, { log: (l) => lines.push(l) });
 
     expect(h.addresses).toEqual(['127.0.0.1']);
-    expect(lines.join('\n')).toMatch(/could not bind 203\.0\.113\.7/);
+    expect(lines.join('\n')).toMatch(HTTPS_BIND_FAILED);
+    expect(lines.join('\n')).not.toMatch(HTTP_BIND_ATTEMPT);
     expect((await rawRequest({ port: h.port, path: '/health' })).status).toBe(200);
   });
 
@@ -177,7 +184,8 @@ describe('SIGHUP re-resolution (§16)', () => {
     await h.reload();
 
     expect(h.addresses).toEqual(['127.0.0.1']);
-    expect(lines.join('\n')).toMatch(/could not bind 203\.0\.113\.7/);
+    expect(lines.join('\n')).toMatch(HTTPS_BIND_FAILED);
+    expect(lines.join('\n')).not.toMatch(HTTP_BIND_ATTEMPT);
     expect((await rawRequest({ port: h.port, path: '/health' })).status).toBe(200);
   });
 
@@ -366,7 +374,8 @@ describe('the lan keyword (§23.44, §23.46)', () => {
     net.lan = '::1';
     await until(() => /(now also listening on|could not bind) ::1/.test(lines.join('\n')));
     expect(lines.join('\n')).toMatch(/(now also listening on|could not bind) ::1/);
-    if (h.addresses.includes('::1')) expect(h.addresses).not.toContain('127.0.0.1');
+    // §23.57: the local clients' address stays whatever `lan` resolves to.
+    expect(h.addresses).toContain('127.0.0.1');
   });
 
   it('stops watching interfaces on stop()', async () => {
@@ -513,3 +522,56 @@ describe('a failed HTTPS bind keeps the keyword retry going (review fix)', () =>
     expect(h.tlsPort).toBe(port);
   });
 });
+
+describe('plain HTTP never leaves the machine (§23.57)', () => {
+  it('wantsHttp is loopback and nothing else', () => {
+    for (const a of ['127.0.0.1', '127.0.0.53', '::1']) expect(wantsHttp(a), a).toBe(true);
+    for (const a of ['192.168.0.1', '10.0.0.1', UNROUTABLE, '0.0.0.0', '::', 'fd00::1', '203.0.113.9']) expect(wantsHttp(a), a).toBe(false);
+  });
+
+  it('plans HTTP for loopback only, HTTPS for everything else, and always keeps 127.0.0.1', () => {
+    expect(planListeners(['127.0.0.1'], false)).toEqual({ http: ['127.0.0.1'], tls: [] });
+    expect(planListeners(['127.0.0.1', '192.168.0.1'], false)).toEqual({ http: ['127.0.0.1'], tls: ['192.168.0.1'] });
+    expect(planListeners(['192.168.0.1'], false)).toEqual({ http: ['127.0.0.1'], tls: ['192.168.0.1'] });
+    expect(planListeners(['::1', '192.168.0.1'], true)).toEqual({ http: ['127.0.0.1', '::1'], tls: ['127.0.0.1', '::1', '192.168.0.1'] });
+  });
+
+  it('a non-loopback address gets an HTTPS listener attempt and no HTTP one, at startup and on reload', async () => {
+    const lines: string[] = [];
+    const net = new FakeNetwork();
+    net.ip = UNROUTABLE;
+    const h = await start(['127.0.0.1', 'tailscale'], net, { log: (l) => lines.push(l) });
+    await h.reload();
+    expect(lines.join('\n')).toMatch(HTTPS_BIND_FAILED);
+    expect(lines.join('\n')).not.toMatch(HTTP_BIND_ATTEMPT);
+    expect(h.server.listeners).toEqual([{ addr: '127.0.0.1', port: h.port, tls: false }]);
+  });
+
+  it('refuses a wildcard or public bind outright, and nothing is left listening', async () => {
+    for (const entry of ['0.0.0.0', '::', '203.0.113.9']) {
+      await expect(start(['127.0.0.1', entry], new FakeNetwork()), entry).rejects.toMatchObject({ name: 'ConfigError', key: 'bind[1]' });
+    }
+  });
+
+  it('with allowPublicBind the wildcard is served, over HTTPS only', async () => {
+    const configDir = tempConfigDir();
+    const h = await startDaemon({
+      configDir,
+      config: { ...defaultConfig(), bind: ['127.0.0.1', '0.0.0.0'], allowPublicBind: true, auth: { token: 'test-bearer-token' } },
+      port: 0,
+      poll: false,
+      sessions: false,
+      tokens: new FakeTokensSource(),
+      version: '9.9.9',
+      network: new FakeNetwork(),
+      log: () => undefined,
+    });
+    handles.push(h);
+    expect(h.server.listeners.filter((l) => !l.tls)).toEqual([{ addr: '127.0.0.1', port: h.port, tls: false }]);
+    expect(h.server.listeners.filter((l) => l.tls).map((l) => l.addr)).toEqual(['0.0.0.0']);
+    expect(h.tlsPort).not.toBeNull();
+    const res = await rawRequest({ port: h.tlsPort as number, tls: true, path: '/health', headers: { host: `127.0.0.1:${String(h.tlsPort)}` } });
+    expect(res.status).toBe(200);
+  });
+});
+

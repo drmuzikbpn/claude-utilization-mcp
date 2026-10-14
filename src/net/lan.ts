@@ -18,6 +18,8 @@ export type { InterfaceTable, InterfacesFn } from './tailscale.js';
 
 /** VM/container bridges (Docker `br-`, libvirt, VirtualBox), VPN tunnels (utun, tun, tap, WireGuard), Apple's peer-to-peer links and loopback — never the phone's network. */
 export const EXCLUDED_INTERFACE = /^(bridge|br-|virbr|vmnet|vboxnet|docker|utun|tun|tap|wg|awdl|llw|lo)/;
+/** By absolute path, not through `PATH` (§23.57). */
+export const SCUTIL_BIN = '/usr/sbin/scutil';
 /** How long `scutil --get LocalHostName` is given (§23.46). */
 export const SCUTIL_TIMEOUT_MS = 2_000;
 
@@ -79,7 +81,7 @@ export async function resolveLocalHostName(opts: LocalHostNameOptions = {}): Pro
   const platform = String(opts.platform ?? process.platform);
   if (platform === 'darwin') {
     try {
-      const out = await (opts.exec ?? defaultExec)('scutil', ['--get', 'LocalHostName'], {
+      const out = await (opts.exec ?? defaultExec)(SCUTIL_BIN, ['--get', 'LocalHostName'], {
         timeoutMs: opts.timeoutMs ?? SCUTIL_TIMEOUT_MS,
       });
       const name = asLocalName(out);

@@ -54,8 +54,9 @@ EMAIL_ALLOW='(@example\.(test|com|org|net)$|@([a-z0-9-]+\.)*example\.(test|com|o
 HOME_ALLOW='^(you|me|user|username|name|yourname|example|alice|bob|carol|dev|test|tester|someone|runner|Shared|shared|ubuntu|node|root|app|circleci|vagrant|linuxbrew)$'
 
 # Loopback, RFC 5737, unspecified/broadcast/netmasks, and the base address of the ranges
-# documentation has to be able to name (10/8, 172.16/12, 192.168/16, 100.64/10, …).
-IPV4_ALLOW='^(127\.[0-9]+\.[0-9]+\.[0-9]+|192\.0\.2\.[0-9]+|198\.51\.100\.[0-9]+|203\.0\.113\.[0-9]+|0\.0\.0\.0|255\.255\.255\.255|255\.255\.255\.0|255\.255\.0\.0|255\.0\.0\.0|10\.0\.0\.0|172\.16\.0\.0|192\.168\.0\.0|100\.64\.0\.0|169\.254\.0\.0|224\.0\.0\.0|240\.0\.0\.0)$'
+# documentation has to be able to name (10/8, 172.16/12, 192.168/16, 100.64/10, …) plus
+# the first host in each private range — every network's default gateway, and nobody's.
+IPV4_ALLOW='^(127\.[0-9]+\.[0-9]+\.[0-9]+|192\.0\.2\.[0-9]+|198\.51\.100\.[0-9]+|203\.0\.113\.[0-9]+|0\.0\.0\.0|255\.255\.255\.255|255\.255\.255\.0|255\.255\.0\.0|255\.0\.0\.0|10\.0\.0\.[01]|172\.16\.0\.[01]|192\.168\.0\.[01]|100\.64\.0\.0|169\.254\.0\.0|224\.0\.0\.0|240\.0\.0\.0)$'
 CGNAT='^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.'
 
 # The label directly in front of .ts.net when the name is a placeholder.
