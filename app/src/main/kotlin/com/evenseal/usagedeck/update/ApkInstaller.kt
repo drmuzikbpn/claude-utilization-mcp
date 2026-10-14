@@ -17,7 +17,8 @@ import kotlinx.coroutines.withContext
  * installer without touching the real package manager.
  */
 open class ApkInstaller(private val context: Context) {
-    open suspend fun install(apk: File): Result<Unit> = withContext(Dispatchers.IO) {
+    /** [version] travels with the result, so a failure reported later can be pinned on it. */
+    open suspend fun install(apk: File, version: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val installer = context.packageManager.packageInstaller
             val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
@@ -27,7 +28,7 @@ open class ApkInstaller(private val context: Context) {
                     apk.inputStream().use { input -> input.copyTo(output) }
                     session.fsync(output)
                 }
-                session.commit(InstallResultReceiver.pendingIntent(context, sessionId).intentSender)
+                session.commit(InstallResultReceiver.pendingIntent(context, sessionId, version).intentSender)
             }
         }
     }

@@ -38,6 +38,8 @@ import com.evenseal.usagedeck.pairing.encryptedPrefs
 import com.evenseal.usagedeck.pause.PrefsEscalationStore
 import com.evenseal.usagedeck.settings.SettingsStore
 import com.evenseal.usagedeck.update.ApkInstaller
+import com.evenseal.usagedeck.update.PackageApkGate
+import com.evenseal.usagedeck.update.PrefsUpdateSkips
 import com.evenseal.usagedeck.update.Updater
 import com.evenseal.usagedeck.wifi.WifiRepository
 import java.io.File
@@ -151,7 +153,9 @@ class DeckGraph(private val app: Application) {
         client = http,
         deferWhile = ::updateDeferralReason,
         clock = clock,
-        scope = scope
+        scope = scope,
+        gate = PackageApkGate(app),
+        skips = PrefsUpdateSkips.open(app)
     )
 
     /** Filled in by [DeckService]; null while no service is running. */

@@ -48,8 +48,11 @@ class UpdaterTest {
         val installed = mutableListOf<String>()
         var result: Result<Unit> = Result.success(Unit)
 
-        override suspend fun install(apk: File): Result<Unit> {
+        val versions = mutableListOf<String>()
+
+        override suspend fun install(apk: File, version: String): Result<Unit> {
             installed += apk.readText()
+            versions += version
             return result
         }
     }
@@ -110,6 +113,33 @@ class UpdaterTest {
         """.trimIndent()
     }
 
+    /** Remembers skips in memory, as `PrefsUpdateSkips` does on disk. */
+    private class FakeSkips : UpdateSkips {
+        val reasons = linkedMapOf<String, String>()
+
+        override fun reasonFor(version: String): String? = reasons[version]
+
+        override fun skip(version: String, reason: String) {
+            reasons.clear()
+            reasons[version] = reason
+        }
+
+        override fun clear() = reasons.clear()
+    }
+
+    private val skips = FakeSkips()
+    private var gateAnswer: String? = null
+    private var maxApkBytes = Updater.MAX_APK_BYTES
+
+    /** How many APK downloads the server has seen since this was last asked. */
+    private fun apkRequests(): Int {
+        var count = 0
+        while (true) {
+            val request = server.takeRequest(50, java.util.concurrent.TimeUnit.MILLISECONDS) ?: return count
+            if (request.path.orEmpty().endsWith(".apk")) count++
+        }
+    }
+
     private fun updater(scope: TestScope, deferWhile: () -> String? = { null }) = Updater(
         checker = ReleaseChecker(
             repo = "drmuzikbpn/claude-utilization-mcp",
@@ -122,7 +152,10 @@ class UpdaterTest {
         client = client,
         deferWhile = deferWhile,
         clock = clock,
-        scope = scope
+        scope = scope,
+        gate = { gateAnswer },
+        skips = skips,
+        maxApkBytes = maxApkBytes
     )
 
     @Test
@@ -245,6 +278,114 @@ class UpdaterTest {
         val state = updater.state.value
         assertTrue("expected Failed but was $state", state is UpdaterState.Failed)
         assertTrue((state as UpdaterState.Failed).message.contains("no device owner"))
+    }
+
+    @Test
+    fun `an apk the package gate refuses is deleted, never installed, and its version skipped`() = runTest {
+        serve("0.1.417+bbb2222")
+        gateAnswer = "it is signed by a different key"
+        val updater = updater(TestScope(StandardTestDispatcher(testScheduler)))
+
+        updater.checkNow()
+
+        assertTrue(fakeInstaller.installed.isEmpty())
+        assertTrue(File(cacheDir, Updater.APK_NAME).exists().not())
+        assertEquals("it is signed by a different key", skips.reasons["0.1.417+bbb2222"])
+        assertTrue((updater.state.value as UpdaterState.Failed).message.contains("different key"))
+    }
+
+    @Test
+    fun `a skipped version is not downloaded again by the periodic check`() = runTest {
+        serve("0.1.417+bbb2222", sha = "0".repeat(64))
+        val updater = updater(TestScope(StandardTestDispatcher(testScheduler)))
+        updater.checkNow()
+        assertEquals(1, apkRequests())
+
+        updater.checkPeriodically()
+        updater.checkPeriodically()
+
+        assertEquals(0, apkRequests())
+        val state = updater.state.value
+        assertTrue("was $state", state is UpdaterState.Skipped)
+        assertEquals("checksum mismatch", (state as UpdaterState.Skipped).reason)
+    }
+
+    @Test
+    fun `a newer release than the skipped one is tried`() = runTest {
+        serve("0.1.417+bbb2222", sha = "0".repeat(64))
+        val updater = updater(TestScope(StandardTestDispatcher(testScheduler)))
+        updater.checkPeriodically()
+
+        serve("0.1.418+ccc3333")
+        updater.checkPeriodically()
+
+        assertEquals(listOf("0.1.418+ccc3333"), fakeInstaller.versions)
+    }
+
+    @Test
+    fun `check now from settings forgets the skip and tries again`() = runTest {
+        serve("0.1.417+bbb2222", sha = "0".repeat(64))
+        val updater = updater(TestScope(StandardTestDispatcher(testScheduler)))
+        updater.checkPeriodically()
+
+        serve("0.1.417+bbb2222")
+        updater.checkNow()
+
+        assertEquals(listOf("0.1.417+bbb2222"), fakeInstaller.versions)
+        assertTrue(skips.reasons.isEmpty())
+    }
+
+    @Test
+    fun `an install that fails is remembered, so it is not downloaded every ten minutes`() = runTest {
+        serve("0.1.417+bbb2222")
+        fakeInstaller.result = Result.failure(IllegalStateException("no device owner"))
+        val updater = updater(TestScope(StandardTestDispatcher(testScheduler)))
+
+        updater.checkPeriodically()
+        updater.checkPeriodically()
+
+        assertEquals(1, fakeInstaller.installed.size)
+        assertTrue(skips.reasons.getValue("0.1.417+bbb2222").contains("no device owner"))
+    }
+
+    @Test
+    fun `a download that fails on the network is not a reason to skip the version`() = runTest {
+        serve("0.1.417+bbb2222", apkStatus = 503)
+        val updater = updater(TestScope(StandardTestDispatcher(testScheduler)))
+
+        updater.checkPeriodically()
+
+        assertTrue(skips.reasons.isEmpty())
+    }
+
+    @Test
+    fun `an apk larger than the cap is abandoned and skipped`() = runTest {
+        serve("0.1.417+bbb2222")
+        maxApkBytes = (apkBytes.size - 1).toLong()
+        val updater = updater(TestScope(StandardTestDispatcher(testScheduler)))
+
+        updater.checkPeriodically()
+
+        assertTrue(fakeInstaller.installed.isEmpty())
+        assertTrue(File(cacheDir, Updater.APK_NAME).exists().not())
+        assertTrue(skips.reasons.getValue("0.1.417+bbb2222").contains("larger than"))
+    }
+
+    @Test
+    fun `the checksum is fetched before the apk, so a release without one costs no download`() = runTest {
+        serve("0.1.417+bbb2222")
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when {
+                request.path.orEmpty().contains("/releases?") -> MockResponse().setBody(releaseJson("0.1.417+bbb2222"))
+                else -> MockResponse().setResponseCode(404)
+            }
+        }
+        val updater = updater(TestScope(StandardTestDispatcher(testScheduler)))
+
+        updater.checkPeriodically()
+
+        assertEquals(0, apkRequests())
+        assertTrue(skips.reasons.isEmpty())
     }
 
     @Test
