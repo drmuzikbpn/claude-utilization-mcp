@@ -4,12 +4,13 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { NPM_INSTALL_ARGS, RUNTIME_DEP_SENTINEL, RuntimeDepsError, ensureRuntimeDeps } from '../../src/install/deps.js';
+import { LOCKFILES, NPM_CI_ARGS, RUNTIME_DEP_SENTINEL, RuntimeDepsError, ensureRuntimeDeps } from '../../src/install/deps.js';
 import { fakeExec } from './helpers.js';
 
-function withDeps(): string {
+function withDeps(lockfile: string | null = 'npm-shrinkwrap.json'): string {
   const dir = mkdtempSync(join(tmpdir(), 'cu-deps-'));
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0', dependencies: { '@modelcontextprotocol/sdk': '^1' } }));
+  if (lockfile !== null) writeFileSync(join(dir, lockfile), '{"lockfileVersion":3}');
   return dir;
 }
 
@@ -22,11 +23,22 @@ describe('ensureRuntimeDeps', () => {
     expect(exec.calls).toEqual([]);
   });
 
-  it('runs npm install --omit=dev against the version dir when the SDK is missing', async () => {
-    const dir = withDeps();
+  it.each(LOCKFILES)('runs npm ci --omit=dev --ignore-scripts from %s when the SDK is missing (§23.59)', async (lockfile) => {
+    const dir = withDeps(lockfile);
     const exec = fakeExec(() => ({ code: 0, stdout: '', stderr: '' }));
     await expect(ensureRuntimeDeps(dir, exec.runner)).resolves.toBe(true);
-    expect(exec.calls).toEqual([{ file: 'npm', args: ['--prefix', dir, ...NPM_INSTALL_ARGS] }]);
+    expect(exec.calls).toEqual([{ file: 'npm', args: ['--prefix', dir, ...NPM_CI_ARGS] }]);
+    expect(NPM_CI_ARGS[0]).toBe('ci');
+    expect(NPM_CI_ARGS).toContain('--omit=dev');
+    expect(NPM_CI_ARGS).toContain('--ignore-scripts');
+    expect(NPM_CI_ARGS).not.toContain('install');
+  });
+
+  it('refuses to resolve dependencies at all when there is no lockfile (§23.59)', async () => {
+    const dir = withDeps(null);
+    const exec = fakeExec(() => ({ code: 0, stdout: '', stderr: '' }));
+    await expect(ensureRuntimeDeps(dir, exec.runner)).rejects.toThrow(/no npm-shrinkwrap\.json or package-lock\.json/);
+    expect(exec.calls).toEqual([]);
   });
 
   it('is a no-op when the sentinel package is already present', async () => {

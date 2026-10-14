@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Local daemon + hook + MCP server that tells Claude Code sessions how close the account is to its rate limits, and aggregates local token spend. Not affiliated with Anthropic.",
   "license": "MIT",
+  "private": true,
   "type": "module",
   "bin": { "claude-usage": "bin/claude-usage" },
   "files": ["bin", "dist", "vendor", "README.md", "LICENSE"],

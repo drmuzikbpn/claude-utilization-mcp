@@ -2,9 +2,19 @@
 # Copyright (c) 2026 Even Seal Productions
 name: Release
 
-# Every green push to `main` cuts a release (§20): the version is
+# Every green push to `main` cuts a release (§20, §23.59): the version is
 # MAJOR.MINOR.<commit count>+<short sha>, the tarball is what the auto-updater
-# downloads, and SHA256SUMS is what it verifies against.
+# downloads, SHA256SUMS is what it checks the tarball against, and SHA256SUMS.sig is
+# what makes it believe SHA256SUMS at all.
+#
+# Two jobs, split by what they are trusted with:
+#
+#   build    runs third-party code (npm ci, the test suite) — read-only token, no secrets
+#   publish  holds the signing key and may write releases — runs no third-party code,
+#            only this repository's own stdlib-only scripts on the artifact `build` made
+#
+# The signing key is the secret RELEASE_SIGNING_KEY of the `release` environment, which
+# should be restricted to the `main` branch in the repository settings.
 on:
   push: { branches: [main] }
   workflow_dispatch:
@@ -16,9 +26,8 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-permissions:
-  contents: write
-  id-token: write
+# Nothing by default; each job asks for exactly what it needs.
+permissions: {}
 
 jobs:
   # GitHub can deliver the same push twice (seen on e556679: two identical push events
@@ -27,13 +36,17 @@ jobs:
   # had in fact released perfectly. Decide up front whether there is anything to do.
   guard:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       released: ${{ steps.released.outputs.released }}
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 } # rev-list --count needs the whole history
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0 # rev-list --count needs the whole history
+          persist-credentials: false
 
       - name: Compute version
         id: version
@@ -47,30 +60,35 @@ jobs:
 
       - name: Already released?
         id: released
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
-          tag="${{ steps.version.outputs.tag }}"
-          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
             echo "released=true" >> "$GITHUB_OUTPUT"
-            echo "$tag is already published — nothing to do."
+            echo "$TAG is already published — nothing to do."
           else
             echo "released=false" >> "$GITHUB_OUTPUT"
           fi
 
-  release:
+  # Everything that executes code we did not write happens here, with a token that can
+  # read the repository and nothing else, and with no secret in reach.
+  build:
     needs: guard
     if: needs.guard.outputs.released != 'true'
     runs-on: ubuntu-latest
-    # Job level so the publish step's own `if:` can read it — a step cannot see env it
-    # defines itself. An unset secret is the empty string, which skips the publish.
+    permissions:
+      contents: read
     env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      VERSION: ${{ needs.guard.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 } # rev-list --count needs the whole history
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm, registry-url: 'https://registry.npmjs.org' }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 22, cache: npm }
 
       - run: npm ci
 
@@ -79,50 +97,97 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - run: npm audit --omit=dev
 
       - name: Stamp package.json
-        run: npm version --no-git-tag-version "${{ needs.guard.outputs.version }}"
+        run: npm version --no-git-tag-version "$VERSION"
+
+      # §23.59: the tarball carries its own lockfile, so an installed copy resolves
+      # exactly the dependency tree that was tested here (`npm ci`), not whatever the
+      # `^` ranges allow on the day. It is inside the tarball, so the signed checksum
+      # covers it.
+      - name: Lock the dependency tree into the tarball
+        run: |
+          set -euo pipefail
+          npm shrinkwrap
+          test -f npm-shrinkwrap.json
 
       - name: Pack and checksum
-        id: pack
         run: |
           set -euo pipefail
           mkdir -p release
-          # `npm pack` names the scoped tarball drmuzikbpn-claude-usage-<v>.tgz; the
-          # release asset keeps the CLI's own name (§23.1).
+          # `npm pack` names the tarball after the package; the release asset keeps the
+          # CLI's own name (§23.1).
           packed="$(npm pack --pack-destination release --silent | tail -n 1)"
-          asset="claude-usage-${{ needs.guard.outputs.version }}.tgz"
+          asset="claude-usage-$VERSION.tgz"
           mv "release/$packed" "release/$asset"
+          tar -tzf "release/$asset" | grep -qx 'package/npm-shrinkwrap.json'
           cd release
           sha256sum "$asset" > SHA256SUMS
           cat SHA256SUMS
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release
+          path: release/
+          if-no-files-found: error
+          retention-days: 7
+
+  # Signs and publishes what `build` produced. No `npm ci`, no `npm run`: the only code
+  # that runs beside the signing key is two stdlib-only scripts from this repository.
+  publish:
+    needs: [guard, build]
+    if: github.ref == 'refs/heads/main' && needs.guard.outputs.released != 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.guard.outputs.version }}
+      TAG: ${{ needs.guard.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 22 }
+
+      # A build whose only trusted key is the placeholder can verify nothing: every
+      # daemon that installed it would refuse every later update. Never ship one.
+      - name: Refuse to release with the placeholder key
+        run: node scripts/verify-release.mjs --no-placeholder
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release
+          path: release
+
+      - name: Sign SHA256SUMS
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: node scripts/sign-release.mjs release/SHA256SUMS
+
+      # Proves the signature verifies under a key that installed daemons trust, and that
+      # the tarball still matches its checksum, before anything becomes public.
+      - name: Verify what is about to be published
+        run: node scripts/verify-release.mjs release/SHA256SUMS
 
       - name: Tag
         run: |
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "${{ needs.guard.outputs.tag }}" -m "${{ needs.guard.outputs.tag }}"
-          git push origin "${{ needs.guard.outputs.tag }}"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"
 
       - name: GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.guard.outputs.tag }}
-          name: ${{ needs.guard.outputs.tag }}
-          generate_release_notes: true
-          files: |
-            release/claude-usage-${{ needs.guard.outputs.version }}.tgz
-            release/SHA256SUMS
-
-      # Publishing is optional: a fork (or this repo before NPM_TOKEN is configured)
-      # still gets a GitHub Release, which is what the auto-updater consumes. It is also
-      # allowed to fail — the registry treats `1.2.3+sha` and `1.2.3+othersha` as the same
-      # version, so a same-commit-count rebuild is rejected there while the tag and the
-      # release asset (which the updater uses) remain perfectly valid.
-      - name: Publish to npm
-        if: ${{ env.NPM_TOKEN != '' }}
-        continue-on-error: true
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public --provenance
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            "release/claude-usage-$VERSION.tgz" \
+            release/SHA256SUMS \
+            release/SHA256SUMS.sig \
+            --verify-tag \
+            --title "$TAG" \
+            --generate-notes

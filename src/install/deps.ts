@@ -9,9 +9,17 @@ import { defaultExec, type ExecRunner } from '../service/index.js';
  * copy skips it; the release tarball never had it). The daemon is stdlib-only, but the
  * `mcp` and `pair` subcommands lazily import real dependencies, so every
  * version directory needs its production `node_modules` before it becomes `current`.
+ *
+ * §23.59: those dependencies are installed with `npm ci`, from the lockfile that came
+ * with the code — `npm-shrinkwrap.json` in a release tarball (covered by the signed
+ * checksum), `package-lock.json` in a checkout. `npm install` would re-resolve the `^`
+ * ranges on the day and could pull in a version nobody tested; with no lockfile there is
+ * nothing to install *from*, so that is an error rather than a fallback.
  */
 export const RUNTIME_DEP_SENTINEL = join('node_modules', '@modelcontextprotocol', 'sdk', 'package.json');
-export const NPM_INSTALL_ARGS = ['install', '--omit=dev', '--no-audit', '--no-fund', '--ignore-scripts'] as const;
+export const NPM_CI_ARGS = ['ci', '--omit=dev', '--no-audit', '--no-fund', '--ignore-scripts'] as const;
+/** Either pins the whole tree; a release carries the first, a checkout the second. */
+export const LOCKFILES = ['npm-shrinkwrap.json', 'package-lock.json'] as const;
 
 export class RuntimeDepsError extends Error {
   override readonly name = 'RuntimeDepsError';
@@ -21,10 +29,15 @@ export class RuntimeDepsError extends Error {
 export async function ensureRuntimeDeps(dir: string, exec: ExecRunner = defaultExec): Promise<boolean> {
   if (!declaresDependencies(dir)) return false;
   if (existsSync(join(dir, RUNTIME_DEP_SENTINEL))) return false;
-  const result = await exec('npm', ['--prefix', dir, ...NPM_INSTALL_ARGS]);
+  if (!LOCKFILES.some((name) => existsSync(join(dir, name)))) {
+    throw new RuntimeDepsError(
+      `${dir} has no ${LOCKFILES.join(' or ')} — refusing to resolve its dependencies unpinned`,
+    );
+  }
+  const result = await exec('npm', ['--prefix', dir, ...NPM_CI_ARGS]);
   if (result.code !== 0) {
     throw new RuntimeDepsError(
-      `npm install in ${dir} failed (exit ${String(result.code)}): ${result.stderr.trim() || result.stdout.trim()}`,
+      `npm ci in ${dir} failed (exit ${String(result.code)}): ${result.stderr.trim() || result.stdout.trim()}`,
     );
   }
   return true;

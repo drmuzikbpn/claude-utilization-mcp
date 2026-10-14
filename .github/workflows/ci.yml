@@ -4,16 +4,33 @@ name: CI
 on:
   push: { branches: [main, dev] }
   pull_request:
+
+permissions:
+  contents: read
+
 jobs:
   test:
     strategy: { matrix: { os: [ubuntu-latest, macos-latest] } }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # The commit-time check, run again where it cannot be skipped: every line this
+      # change adds, against the base it is being merged into.
+      - name: public-check
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASE"
+          git diff --no-color --no-ext-diff -U0 --diff-filter=ACMR "$BASE" "$HEAD" > /tmp/pr.diff || true
+          bash scripts/public-check.sh --diff /tmp/pr.diff
