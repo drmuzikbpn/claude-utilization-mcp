@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Even Seal Productions
+#
+# One file on the default branch covers every long-lived branch: Dependabot only reads
+# `main`, and `target-branch` points an entry at the Android and iOS trees.
+version: 2
+updates:
+  # --- main: the daemon ---------------------------------------------------------
+  - package-ecosystem: npm
+    directory: /
+    target-branch: main
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      dev-dependencies:
+        dependency-type: development
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: main
+    schedule: { interval: weekly }
+
+  # --- usage-android: the Android dashboard --------------------------------------
+  - package-ecosystem: gradle
+    directory: /
+    target-branch: usage-android
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: usage-android
+    schedule: { interval: weekly }
+
+  # --- usage-ios: the iPhone and watch app ---------------------------------------
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: usage-ios
+    schedule: { interval: weekly }
