@@ -24,6 +24,23 @@ device need to be on the same Wi-Fi, or on the same VPN (Tailscale works) when y
 The Apple Watch app needs no setup: it gets everything from the iPhone, never from the device
 directly.
 
+## Removing a device, or losing the iPhone
+
+Each paired device gives the iPhone an access token, kept in the iPhone Keychain (this iPhone
+only: never iCloud, never the watch). Removing a device in Usage Deck deletes the iPhone's copy,
+and the app also deletes any stored token that no paired device owns the next time it opens (the
+Keychain outlives an uninstall). **Neither revokes the token**: the daemon still accepts it.
+
+To revoke access — after removing a device you no longer trust this iPhone with, or if the
+iPhone is lost, sold or stolen — run this on **each** paired machine:
+
+```bash
+claude-usage configure rotate-token
+```
+
+That replaces the daemon's token, so every phone paired with that machine stops being accepted;
+pair the ones you still use again with `claude-usage pair`.
+
 ## Building
 
 ```bash

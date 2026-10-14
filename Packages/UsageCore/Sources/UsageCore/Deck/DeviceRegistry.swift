@@ -63,10 +63,13 @@ public enum InstallID {
 /// device was paired with. The paired list is never replaced or reordered — the `.local` name
 /// in it survives a LAN IP change that `/health` would not mention — new addresses only append.
 public enum AddressMerge {
+    /// The most addresses one device keeps; a daemon reports a handful.
+    public static let limit = 16
+
     public static func merge(paired: [String], reported: [String]) -> [String] {
         var seen = Set(paired.map { $0.lowercased() })
         var merged = paired
-        for addr in reported {
+        for addr in reported where merged.count < limit {
             let trimmed = addr.trimmingCharacters(in: .whitespaces)
             guard HostValidation.isValid(trimmed), seen.insert(trimmed.lowercased()).inserted else { continue }
             merged.append(trimmed)

@@ -102,6 +102,7 @@ final class DeckStore {
     @ObservationIgnored private var bootstrapTask: Task<Void, Never>?
     @ObservationIgnored private var connectTimer: Task<Void, Never>?
     @ObservationIgnored private var widgetSnapshot: WatchSnapshot?
+    @ObservationIgnored private var sweptTokens = false
     @ObservationIgnored private(set) var snapshot = WatchSnapshot.empty
 
     init(
@@ -197,6 +198,7 @@ final class DeckStore {
         }
         let all = Array(clients.values)
         if active {
+            sweepOrphanTokens()
             for client in all {
                 Task {
                     await client.setForeground(true)
@@ -254,6 +256,18 @@ final class DeckStore {
         DiagLog.shared.flush()
         guard !Task.isCancelled else { return }
         writeWidgets(snapshot)
+    }
+
+    /// Once per launch, the first time the app is in front (the phone is unlocked, so both the
+    /// paired list and the Keychain are readable): tokens no paired device owns are deleted. They
+    /// are what an uninstall, or a pairing that failed half-way, leaves behind.
+    private func sweepOrphanTokens() {
+        guard !sweptTokens else { return }
+        sweptTokens = true
+        let removed = TokenHygiene.sweep(tokens, keeping: records)
+        if removed > 0 {
+            DiagLog.shared.log(.app, "removed \(removed) access token(s) no paired device owns")
+        }
     }
 
     private func startTicker() {
