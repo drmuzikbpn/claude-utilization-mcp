@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { isIP } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import { ConfigError, loadConfig, validateConfig, type Config } from '../config.js';

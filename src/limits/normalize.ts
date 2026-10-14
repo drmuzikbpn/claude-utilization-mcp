@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import type { ExtraUsage, LegacyWindow, LimitScope, NormalizedLimit, NormalizedLimits } from './types.js';
 
 /** Only these two legacy windows are promised (§23.3); everything else lives in `raw`. */

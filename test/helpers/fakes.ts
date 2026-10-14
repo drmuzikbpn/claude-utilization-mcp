@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { defaultConfig, type Config } from '../../src/config.js';
 import { normalizeLimits } from '../../src/limits/normalize.js';
 import { emptySnapshot, type LimitsSnapshot } from '../../src/limits/types.js';

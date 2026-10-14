@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { DaemonClient, DaemonUnreachable, isPidAlive, readDaemonInfo } from './clients/http.js';
 import { loadConfig, resolveConfigDir } from './config.js';
 import { pairingHint } from './install/pair-hint.js';

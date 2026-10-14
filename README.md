@@ -631,4 +631,4 @@ What CI cannot cover — launchd, systemd, the Keychain, a real Tailscale peer, 
 Works with Claude Code. Not affiliated with, endorsed by, or sponsored by Anthropic.
 Claude and Claude Code are trademarks of Anthropic.
 
-MIT © contributors. See [`LICENSE`](LICENSE).
+MIT © 2026 Even Seal Productions. See [`LICENSE`](LICENSE).

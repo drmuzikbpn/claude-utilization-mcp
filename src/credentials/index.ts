@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { getAccessTokenFromFile } from './file.js';
 import { getAccessTokenFromKeychain, type CommandRunner } from './keychain.js';
 import { UnsupportedPlatformError } from './types.js';

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { describe, expect, it } from 'vitest';
 import { ConfigError } from '../../src/config.js';
 import { LAN_KEYWORD, resolveBindAddresses, TAILSCALE_KEYWORD } from '../../src/net/bind.js';

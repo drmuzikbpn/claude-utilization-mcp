@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * `claude-usage pair` (§23.48): mint a one-time pairing code from the local daemon and show it
  * as a QR code on a page served from this machine only.

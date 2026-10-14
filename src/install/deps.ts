@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { defaultExec, type ExecRunner } from '../service/index.js';

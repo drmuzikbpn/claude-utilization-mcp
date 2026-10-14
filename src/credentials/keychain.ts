@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { execFile } from 'node:child_process';
 import { NoCredentialsError, parseCredentialsJson } from './types.js';
 

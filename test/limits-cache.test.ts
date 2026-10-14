@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * §23.19: the last good limits snapshot survives a restart.
  *

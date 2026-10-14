@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { rmSync } from 'node:fs';
 import { createTokenReader } from './credentials/index.js';
 import { EventBus } from './events/bus.js';

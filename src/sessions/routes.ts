@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * The §18.4 endpoint surface. Registered by `createServer` as one block so the rest of the
  * server file stays untouched; every route's real work lives in `src/sessions` / `src/pause`.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * Fetch a release's tarball and `SHA256SUMS` into a throwaway directory (§20).
  *

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { readFileSync, statSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {

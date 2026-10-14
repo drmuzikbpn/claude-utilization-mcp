@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * Ties the pause rules (§18.1) to the session registry (§17) and the freezer (§18.3).
  *

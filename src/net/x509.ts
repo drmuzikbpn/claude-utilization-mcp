@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * A minimal DER writer for one thing: a self-signed ECDSA P-256 X.509 v3 server
  * certificate (§23.45). Stdlib only — the daemon has no runtime dependencies.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * The auto-updater (§20): a check loop, a state machine and the two CLI verbs.
  *

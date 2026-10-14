@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * Public types for the token-spend subsystem (spec §5.3, §23.4–23.8).
  *

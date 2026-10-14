@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * `config.bind` → the concrete addresses the daemon listens on (§16).
  *

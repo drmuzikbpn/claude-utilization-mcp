@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 export type LimitsErrorCode = 'unauthorized' | 'network' | 'schema_drift' | 'no_credentials' | 'rate_limited';
 
 export interface LimitsErrorInfo {

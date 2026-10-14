@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer, type UsageServer } from '../../src/server/index.js';
 import { updateBody, type UpdateStatus } from '../../src/server/snapshot.js';

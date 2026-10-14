@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * The narrow contract the HTTP server consumes from the token-spend store.
  *

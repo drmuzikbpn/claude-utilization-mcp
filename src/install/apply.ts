@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { versionDir } from '../paths.js';
 import { buildUnit } from '../service/index.js';
 import { addMcpServer } from './claude-json.js';

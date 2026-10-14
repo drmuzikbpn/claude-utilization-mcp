@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * Tiny typed in-process event bus shared by the sessions/pause subsystem (publisher)
  * and the SSE endpoint (consumer). Deliberately dependency-free and synchronous.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * §23.36: rate limits observed from Claude Code's own statusline input.
  *

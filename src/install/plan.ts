@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { createInterface } from 'node:readline/promises';
 
 /** Flag parsing, the printed plan and the per-item confirmation (§8 step 2). */

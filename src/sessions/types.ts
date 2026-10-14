@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * Session shapes for `/v1/sessions` and the SSE `session` event (§17.3, §23.13).
  *

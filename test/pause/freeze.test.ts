@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * §18.3 against a **real** process tree: `sh -c 'sleep 30 & sleep 30 & wait'`.
  *

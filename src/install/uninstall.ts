@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { daemonFilePath } from '../clients/http.js';

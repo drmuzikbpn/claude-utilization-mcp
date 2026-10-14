@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer as createNetServer } from 'node:net';
 import type { IncomingMessage } from 'node:http';

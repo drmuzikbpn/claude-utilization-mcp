@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { isTokensGroupBy, type TokensGroupBy, type TokensQuery } from './types.js';
 
 export const DEFAULT_SINCE = 'today';

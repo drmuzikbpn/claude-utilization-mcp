@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { getVersion } from '../version.js';
 import { LimitsError } from './types.js';
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /** The daemon's single W3 wiring block: shared bus, subsystem, SIGCONT on shutdown. */
 
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';

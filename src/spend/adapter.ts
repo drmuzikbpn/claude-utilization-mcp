@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import type { ScanStats as ServerScanStats, TokensSource } from '../server/types.js';
 import { SpendStore, type SpendStoreOptions } from './index.js';
 

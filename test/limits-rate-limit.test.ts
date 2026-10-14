@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * §23.32: an upstream 429 is its own error, and its `Retry-After` is honoured.
  *

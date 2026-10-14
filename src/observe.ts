@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * `claude-usage observe` (§23.36): forward Claude Code's statusline `rate_limits` to the daemon.
  *

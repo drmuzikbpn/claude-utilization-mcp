@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * §23.18: the updater's restart must not depend on the supervisor noticing an exit code.
  *

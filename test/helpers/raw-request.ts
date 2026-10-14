@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { connect, type Socket } from 'node:net';
 import { connect as tlsConnect } from 'node:tls';
 

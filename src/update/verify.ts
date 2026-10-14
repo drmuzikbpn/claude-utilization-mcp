@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * sha256 verification of a downloaded tarball against the release's `SHA256SUMS` (§20).
  *

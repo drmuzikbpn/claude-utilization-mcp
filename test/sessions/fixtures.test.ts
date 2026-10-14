@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * The JSON the Android client codes against. These fixtures are a contract: the tests below
  * compare their key sets against what the live server actually emits, so the two cannot

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * Transcript scanner (spec §5.3, §23.4, §23.5, §23.7, §23.8).
  *

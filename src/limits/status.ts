@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import type { Thresholds } from '../config.js';
 import type { NormalizedLimit } from './types.js';
 

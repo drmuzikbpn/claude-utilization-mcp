@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * W6 — install / configure / uninstall (§8, §20, §23.9–§23.11).
  *

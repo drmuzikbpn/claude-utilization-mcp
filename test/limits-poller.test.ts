@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { describe, expect, it } from 'vitest';
 import { LimitsPoller, MAX_BACKOFF_MS } from '../src/limits/poller.js';
 import { LimitsError } from '../src/limits/types.js';

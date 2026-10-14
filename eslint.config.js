@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 export default tseslint.config(

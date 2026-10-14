@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 export type CredentialsErrorCode = 'no_credentials' | 'unsupported_platform';
 
 /** Base class for credential lookup failures. Never carries a token value. */

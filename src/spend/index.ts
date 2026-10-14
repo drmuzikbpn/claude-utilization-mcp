@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * `SpendStore` — the token-spend facade the daemon and the HTTP server consume
  * (spec §5.3, §6, §23.4–23.8).

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { describe, expect, it } from 'vitest';
 import { OAUTH_BETA_HEADER, USAGE_ENDPOINT, USER_AGENT, fetchLimits, type FetchLike } from '../src/limits/client.js';
 import { getVersion } from '../src/version.js';

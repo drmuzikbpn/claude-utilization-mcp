@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { describe, expect, it } from 'vitest';
 import { LEGACY_WINDOW_KEYS, limitId, normalizeLimits, toIsoZ } from '../src/limits/normalize.js';
 import { liveLimitsFixture } from './helpers/fixtures.js';

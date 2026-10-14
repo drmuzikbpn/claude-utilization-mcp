@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer as createNetServer, type Server as NetServer } from 'node:net';
 import { saveConfig, defaultConfig } from '../../src/config.js';

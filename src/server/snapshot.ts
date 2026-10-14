@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * The response bodies of `/health`, `/v1/limits` and `/v1/summary`, as pure functions.
  *

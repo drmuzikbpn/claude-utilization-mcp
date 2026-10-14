@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * Hard freeze (§18.3) — SIGSTOP/SIGCONT over a process tree.
  *

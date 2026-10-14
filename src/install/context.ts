@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { randomBytes } from 'node:crypto';
 import { DaemonClient } from '../clients/http.js';
 import { loadConfig, resolveConfigDir, saveConfig, type Config } from '../config.js';

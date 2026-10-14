@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import type { IncomingMessage } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { checkRequest, buildHostPolicy, isLoopbackHookPost, requestPath } from '../../src/server/middleware.js';

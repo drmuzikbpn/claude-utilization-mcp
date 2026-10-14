@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Even Seal Productions
 name: CI
 on:
   push: { branches: [main, dev] }

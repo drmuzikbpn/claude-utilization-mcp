@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * The daemon's TLS identity (§23.45): one ECDSA P-256 key, generated once and kept, and a
  * self-signed certificate for it. Clients pin the key's SPKI hash, so the key is the

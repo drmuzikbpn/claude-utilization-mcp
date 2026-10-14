@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { IncomingMessage, ServerResponse } from 'node:http';

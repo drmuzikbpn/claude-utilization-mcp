@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveConfigDir } from '../config.js';

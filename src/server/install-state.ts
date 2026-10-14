@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * `/health.install` (§23.48): what this machine has wired into Claude Code, so a remote app's
  * setup check can say "hooks are missing — run `claude-usage install`" instead of guessing.

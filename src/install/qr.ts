@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * QR code → SVG for the `claude-usage pair` page (§23.48). CLI-only: the matrix code is the
  * vendored copy under `vendor/qrcode/` and is never in the daemon's import graph.

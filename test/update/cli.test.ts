@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { afterAll, describe, expect, it } from 'vitest';

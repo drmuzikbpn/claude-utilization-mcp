@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /** The hook's §17.1 dispatch and §18.2 gate, against a real server + sessions subsystem. */
 
 import { existsSync, readFileSync } from 'node:fs';

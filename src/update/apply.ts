@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * Install a verified tarball into the versions layout and repoint `current` (§20).
  *

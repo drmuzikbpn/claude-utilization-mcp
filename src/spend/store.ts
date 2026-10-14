@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /**
  * Spend aggregates, dedup, retention and the on-disk snapshot (spec §5.3, §23.6, §23.7).
  *

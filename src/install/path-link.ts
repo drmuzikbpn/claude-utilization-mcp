@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { lstatSync, mkdirSync, readlinkSync, rmSync, symlinkSync } from 'node:fs';
 import { delimiter, join, resolve } from 'node:path';
 import { APP, currentBin, resolveHome } from '../paths.js';

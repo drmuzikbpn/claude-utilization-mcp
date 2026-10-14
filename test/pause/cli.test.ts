@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 /** `claude-usage sessions | pause | resume` (§18.4's CLI mirrors). */
 
 import { readFileSync } from 'node:fs';

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Even Seal Productions
 import { afterEach, describe, expect, it } from 'vitest';
 import { startDaemon, type DaemonHandle } from '../../src/daemon.js';
 import type { UpdateStatus } from '../../src/server/snapshot.js';
