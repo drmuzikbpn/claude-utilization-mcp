@@ -6,6 +6,9 @@ pre-commit:
     # First, and cheap: nothing that must stay private may enter a public repository.
     public-check:
       run: scripts/public-check.sh
+    # GitGuardian's secret scanner, when it is installed and signed in (`ggshield auth login`).
+    ggshield:
+      run: if command -v ggshield >/dev/null 2>&1; then ggshield secret scan pre-commit; else echo "ggshield not installed - skipped"; fi
     ktlint:
       run: JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew ktlintCheck --offline -q
     unit:
