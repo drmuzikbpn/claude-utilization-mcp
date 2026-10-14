@@ -7,3 +7,6 @@ dist/
 skill-observations/
 .claude/worktrees/
 .public-check.local
+
+# Added by ggshield
+.cache_ggshield

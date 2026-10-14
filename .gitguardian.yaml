@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Even Seal Productions
+# ggshield (GitGuardian) settings. The public-check fixtures hold deliberately fake,
+# secret-shaped strings so its tests can prove they are caught.
+version: 2
+secret:
+  ignored_paths:
+    - "test/fixtures/public-check/**"

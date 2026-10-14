@@ -12,6 +12,15 @@ import { cleanupAllTempHomes, fakeExec, tempHome } from '../install/helpers.js';
 
 afterAll(cleanupAllTempHomes);
 
+/**
+ * Each call as `<program> <args…>`. The program is found by absolute path in whichever
+ * system directory holds it on this machine (none on macOS, `/usr/bin` on Linux), so the
+ * directory is checked once, in "runs … by absolute path", and dropped here.
+ */
+function commands(exec: ReturnType<typeof fakeExec>): string[] {
+  return exec.calls.map((c) => [c.file.split('/').pop() ?? c.file, ...c.args].join(' '));
+}
+
 function unit(): ReturnType<typeof buildUnit> {
   return buildUnit({
     nodePath: '/usr/local/bin/node',
@@ -65,7 +74,7 @@ describe('systemctl commands', () => {
     const exec = fakeExec();
     const svc = new SystemdService({ env: h.env, exec: exec.runner });
     await svc.install(unit());
-    expect(exec.lines()).toEqual([
+    expect(commands(exec)).toEqual([
       'systemctl --user daemon-reload',
       `systemctl --user enable --now ${SYSTEMD_UNIT}`,
     ]);
@@ -78,11 +87,11 @@ describe('systemctl commands', () => {
     await svc.install(unit());
     exec.calls.length = 0;
     await svc.uninstall();
-    expect(exec.lines()).toEqual([
+    expect(commands(exec)).toEqual([
       `systemctl --user disable --now ${SYSTEMD_UNIT}`,
       'systemctl --user daemon-reload',
     ]);
-    expect(exec.lines().join(' ')).not.toContain('linger');
+    expect(commands(exec).join(' ')).not.toContain('linger');
     expect(existsSync(svc.unitPath)).toBe(false);
   });
 
@@ -91,7 +100,7 @@ describe('systemctl commands', () => {
     const exec = fakeExec();
     const svc = new SystemdService({ env: h.env, exec: exec.runner });
     await svc.restart();
-    expect(exec.lines()).toEqual(['systemctl --user daemon-reload', `systemctl --user restart ${SYSTEMD_UNIT}`]);
+    expect(commands(exec)).toEqual(['systemctl --user daemon-reload', `systemctl --user restart ${SYSTEMD_UNIT}`]);
   });
 
   it('throws ServiceError when enable fails', async () => {
@@ -122,10 +131,10 @@ describe('status and logs', () => {
 
   it('tails the journal', async () => {
     const h = tempHome();
-    const exec = fakeExec((f) => (f.endsWith('/journalctl') || f === 'journalctl' ? { stdout: 'a\nb\nc\n' } : undefined));
+    const exec = fakeExec((f) => (f.endsWith('/journalctl') ? { stdout: 'a\nb\nc\n' } : undefined));
     const svc = new SystemdService({ env: h.env, exec: exec.runner });
     expect(await svc.logTail(20)).toEqual(['a', 'b', 'c']);
-    expect(exec.lines()).toContain('journalctl --user -u claude-usage -n 20 --no-pager -q');
+    expect(commands(exec)).toContain('journalctl --user -u claude-usage -n 20 --no-pager -q');
   });
 
   it('returns no lines when journalctl is unavailable', async () => {
@@ -137,7 +146,7 @@ describe('status and logs', () => {
 
   it('drops journalctl banner lines that would read as captured output', async () => {
     const h = tempHome();
-    const exec = fakeExec((f) => (f.endsWith('/journalctl') || f === 'journalctl' ? { stdout: '-- No entries --\n' } : undefined));
+    const exec = fakeExec((f) => (f.endsWith('/journalctl') ? { stdout: '-- No entries --\n' } : undefined));
     const svc = new SystemdService({ env: h.env, exec: exec.runner });
     expect(await svc.logTail(20)).toEqual([]);
   });
@@ -149,7 +158,7 @@ describe('linger', () => {
     const exec = fakeExec();
     const svc = new SystemdService({ env: h.env, exec: exec.runner });
     expect(await svc.enableLinger()).toEqual({ ok: true, message: 'lingering enabled for testuser' });
-    expect(exec.lines()).toEqual(['loginctl enable-linger testuser']);
+    expect(commands(exec)).toEqual(['loginctl enable-linger testuser']);
   });
 
   it('reports — never throws — when loginctl is missing or fails', async () => {
@@ -216,14 +225,18 @@ describe('unit-file quoting (§23.62)', () => {
     await svc.restart().catch(() => undefined);
     await svc.logTail(5);
     await svc.enableLinger().catch(() => undefined);
-    for (const c of exec.calls) expect(c.file).toBe(systemBin(c.file.split('/').pop() as string));
+    for (const c of exec.calls) {
+      expect(c.file.startsWith('/')).toBe(true);
+      expect(c.file).toBe(systemBin(c.file.split('/').pop() as string));
+    }
     expect(exec.calls.map((c) => c.file.split('/').pop())).toEqual(expect.arrayContaining(['systemctl', 'journalctl', 'loginctl']));
   });
 
   it('systemBin finds a program in the system directories only, and buildUnit keeps only absolute PATH entries', () => {
     expect(systemBin('systemctl', (p) => p === '/bin/systemctl')).toBe('/bin/systemctl');
     expect(systemBin('systemctl', (p) => p.startsWith('/usr/bin/'))).toBe('/usr/bin/systemctl');
-    expect(systemBin('systemctl', () => false)).toBe('systemctl');
+    // Never a bare name: a spawn would look that up through PATH.
+    expect(systemBin('systemctl', () => false)).toBe('/usr/bin/systemctl');
     const unit = buildUnit({ nodePath: '/n', binPath: '/b', env: { PATH: '.:bin::/usr/local/bin:./x:/usr/bin:/usr/bin' } });
     expect(unit.env['PATH']).toBe('/usr/local/bin:/usr/bin');
     expect(absolutePath('')).toBe(SYSTEM_PATH);
