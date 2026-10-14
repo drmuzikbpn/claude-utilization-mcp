@@ -1,5 +1,9 @@
 # Usage Deck Implementation Plan
 
+> **Historical implementation plan (2026-09-13).** Kept as a record of how the app was first
+> built. Its pairing and transport tasks describe the retired plain-HTTP `claude-usage configure
+> pairing` flow, which no longer exists; see `README.md`, `SECURITY.md` and `CLAUDE.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the Usage Deck Android kiosk app: a Nexus 5X launcher that streams Claude Code utilization from N `claude-usage` daemons over Tailscale and pauses/resumes sessions.

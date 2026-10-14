@@ -135,22 +135,16 @@ to the Mac's screen. The deck redeems the QR's one-time code over HTTPS pinned t
 certificate and shows "Paired <name>." — or the daemon's own hint, e.g. "run `claude-usage pair`
 again" when the five-minute code has expired or was already used.
 
-The `claude-usage pair` QR carries no token, but scan it off the Mac's own screen anyway. The
-legacy `claude-usage configure pairing` QR (for daemons that predate `pair`) is a **live bearer
-token**: never scan it off a photo or a shared screen, and run `claude-usage configure
-rotate-token` if it was ever exposed.
+The `claude-usage pair` QR carries no token, but scan it off the Mac's own screen anyway. It is
+the only pairing there is: the older `claude-usage configure pairing` QR is refused, and a machine
+that was paired with it shows as "needs to be paired again" until it is re-paired this way.
 
-To pair without the camera, sideload the link instead: put the `usagedeck://pair?...` line that
-`claude-usage pair` prints into `pairing-import.json` and push it as for the legacy JSON (see
-`CLAUDE.md`). The deck consumes and deletes the file on its next resume and redeems the code; the
-code still expires five minutes after it was minted.
-
-For a legacy pairing, verify from the Mac that the daemon answers on the tailnet address the QR
-carried:
-
-```bash
-curl -H "Authorization: Bearer $TOKEN" http://100.x.y.z:47291/health
-```
+A release build pairs by scanning. Only a **debug** build also accepts a sideloaded link: put the
+`usagedeck://pair?...` line that `claude-usage pair` prints into `pairing-import.json` and push it
+to the app's external files directory (see `CLAUDE.md`). The deck looks for the file every few
+seconds while it is in the foreground, deletes it before using it, and — if the link would replace
+a machine that is already paired — asks on screen first, naming both. The code still expires five
+minutes after it was minted.
 
 Each daemon's `config.bind` must include `"tailscale"`, or every request from the phone gets a
 `421`.
@@ -161,8 +155,23 @@ Long-press the top-left corner for 3 s → PIN → lock task stops for 10 minute
 alarm owned by the app re-pins afterwards regardless of which app is in front, and a reboot inside
 the window boots locked.
 
-Set the PIN in *Settings → Kiosk exit PIN* (six digits). Forgotten-PIN recovery is `adb shell`;
-USB debugging stays enabled on this device on purpose.
+A provisioned kiosk asks for the exit PIN (six digits, entered twice) the first time it starts;
+choose it then, before the deck is left unattended. Changing it later, in *Settings → Kiosk exit
+PIN*, needs the current PIN. Five wrong attempts — at the gate or in Settings — lock both for five
+minutes, doubling each round, and neither changing the clock nor rebooting shortens it.
+
+Forgotten-PIN recovery is `adb shell`; USB debugging stays enabled on this device on purpose. That
+is a trade: anyone with the phone and a cable has the same way in, and the bootloader is unlocked.
+If the phone goes missing, run `claude-usage configure rotate-token` on every machine it was
+paired with (see `SECURITY.md`).
+
+## If the deck shows "Secure storage is unavailable"
+
+The phone's keystore could not open the encrypted store that holds the pairing tokens and the
+PIN, and a release build will not continue on an unencrypted copy. Restart the phone. If the
+screen comes back, the keystore was reset and the old data is unreadable for good. It cannot simply
+be cleared with `pm clear` — that would also drop Device Owner — so set the phone up again from
+step 7 and pair each machine with `claude-usage pair`.
 
 ## Charge cap and thermals
 
@@ -171,21 +180,20 @@ grant it. The app dims to 30 % and slows sparkline redraws to every 10 s above 4
 
 ## Release signing (done once, 2026-09-14)
 
-The release key lives in **1Password vault `usagedeck`, item `usagedeck-ci`** (fields
-`SIGNING_KEYSTORE_B64`, `SIGNING_KEY_ALIAS` = `usagedeck`, `SIGNING_STORE_PASSWORD`,
-`SIGNING_KEY_PASSWORD`) and nowhere else; the GitHub Actions secrets of the same names are
-copies. The keystore is PKCS12 (Java 17's default), which has a single password, so the key
-password equals the store password. Values were streamed through pipes (`op read … | gh secret
-set`), never typed as arguments.
+The release key exists in two places only: the owner's password manager, and the GitHub Actions
+signing secrets that are copies of it (`SIGNING_KEYSTORE_B64`, `SIGNING_KEY_ALIAS`,
+`SIGNING_STORE_PASSWORD`; `SIGNING_KEY_PASSWORD` only if the key has its own password). Keep the
+secrets in the repository's `release` environment so only the release job can read them. Values
+were streamed through pipes into `gh secret set`, never typed as arguments.
 
 **The phone was provisioned with a debug-signed build**, so the release key is a *rotation* from
-this MacBook's `~/.android/debug.keystore`: `app/signing/usage-deck.lineage` (public
+the build machine's `~/.android/debug.keystore`: `app/signing/usage-deck.lineage` (public
 certificates and rotation proofs only, safe to commit) was made with `apksigner rotate`, and CI
 signs with `apksigner … --lineage … --rotation-min-sdk-version 28`, v3 only. Android 9+ then
 installs the release over the debug build in place, keeping Device Owner and the pairing. Never
 `pm uninstall` the app to "switch keys"; the lineage is the switch.
 
-If the debug keystore on this MacBook is ever lost, nothing breaks: the lineage file already
+If that debug keystore is ever lost, nothing breaks: the lineage file already
 carries the proof, and only the release key is needed from then on.
 
 ## Daemon install on the Mac Studio

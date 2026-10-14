@@ -35,12 +35,14 @@ The daemon must listen on the tailnet interface, not just loopback. In its confi
 Without `"tailscale"` in `config.bind` **every request from the phone gets a 421** and your
 machine will sit on the deck as permanently unreachable.
 
-Check it came up:
+Check it came up. Plain HTTP is served on loopback only, and every request needs the token:
 
 ```bash
-curl -H "Authorization: Bearer $(claude-usage configure show-token)" \
-  "http://$(tailscale ip -4):47291/health"
+curl -H "Authorization: Bearer $(claude-usage configure show-token)" "http://127.0.0.1:47291/health"
 ```
+
+The phone never uses that port: it talks to the daemon's HTTPS port, pinned to the certificate
+the pairing QR names.
 
 ## 4. Pair the phone
 
@@ -54,18 +56,13 @@ certificate pin; the deck trades the code for the token over HTTPS pinned to tha
 so the QR itself is worthless once used. If the deck says the code is invalid or expired, run
 `claude-usage pair` again.
 
-**Legacy fallback** — on a daemon that has no `claude-usage pair` yet:
+There is no other way to pair. An older deck could also scan the QR from
+`claude-usage configure pairing`, which carried the token itself; that pairing has been removed
+from the daemon and the deck. If your Mac was paired that way, the deck shows it as an amber
+"needs to be paired again" card: run `claude-usage pair` and tap **Re-pair**.
 
-```bash
-claude-usage configure pairing
-```
-
-> That QR is a **live credential** — it carries a bearer token for your daemon. Show it from your
-> own screen only. Never put it in a slide, a screenshot, or a shared doc. If it is ever exposed,
-> run `claude-usage configure rotate-token` and pair again.
-
-After a legacy pairing the deck immediately calls `/health` with the token: you will see either
-your machine appear, or "Token rejected, re-run pairing on the Mac".
+If the phone is ever lost or stolen, run `claude-usage configure rotate-token` on your Mac and
+pair the replacement.
 
 ## 5. What the deck can do to your sessions
 
@@ -91,7 +88,7 @@ Two things to know:
   arrival; the row on the phone reads **frozen again ×2**. Resume from the phone first.
 
 If you would rather your machine not be pausable from the deck, do not pair it — there is no
-per-machine read-only mode in v1.
+per-machine read-only mode yet.
 
 ## Troubleshooting
 
@@ -99,9 +96,12 @@ per-machine read-only mode in v1.
 | --- | --- |
 | Machine dot red, "has not checked in for 2 minutes" | Mac asleep, or the daemon stopped |
 | A machine's numbers and its user are gone; its dot is red, "last heard 2d ago" | No check-in for a day, so the deck stopped showing what it last reported. It is still paired; the numbers return when it checks in |
-| "Token rejected" | Token was rotated; re-run `claude-usage pair` |
+| Amber "<name> needs to be paired again" card | The Mac was paired with the retired `claude-usage configure pairing`; run `claude-usage pair` on it and tap **Re-pair** |
+| "That is an old `claude-usage configure pairing` code" while scanning | You scanned the retired QR; run `claude-usage pair` and scan the new one |
+| "Replace <old> with <new>?" | The QR or pairing file would overwrite a machine that is already paired; check both names before you agree |
 | Amber "<name> no longer accepts this deck" card | Token rotated or certificate changed; run `claude-usage pair` on that Mac and tap **Re-pair** |
 | "run `claude-usage pair` again" while pairing | The one-time code expired (five minutes) or was already used |
 | "This machine's certificate changed" | The daemon made a new TLS certificate; re-run `claude-usage pair` |
-| Machine unreachable but wifi is fine | `config.bind` is missing `"tailscale"`, or the node is not approved |
+| Machine unreachable but wifi is fine | `config.bind` is missing `"tailscale"`, the node is not approved, or the Mac's firewall blocks the daemon's HTTPS port |
+| "Secure storage is unavailable" instead of the dashboard | The phone's keystore could not open the deck's encrypted store; restart it, and see `docs/device-setup.md` if it persists |
 | All machines unreachable at once | Tailscale on the phone is down — the deck offers a button to open it |

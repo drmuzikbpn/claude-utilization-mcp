@@ -29,24 +29,33 @@ Tick each line, or write down what happened instead.
 - [ ] On a captive-portal network, *Open captive portal* loads the login page **inside lock task**
       and Done returns to the deck.
 
+## Exit PIN and storage
+
+- [ ] A freshly provisioned deck asks for the exit PIN (twice) before anything else can be tapped.
+- [ ] *Settings → Kiosk exit PIN* refuses a new PIN without the current one, and five wrong
+      "current" entries lock the corner gate too.
+- [ ] During a lockout, changing the phone's date forward does not unlock the gate.
+- [ ] `adb shell bmgr backupnow com.evenseal.usagedeck` reports the package is not allowed to back up.
+
 ## Pairing
 
 - [ ] *Pairing → Scan QR* reads the QR from `claude-usage pair`, shows a progress bar while it
       redeems, and the machine appears, its data arriving over HTTPS.
 - [ ] Scanning the same `claude-usage pair` QR a second time reports the daemon's "run
       `claude-usage pair` again" and leaves the machine paired.
-- [ ] Re-pairing a Mac that was paired the legacy way replaces its row rather than adding a second,
-      keeping any pending escalation and showing the daemon's current name.
-- [ ] *Pairing → Scan QR* still reads a legacy QR from `claude-usage configure pairing` and the
-      machine appears.
+- [ ] After upgrading a deck that had a machine paired the old way (`claude-usage configure
+      pairing`), that machine shows the amber "<name> needs to be paired again" card and nothing is
+      sent to it; **Re-pair** → scan `claude-usage pair` restores it in the same row, keeping any
+      pending escalation and showing the daemon's current name.
+- [ ] Scanning an old `claude-usage configure pairing` QR is refused with "run `claude-usage pair`".
+- [ ] From *Pairing* (not a Re-pair card), scanning a QR for an address that is already paired under
+      another certificate asks "Replace <old> with <new>?" before anything changes.
 - [ ] Rotating a paired Mac's token (`claude-usage configure rotate-token`) shows the amber "<name>
       no longer accepts this deck" card within about 30 s, the Mac's sessions disappear and its
       pause buttons are disabled; **Re-pair** → scan `claude-usage pair` restores it in the same row.
 - [ ] Re-pair from that card but scan a *different* Mac's QR: the deck asks "Replace <old> with
       <new>?"; Keep both adds the new Mac and leaves the lost card in place.
-- [ ] A QR from a daemon with a rotated token reports "Token rejected, re-run pairing on the Mac"
-      and does not leave a broken machine behind.
-- [ ] A machine that is merely asleep is saved and shown unreachable rather than rejected.
+- [ ] A machine that is merely asleep stays paired and is shown unreachable.
 - [ ] Unpair asks for confirmation and removes the token.
 
 ## Live data

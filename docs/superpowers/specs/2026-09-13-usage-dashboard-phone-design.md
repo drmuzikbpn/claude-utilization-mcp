@@ -1,10 +1,16 @@
 # Usage Deck — Nexus 5X kiosk dashboard for claude-usage daemons
 
+> **Historical design record (2026-09-13).** Pairing and transport have since changed and this
+> document is not the description of the shipped app where it says otherwise: the only pairing is
+> `claude-usage pair` (a one-time code redeemed over HTTPS pinned to the daemon's certificate),
+> there is no plain-HTTP path to a daemon, and the `claude-usage configure pairing` QR described
+> in §6.3 has been removed. See `README.md`, `SECURITY.md` and `CLAUDE.md` for what is true now.
+
 **Date:** 2026-09-13
 **Status:** approved design, audited 2026-09-13 (Sonnet audit, 22 findings folded in), pre-implementation
 **Companion spec:** `~/code/claude-utilization-mcp/docs/superpowers/specs/2026-09-13-claude-usage-design.md`
 (the daemon; Part II §15–22 defines every endpoint this app consumes)
-**Device:** LG Nexus 5X (`bullhead`), serial `SERIAL_REDACTED`, 1080×1920 5.2" LCD, Snapdragon 808
+**Device:** LG Nexus 5X (`bullhead`), 1080×1920 5.2" LCD, Snapdragon 808
 **Mockups:** https://claude.ai/code/artifact/15c25174-e96e-4521-b3b1-761429fcf63d (Ledger, Wide dock, Ledger drill-in + tiles)
 
 ## 1. Purpose
@@ -47,7 +53,7 @@ the first release.
 │ update/     GitHub release poll → sha256 → PackageInstaller (silent)    │
 │ ui/         Ledger, WideDock, ProjectDetail, Machine, Wifi, Settings    │
 └───────────────────────────┬────────────────────────────────────────────┘
-                            │ HTTPS? no — HTTP over tailnet, Bearer token
+                            │ (superseded) pinned HTTPS, Bearer token
               ┌─────────────┴──────────────┐
    adam-mbp: claude-usage daemon   sam-studio: claude-usage daemon
    100.x:47291                      100.x:47291

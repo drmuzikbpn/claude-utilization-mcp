@@ -1,7 +1,7 @@
 # Usage Deck — working notes
 
 Nexus 5X Device Owner kiosk that streams Claude Code utilisation from N `claude-usage` daemons
-over Tailscale and pauses/resumes sessions.
+over Tailscale and pauses/resumes sessions. The repository is public: see **Public repository**.
 
 ## Environment
 
@@ -18,9 +18,9 @@ export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
 
 | Path | What lives there |
 | --- | --- |
-| `core/` | Pure Kotlin/JVM. `model/`, `daemon/` (REST + SSE + `MachineClient` + `PinnedTls`/`Endpoints`), `pairing/` (v2 link + redeem), `pause/`, `alerts/`, `update/`, `Clock.kt`. No Android APIs. |
+| `core/` | Pure Kotlin/JVM. `model/`, `daemon/` (REST + SSE + `MachineClient` + `PinnedTls`/`Endpoints`/`BodyLimits`), `pairing/` (link + redeem), `pause/`, `alerts/`, `update/`, `Clock.kt`. No Android APIs. |
 | `app/` | Android. `kiosk/`, `wifi/`, `pairing/`, `service/` (`DeckGraph`, `DeckService`), `settings/`, `update/`, `ui/` (`theme/`, `components/`, one package per screen). |
-| `fakedaemon/` | Ktor server implementing the daemon contract with scripted scenarios. |
+| `fakedaemon/` | Ktor server implementing the daemon contract with scripted scenarios: loopback HTTP, pinned HTTPS (`TlsFront`), `/v1/pair`. |
 
 ## Commands
 
@@ -32,30 +32,34 @@ export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
 scripts/emulator.sh                                             # start/create the deck29 AVD
 ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest
 scripts/fakedaemon.sh warnCrossing                              # idle | warnCrossing | freeze | machineDrop | tokenRotated
+scripts/pair-emulator.sh                                        # pairs the emulator's debug build with it
+scripts/public-check.sh --self-test
 ```
 
-To see real numbers on the emulator, push this Mac's own pairing file (LAN address; the daemon
-rejects the emulator's `10.0.2.2` loopback with "Host header is not an address this daemon is bound to"):
-`adb -s emulator-5554 push ~/.config/claude-usage/pairing.json /sdcard/Android/data/com.evenseal.usagedeck/files/pairing-import.json`.
-Never print that file: it holds the bearer token. `connectedDebugAndroidTest` wipes the pairing, so
-push it again afterwards. That JSON is the legacy v1 pairing (plain HTTP); the same
-`pairing-import.json` may instead hold the `usagedeck://pair?...` line `claude-usage pair` prints,
-which the deck redeems over pinned HTTPS within the code's five minutes. Landscape is `adb -s emulator-5554 emu rotate`. Show UI changes there and
-wait for Adam's OK before pushing a release.
+The emulator shows **synthetic data only**: `scripts/fakedaemon.sh` serves pinned HTTPS on
+loopback (the emulator reaches it as `10.0.2.2`; `BIND=0.0.0.0 ADDRS=<addr>` opts into the
+network), prints a single-use `usagedeck://pair?...` link and a token generated for that run, and
+`scripts/pair-emulator.sh` pushes the link to
+`/sdcard/Android/data/com.evenseal.usagedeck/files/pairing-import.json`, which only a **debug**
+build reads. It refuses a non-emulator serial. Never pair the emulator with a real daemon and never
+print a real pairing link. `connectedDebugAndroidTest` wipes the pairing, so pair again afterwards.
+Landscape is `adb -s emulator-5554 emu rotate`. Show UI changes there and wait for the owner's OK
+before pushing a release. `scripts/emulator.sh` needs the SDK packages `emulator` and
+`system-images;android-29;default;arm64-v8a` (`sdkmanager` installs them).
 
 Android 11 check: an API 30 AVD (`deck30`, same Nexus 5X profile, image `system-images;android-30;default;arm64-v8a`)
-runs the app and the full instrumented suite green (2026-09-15). On API 30 adb cannot write
-`/sdcard/Android/data/<pkg>` (scoped storage), so sideload a pairing into the debug build with
-`adb push pairing.json /data/local/tmp/pi.json && adb shell run-as com.evenseal.usagedeck cp /data/local/tmp/pi.json files/pairing-import.json`.
+ran the app and the full instrumented suite green (2026-09-15). On API 30 adb cannot write
+`/sdcard/Android/data/<pkg>` (scoped storage), so sideload a link into the debug build with
+`adb push link.txt /data/local/tmp/pi.json && adb shell run-as com.evenseal.usagedeck cp /data/local/tmp/pi.json files/pairing-import.json`.
 
 A real Nexus 5X is often attached over USB alongside the emulator — **always set
-`ANDROID_SERIAL`** for anything instrumented, and never `pm uninstall`/`pm clear` the app on the
-phone (it would drop Device Owner). The phone runs release-signed builds since 2026-09-14, so
-`run-as` no longer works there: sideload a pairing with
-`adb push pairing.json /sdcard/Android/data/com.evenseal.usagedeck/files/pairing-import.json`.
+`ANDROID_SERIAL`** (or `adb -s emulator-5554`) for anything adb or instrumented, and never
+`pm uninstall`/`pm clear` the app on the phone (it would drop Device Owner). The phone runs
+release-signed builds, which read no sideloaded pairing file: pair it by scanning the QR.
 
-lefthook runs `ktlintCheck` and `:core:test` on pre-commit. Install with `lefthook install` if the
-hook is missing.
+lefthook runs `scripts/public-check.sh`, `ktlintCheck` (which includes the licence-header check)
+and `:core:test` on pre-commit. Install with `lefthook install` if the hook is missing. Never
+`--no-verify`.
 
 ## Global Constraints
 
@@ -66,7 +70,7 @@ hook is missing.
 - Pause `reason` is exactly `"usage-deck:<installId>"`. Only rules whose `reason` equals this phone's string ever escalate.
 - Session and project pause scopes go to one machine. Only `all` fans out.
 - Users are keyed by account **and** organisation (`accountUuid/organizationUuid`): team-plan limits are
-  per org, and Adam's one account sits in two orgs. Display names are the deck's own renames
+  per org, and one account can sit in two orgs. Display names are the deck's own renames
   (`Settings.userNames`, Settings › Users) falling back to the daemon's `displayName`, then the e-mail's local part.
 - Home lists rank by live rate, not by tokens: `core/model/ActivityOrder` (the iPhone app's rule) puts the
   busiest project first and the busiest session first inside it; the landscape dock ranks every session
@@ -80,7 +84,8 @@ hook is missing.
   "last heard 2d ago") and returns with its first check-in.
 - Escalation default 90 s; range 30 s–600 s or off; persisted across process death.
 - Self-update defers while a gesture is in progress, a hold is mid-press, or any escalation is pending.
-- Version: `versionName = 0.MINOR.<commit-count>+<sha>`, `versionCode = commit-count`. Release repo `BuildConfig.RELEASE_REPO`, default `drmuzikbpn/claude-utilization-mcp` (shared with the daemon): APK releases are tags `deck-<version>`, pre-release, assets `usage-deck.apk` + `usage-deck.apk.sha256`; the checker considers `deck-` tags only. CI signs with `apksigner` + `app/signing/usage-deck.lineage` (v3, rotated from this Mac's debug key) so the debug-provisioned phone updates in place; Gradle never signs release.
+- Version: `versionName = 0.MINOR.<commit-count>+<sha>`, `versionCode = commit-count`. Release repo `BuildConfig.RELEASE_REPO`, default `drmuzikbpn/claude-utilization-mcp` (shared with the daemon): APK releases are tags `deck-<version>`, pre-release, assets `usage-deck.apk` + `usage-deck.apk.sha256`; the checker considers `deck-` tags only. CI signs with `apksigner` + `app/signing/usage-deck.lineage` (v3, rotated from the debug key the phone was provisioned with) so it updates in place; Gradle never signs release.
+- Before `ApkInstaller` sees a download, `Updater` requires: size ≤ `MAX_APK_BYTES`, the release's sha256 (fetched first), and `ApkGate` (`PackageApkGate`/`ApkRules`: same package, higher `versionCode`, signer in the installed app's lineage or vice versa). A release that fails any of those, or fails to install (`InstallResultReceiver` included), goes into `UpdateSkips` and the periodic check leaves it alone until a newer release or Settings › Check now. A network failure is never a skip.
 - A limit alert fires **once per window**. `Alert.window` is the limit's `resetsAt`, and `AlertLedger`
   (SharedPreferences `alerts`) remembers what has spoken across process death — a self-update must
   never re-announce a 7-day window that is already over the line. Dropping back under a threshold
@@ -99,36 +104,90 @@ hook is missing.
   `MachineClient.api` so their 401s count too. Before this a rotated token looked "connected":
   an open stream kept heartbeating, sessions stayed listed, and an account's health is the best of
   its machines.
-- Pairing (daemon §23.45–§23.47): `claude-usage pair` is the preferred path. Its QR/link
+- Pairing (daemon §23.45–§23.47): `claude-usage pair` is the **only** pairing. Its QR/link
   `usagedeck://pair?v=2&name&addrs&port&fp&code` carries no bearer; `core/pairing/PairingClient`
   redeems the single-use code with `POST /v1/pair` over HTTPS pinned by `core/daemon/PinnedTls`
   (SHA-256 of the leaf's SPKI must equal `fp`; host names are deliberately not checked). Never log
-  or persist the code or the token. A `MachineConfig` with `fp` talks pinned HTTPS for **all**
-  REST and SSE and falls back across `addrs` via `Endpoints`; one without `fp` is a legacy
-  `claude-usage configure pairing` row on plain HTTP and must keep working unchanged.
-  `MachineStore.pair` replaces the same machine in place — same `fp`, same addr+port, or a legacy
-  row whose non-loopback addr is one of the new `addrs` (any port) — keeping that row's id (so
-  escalations, alerts and burn history survive) and taking the daemon's current name. `InvitePairing` runs each redeem
-  on the graph's scope, one per code; a redeem moves to the next address only when the request
-  provably never left the phone (`neverSent`), otherwise it stops with `reply_lost`.
+  or persist the code or the token. `InvitePairing` runs each redeem on the graph's scope, one per
+  code; a redeem moves to the next address only when the request provably never left the phone
+  (`neverSent`), otherwise it stops with `reply_lost`.
+- **There is no plain-HTTP path to a daemon and none may be added.** `MachineConfig.baseUrlFor` is
+  always https; `OkHttpDaemonApi` and `DaemonEventSource` throw if built for a config without `fp`;
+  every client is `PinnedTls.client` (TLS-only `connectionSpecs`, no redirects) and `DeckGraph.http`
+  is TLS-only too. The retired v1 JSON pairing (`claude-usage configure pairing`) is recognised by
+  `PairingInvite.parse` only to refuse it. A stored row without `fp` is **kept, never contacted**:
+  `MachineStore` scrubs its bearer on load, `MachineClient.retired` gives it `needsRepair` with
+  code `legacy` (no stream, poll or probe; its API refuses every call), and `RepairCard` reads
+  "<name> needs to be paired again … `claude-usage pair`". Re-pairing replaces that row in place.
+- The manifest permits cleartext (`res/xml/network_security_config.xml`) only because the
+  captive-portal WebView needs it and Android cannot scope it to one WebView. `NoCleartextTest`
+  fails if any shipped source but `CaptivePortalActivity.PROBE_URL` names an `http://` URL or uses
+  the platform HTTP stack. `PortalPolicy` keeps that WebView to http/https, without file/content
+  access, mixed content or a JavaScript interface, and wipes it on destroy.
+- `MachineStore.pair` replaces the same machine in place — same `fp`, same addr+port, or a retired
+  row whose non-loopback addr is one of the new `addrs` — keeping that row's id (so escalations,
+  alerts and burn history survive) and taking the daemon's current name. **Nothing replaces a
+  machine unasked:** `PairingImports` holds a sideloaded link that `MachineStore.wouldReplace`
+  matches until `ImportConfirmDialog` ("Replace <old> with <new>?") is answered, and pairs
+  unconfirmed links with `mayReplace = false`; the pairing screen asks before a scan overwrites a
+  machine pinned to another certificate.
+- `pairing-import.json` (`PairingImport`): v2 link only; private `filesDir` always, external files
+  dir **only when `BuildConfig.DEBUG`**; polled every 5 s while `MainActivity` is RESUMED (a
+  foreground kiosk never resumes again); deleted before use and refused if it cannot be deleted.
+- Everything read from a daemon is bounded by `BodyLimits` (REST, error and pair bodies; SSE line
+  and event via `sseGuard`); a reply that is not the expected JSON is `bad_response`, never an
+  escaping exception. Names pass `Labels.machineName` (control/format characters dropped, 64
+  chars); a link keeps at most `PairingInvite.MAX_ADDRS` addresses.
+- Secrets at rest: `encryptedPrefs` (`pairing/SecureStorage.kt`) **fails closed** — only a
+  debuggable build falls back to plain prefs (Robolectric, emulator). In release it throws
+  `SecureStorageException`; `UsageDeckApp.storageFailure` is then set, no graph is built,
+  `DeckService` stops itself and `MainActivity` shows `StorageErrorScreen` (still locked).
+  `allowBackup` is false and the extraction rules exclude every domain. Never log a parser
+  exception from a store: its message quotes the stored JSON.
+- Exit PIN (`kiosk/ExitPin`): `set` only while none exists; afterwards only `change(current, new)`,
+  which goes through `verify` so the attempt counter and lockout apply and are reset only by a
+  verified PIN. PBKDF2-HMAC-SHA256; an old salted SHA-256 record is rewritten on the next correct
+  entry. The lockout is timed on `Uptime` (elapsedRealtime + boot count), never the wall clock; a
+  reboot restarts it in full. A Device Owner deck with no PIN shows `FirstPinDialog` at launch.
+- `ManifestSurfaceTest` pins the merged manifest: only `MainActivity` and `DeviceAdminReceiver`
+  are exported, no library activity rides along, and the permission list is exact. A dependency
+  that adds a component needs a `tools:node="remove"` or a deliberate change to that test.
 - Single dark theme, colours and fonts from spec §11.6. Tabular numerals everywhere.
-- Commit after every task with a conventional-commit message ending in `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Never push.
+- Commit after every task with a conventional-commit message ending in `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Never push.
+- Every `.kt`/`.kts` starts with the two-line SPDX header (`// SPDX-License-Identifier: MIT`, `// Copyright (c) 2026 Even Seal Productions`); `ktlintCheck` fails without it. Shell, YAML and XML carry it as a comment.
 - No `TODO`/`FIXME` left in committed code. No test may be `@Ignore`d.
 
 ## Remote and pushing
 
 This project lives on the orphan branch `usage-android` of `drmuzikbpn/claude-utilization-mcp` (the
-daemon's repo; local `main` tracks `origin/usage-android`, pushed 2026-09-14 with Adam's approval). Renamed from `usage-deck` on 2026-10-01; the iPhone + Apple Watch app lives on `usage-ios`.
-Do not `git push` without explicit approval in the session. CI runs on pushes to `usage-android` only
-(never a wildcard: the daemon's release job runs on `main`) and publishes a `deck-<version>`
-pre-release once the signing secrets exist; until then it only tests.
+daemon's repo; renamed from `usage-deck` on 2026-10-01); the iPhone + Apple Watch app lives on
+`usage-ios`. Do not `git push` without explicit approval in the session. CI (`.github/workflows/ci.yml`)
+has a `test` job (pull requests and pushes; read-only token, no secrets) and a `release` job
+(`needs: test`, pushes to `usage-android` only — never a wildcard, the daemon's release job runs on
+`main` — in the `release` environment, `contents: write`) that signs with `apksigner` and publishes
+a `deck-<version>` pre-release with `gh release create` once the signing secrets
+(`SIGNING_KEYSTORE_B64`, `SIGNING_KEY_ALIAS`, `SIGNING_STORE_PASSWORD`, optional
+`SIGNING_KEY_PASSWORD`) exist. Keep every `uses:` pinned to a full commit SHA with the version in
+a trailing comment, never add `set -x` to a step that sees a secret, and keep third-party actions
+out of `release`. `gradle-wrapper.properties` carries `distributionSha256Sum`: update it with the
+Gradle version.
+
+## Public repository
+
+Everything committed here is published. `scripts/public-check.sh` (lefthook pre-commit, and CI on
+a pull request's additions) blocks credentials, e-mail addresses off its allowlist, `/Users/<name>/`
+and `/home/<name>/` paths, IPv4 addresses outside loopback / `10.0.2.2` / the RFC 5737
+documentation ranges, carrier-grade-NAT (tailnet) addresses, `*.ts.net` names, and a git identity other than
+`support@evensealproductions.com`. An untracked `.public-check.local` adds private literals.
+In new tests and docs use `192.0.2.x`, `*.example.test` and made-up names; in prose say "the
+owner", never a person's name; never write a serial number, a real host name or a secret.
 
 ## Gotchas
 
 - `BurnHistory` is written on the SSE thread and read by Compose on main; every method locks and
   readers work on a snapshot. Dropping the lock crashes the kiosk with ConcurrentModificationException
   every few minutes on the real phone (it did, four times in half an hour).
-- Daemons before 0.1.66 resume exactly the scope they are given (the Studio is on 0.1.0); newer ones
+- Daemons before 0.1.66 resume exactly the scope they are given; newer ones
   cascade a project resume and keep one rule per scope. The phone fans a project resume out to the
   session rules under it so both behave; resuming an already-lifted scope is a no-op.
 - Hard freeze (daemon §23.16, from the release after 0.1.65) stops only tool subprocesses and holds
@@ -159,10 +218,16 @@ pre-release once the signing secrets exist; until then it only tests.
 - Android 10 returns an **empty** wifi scan list without location permission rather than throwing.
   `KioskManager.applyPolicies()` grants `ACCESS_FINE_LOCATION` and `CAMERA` as Device Owner.
 - Doze exemption is a one-tap dialog on first launch; Device Owner cannot write it on API 29.
-- `fakedaemon` serves REST fine inside an Android process, but its SSE `snapshot` frame truncates
-  on-device — `EndToEndTest` scripts its own stream instead.
+- `fakedaemon` runs inside an Android process too (`FakeDaemonOnDeviceTest`: pairing, REST and the
+  stream over its TLS front). Its `snapshot` frame must send `sessions` as a bare array like the
+  real daemon; it once sent the `/v1/sessions` body, which the deck parsed as an unknown event.
+- Ktor's CIO server cannot serve HTTPS, so the fake terminates TLS in `TlsFront` (plain JDK
+  sockets) and pipes to a loopback CIO connector; only that connector may answer `/v1/pair`.
+- Robolectric has no AndroidKeyStore, so `encryptedPrefs` always takes the debug fallback in unit
+  tests; `SecureStorageTest` flips `SecureStorage.plaintextFallbackAllowed` to see release behaviour.
 
 ## Docs
 
 `docs/device-setup.md` (flashing and provisioning), `docs/teammate-onboarding.md` (adding a Mac),
-`docs/smoke-test.md` (manual checklist before a release).
+`docs/smoke-test.md` (manual checklist before a release), `SECURITY.md` (what is and is not
+protected), `THIRD_PARTY_NOTICES.md` + `licenses/` (fonts and libraries).

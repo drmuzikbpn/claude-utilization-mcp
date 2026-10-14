@@ -43,8 +43,8 @@ fun StorageErrorScreen() {
             fontSize = 14.sp
         )
         Text(
-            text = "Restart the phone. If this screen comes back, the keystore was reset: clear the " +
-                "app's data over adb and pair each machine again with `claude-usage pair`.",
+            text = "Restart the phone. If this screen comes back, the keystore was reset: set the " +
+                "deck up again (docs/device-setup.md) and pair each machine with `claude-usage pair`.",
             color = DeckColors.muted,
             fontFamily = DeckType.text,
             fontSize = 13.sp

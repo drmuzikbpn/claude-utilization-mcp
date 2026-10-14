@@ -1,5 +1,7 @@
 # Usage Deck
 
+Not affiliated with Anthropic.
+
 A Nexus 5X running LineageOS, bolted to a shelf, showing what every Claude Code session on the
 team is burning right now — and letting you stop one with a thumb.
 
@@ -7,11 +9,14 @@ It is a Device Owner kiosk launcher: it streams from N `claude-usage` daemons ov
 merges them into one view, and can soft-pause or hard-freeze a session, a project, or everything
 at once.
 
-![Ledger, portrait](docs/images/ledger.png)
-![Wide dock, landscape](docs/images/wide-dock.png)
-![Project drill-in](docs/images/project.png)
+| Ledger (portrait) | Project drill-in | Machine | Pairing |
+| --- | --- | --- | --- |
+| ![Ledger, portrait](docs/images/deck-ledger.png) | ![Project drill-in](docs/images/deck-project.png) | ![Machine](docs/images/deck-machine.png) | ![Pairing](docs/images/deck-pairing.png) |
 
-*(Screenshots are placeholders until the deck is photographed in place.)*
+![Wide dock, landscape](docs/images/deck-wide-dock.png)
+
+*Screenshots are from the emulator against the fake daemon: every name and number in them is
+synthetic.*
 
 ## What it does
 
@@ -33,8 +38,10 @@ at once.
   names, thresholds, escalation, quiet hours, exit PIN and updates.
 - **Alerts** — full-screen in the dock, heads-up notification on battery, silenced (but still
   visible) during quiet hours.
-- **Self-update** — polls its own GitHub releases every 10 minutes, verifies sha256, and installs
-  silently as Device Owner — but never while a gesture or an escalation is in flight.
+- **Self-update** — polls its own GitHub releases every 10 minutes and installs silently as Device
+  Owner — but never while a gesture or an escalation is in flight. Before installing it checks
+  the sha256, that the APK is this app with a higher version code, and that it is signed by the
+  key the installed app trusts; a release that fails is skipped, not retried every ten minutes.
 
 ## Modules
 
@@ -65,13 +72,19 @@ ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest
 
 ## Running without a Mac
 
-`fakedaemon` implements the daemon contract, so the app runs on an emulator with nothing else:
+`fakedaemon` implements the daemon contract — pinned HTTPS, `claude-usage pair` links and all — so
+the app runs on an emulator with nothing else:
 
 ```bash
 scripts/fakedaemon.sh warnCrossing      # also: idle, freeze, machineDrop, tokenRotated
+scripts/pair-emulator.sh                # in another terminal: pairs the debug build on the emulator
 ```
 
-Pair the emulator against `10.0.2.2` on the port the script printed, with token `fake-token`.
+The fake listens on loopback only (the emulator reaches it as `10.0.2.2`), prints a single-use
+pairing link, and generates a fresh token for every run; there is no fixed token.
+`scripts/pair-emulator.sh` pushes that link to the place a **debug** build watches for one, and
+refuses any serial that is not an emulator. To let a device on the network reach the fake, opt in
+explicitly: `BIND=0.0.0.0 ADDRS=<this machine's address> scripts/fakedaemon.sh`.
 
 ## Pairing a Mac
 
@@ -89,13 +102,18 @@ redeems the code over HTTPS pinned to that certificate (`POST /v1/pair`, daemon 
 then on talks to that Mac over pinned HTTPS only, falling back across its LAN, `.local` and
 tailnet addresses.
 
-Daemons without `claude-usage pair` still work with the legacy path, `claude-usage configure
-pairing`, whose QR **is** a live bearer token for plain HTTP: scan it off the Mac's own display,
-never a photo or a shared screen, and run `claude-usage configure rotate-token` if it is ever
-exposed. Re-pairing a Mac with `claude-usage pair` replaces its legacy row in place, keeping the
-row's identity, so its pause escalations and history carry over; the name is the daemon's current one. Repeat for each Mac; the deck merges them into one view. The full walkthrough, including
-Tailscale and what "Token rejected" means, is in
+There is no other way to pair. The older `claude-usage configure pairing` QR, which carried the
+bearer token itself for plain HTTP, is no longer accepted, and the deck has no plain-HTTP path to
+a daemon at all. A machine that was paired that way stays on the deck as an amber "needs to be
+paired again" card: run `claude-usage pair` on it and tap **Re-pair**. Its row keeps its
+identity, so pause escalations and history carry over.
+
+Repeat for each Mac; the deck merges them into one view. The full walkthrough, including
+Tailscale and the troubleshooting table, is in
 [docs/teammate-onboarding.md](docs/teammate-onboarding.md).
+
+**If the phone is lost or stolen**, run `claude-usage configure rotate-token` on every machine it
+was paired with, then pair the replacement. See [SECURITY.md](SECURITY.md).
 
 ## Setting up a phone
 
@@ -110,21 +128,36 @@ Before shipping a release that touches kiosk, wifi, pairing or update, run
 ## Releases
 
 The app lives on the `usage-android` branch of the daemon's repo, `drmuzikbpn/claude-utilization-mcp`.
-CI runs ktlint, all JVM tests and the instrumented suite on an API 29 emulator. On `usage-android`,
-once the signing secrets exist, it also assembles a signed release and publishes it under the
-namespace the two updaters agreed on (daemon spec §23.17): tag `deck-<version>`, assets
-`usage-deck.apk` and `usage-deck.apk.sha256`, always flagged pre-release so the daemon's
-`/releases/latest` never returns an APK. The deck's updater lists releases and considers `deck-`
-tags only, so a daemon tarball never looks installable to it.
+CI has two jobs. `test` runs for every pull request and push with a read-only token and no
+secrets: the public-repository check, ktlint, all JVM tests and the instrumented suite on an
+API 29 emulator. `release` runs only for a push to `usage-android`, after `test`, inside the
+`release` environment: it assembles the release, signs it with `apksigner`, and publishes it with
+`gh release create` under the namespace the two updaters agreed on (daemon spec §23.17): tag
+`deck-<version>`, assets `usage-deck.apk` and `usage-deck.apk.sha256`, always flagged pre-release
+so the daemon's `/releases/latest` never returns an APK. Without the signing secrets it publishes
+nothing. The deck's updater lists releases and considers `deck-` tags only, so a daemon tarball
+never looks installable to it.
 
 Versions are `0.MINOR.<commit-count>+<short-sha>`; `versionCode` is the commit count.
 
-Signing secrets (`SIGNING_KEYSTORE_B64`, `SIGNING_KEY_ALIAS`, `SIGNING_STORE_PASSWORD`,
-`SIGNING_KEY_PASSWORD`) are populated in GitHub from **1Password vault `usagedeck`, item
-`usagedeck-ci`**. CI signs with `apksigner` and `app/signing/usage-deck.lineage`, a rotation from
-the debug key the phone was provisioned with, so releases install over it in place; the story is
-in [docs/device-setup.md](docs/device-setup.md) under *Release signing*.
+The workflow reads the signing secrets `SIGNING_KEYSTORE_B64`, `SIGNING_KEY_ALIAS` and
+`SIGNING_STORE_PASSWORD` (and `SIGNING_KEY_PASSWORD`, only if the key's password differs from the
+store's). Keep them in the `release` environment rather than at repository level, so only the
+release job can read them. CI signs with `app/signing/usage-deck.lineage`, a rotation from the key
+the phone was first provisioned with, so releases install over it in place; the story is in
+[docs/device-setup.md](docs/device-setup.md) under *Release signing*.
+
+Every GitHub Action is pinned to a commit, the Gradle wrapper verifies its distribution's
+checksum, and a pre-commit hook (`scripts/public-check.sh`, via lefthook) refuses a commit that
+adds a credential, a private address or path, or an unlisted e-mail address.
+
+## Security
+
+How pairing, storage, the kiosk and updates are protected, what they do not protect against, and
+how to report a problem: [SECURITY.md](SECURITY.md).
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). The bundled Barlow and IBM Plex fonts are under the SIL Open Font
+License, and the libraries the app ships are under Apache-2.0: see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [`licenses/`](licenses/).
