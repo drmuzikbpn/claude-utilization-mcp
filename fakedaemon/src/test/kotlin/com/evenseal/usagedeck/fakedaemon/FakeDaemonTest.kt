@@ -10,6 +10,7 @@ import com.evenseal.usagedeck.core.daemon.OkHttpDaemonApi
 import com.evenseal.usagedeck.core.daemon.SessionsResult
 import com.evenseal.usagedeck.core.pairing.PairingClient
 import com.evenseal.usagedeck.core.pairing.PairingInvite
+import java.net.BindException
 import java.net.ServerSocket
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.first
@@ -35,11 +36,21 @@ class FakeDaemonTest {
     private var port = 0
     private lateinit var daemon: FakeDaemon
 
+    // A free port found by closing a ServerSocket can be taken by something else before the
+    // daemon binds it (it was, once, on a CI runner), so a lost race picks another port.
     @Before
     fun up() {
-        port = ServerSocket(0).use { it.localPort }
-        daemon = FakeDaemon(port = port)
-        daemon.start()
+        repeat(5) { attempt ->
+            port = ServerSocket(0).use { it.localPort }
+            daemon = FakeDaemon(port = port)
+            try {
+                daemon.start()
+                return
+            } catch (e: Exception) {
+                runCatching { daemon.stop() }
+                if (!generateSequence<Throwable>(e) { it.cause }.any { it is BindException } || attempt == 4) throw e
+            }
+        }
     }
 
     @After
