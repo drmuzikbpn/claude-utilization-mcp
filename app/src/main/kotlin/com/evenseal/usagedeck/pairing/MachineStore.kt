@@ -9,6 +9,7 @@ import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.evenseal.usagedeck.core.model.MachineConfig
+import com.evenseal.usagedeck.core.pairing.PairingInvite
 import java.io.IOException
 import java.security.GeneralSecurityException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +21,11 @@ import kotlinx.serialization.json.Json
 
 /**
  * The paired machines, held in `EncryptedSharedPreferences` because each row carries a live
- * daemon bearer token. Spec §6.3. v2 rows also carry the daemon's certificate pin and addresses.
+ * daemon bearer token, with the daemon's certificate pin and addresses. Spec §6.3.
+ *
+ * A row stored by the retired plain-HTTP pairing has no pin. It is kept — the owner must be able
+ * to see which machine needs pairing again — but it is no longer a pairing: its bearer is
+ * scrubbed the first time the store loads, and nothing ever connects to it.
  */
 class MachineStore(private val prefs: SharedPreferences) {
     private val lock = Any()
@@ -34,12 +39,30 @@ class MachineStore(private val prefs: SharedPreferences) {
     /**
      * Stores a freshly paired machine and returns the row as stored. A row that is the same
      * machine is replaced in place: the same certificate key, the same address and port, or —
-     * upgrading a v1 pairing to v2 — a keyless row whose (non-loopback) address is one of the new
-     * pairing's addresses, whatever its port (v1 rows sit on the HTTP port, v2 on the TLS one).
+     * pairing a retired row again — a keyless row whose (non-loopback) address is one of the new
+     * pairing's addresses, whatever its port (retired rows sat on the HTTP port).
      * The replacement keeps that row's id, so escalations, alerts and burn history survive a
      * re-pair, and takes the daemon's current name; any further matching rows are dropped.
+     *
+     * With [mayReplace] false nothing is replaced: the machine is added as a new row even if it
+     * matches one. That is for a pairing nobody confirmed on screen (see [PairingImports]).
      */
-    fun pair(config: MachineConfig): MachineConfig = store(config, replacing = null)
+    fun pair(config: MachineConfig, mayReplace: Boolean = true): MachineConfig =
+        if (mayReplace) store(config, replacing = null) else config.also { add(it) }
+
+    /**
+     * The row [invite] would replace if it were redeemed and [pair]ed, or null when it would be
+     * added as a new machine. Asked before the code is spent, so a replacement can be confirmed.
+     */
+    fun wouldReplace(invite: PairingInvite): MachineConfig? {
+        val addrs = invite.addrs.map { it.lowercase() }.toSet()
+        val routable = addrs.filterNot(::isLoopback).toSet()
+        return _machines.value.firstOrNull { old ->
+            old.fp == invite.fp ||
+                (old.addr.lowercase() in addrs && old.port == invite.port) ||
+                (old.fp == null && old.addr.lowercase() in routable)
+        }
+    }
 
     /**
      * A re-pair started from a machine's Re-pair card: [config] replaces row [id] whatever it
@@ -98,9 +121,16 @@ class MachineStore(private val prefs: SharedPreferences) {
 
     private fun load(): List<MachineConfig> {
         val raw = prefs.getString(KEY_MACHINES, null) ?: return emptyList()
-        return runCatching { json.decodeFromString(listSerializer, raw).map { it.config() } }
+        val stored = runCatching { json.decodeFromString(listSerializer, raw) }
             .onFailure { Log.w(TAG, "dropping unreadable machine store", it) }
             .getOrDefault(emptyList())
+        // A retired row keeps its place and its name, never its bearer: that token was only ever
+        // good for plain HTTP, which the deck no longer speaks.
+        val scrubbed = stored.map { if (it.fp == null && it.token.isNotEmpty()) it.copy(token = "") else it }
+        if (scrubbed != stored) {
+            prefs.edit().putString(KEY_MACHINES, json.encodeToString(listSerializer, scrubbed)).commit()
+        }
+        return scrubbed.map { it.config() }
     }
 
     @Serializable
@@ -110,7 +140,7 @@ class MachineStore(private val prefs: SharedPreferences) {
         val addr: String,
         val port: Int,
         val token: String,
-        // Absent on rows stored before v2 pairing, which keep talking plain HTTP.
+        // Absent on rows stored by the retired plain-HTTP pairing; such a row must be paired again.
         val fp: String? = null,
         val addrs: List<String> = emptyList()
     )

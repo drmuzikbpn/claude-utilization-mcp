@@ -10,6 +10,7 @@ import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.evenseal.usagedeck.core.daemon.PinnedTls
 import com.evenseal.usagedeck.core.model.MachineConfig
 import com.evenseal.usagedeck.service.DeckGraph
 import com.evenseal.usagedeck.ui.components.FROZEN_TAG
@@ -20,6 +21,8 @@ import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.tls.HandshakeCertificates
+import okhttp3.tls.HeldCertificate
 import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -32,11 +35,9 @@ import org.junit.runner.RunWith
  * `MachineClient` SSE path, the real `PauseController`, the real `DeckService` and the real
  * Ledger — driven by a finger.
  *
- * The daemon here is a scripted `MockWebServer` rather than the `fakedaemon` module. Ktor CIO does
- * start and serve REST inside an Android process — `FakeDaemonOnDeviceTest` proves that — but its
- * `/v1/events` stream truncates the large `snapshot` frame on-device: the client receives
- * `event: snapshot` and the connection closes before the `data:` line. Until that is fixed the
- * on-device end-to-end has to script its own stream.
+ * The daemon here is a scripted `MockWebServer` rather than the `fakedaemon` module, so the
+ * test controls exactly when the session turns frozen. `FakeDaemonOnDeviceTest` covers the fake
+ * itself, pairing and stream included, inside an Android process.
  */
 @RunWith(AndroidJUnit4::class)
 class EndToEndTest {
@@ -57,11 +58,21 @@ class EndToEndTest {
 
     @Before
     fun setUp() {
+        // The deck has no plain-HTTP path to a daemon, so the scripted one serves pinned HTTPS.
+        val held = HeldCertificate.Builder().commonName("claude-usage").ecdsa256().build()
         server = MockWebServer()
         server.dispatcher = daemon()
+        server.useHttps(HandshakeCertificates.Builder().heldCertificate(held).build().sslSocketFactory(), false)
         server.start()
 
-        config = MachineConfig("m", "fake", server.hostName, server.port, TOKEN)
+        config = MachineConfig(
+            "m",
+            "fake",
+            server.hostName,
+            server.port,
+            TOKEN,
+            fp = PinnedTls.fingerprint(held.certificate)
+        )
 
         val app = InstrumentationRegistry.getInstrumentation()
             .targetContext.applicationContext as UsageDeckApp

@@ -132,6 +132,12 @@ class ReleaseCheckerTest {
     }
 
     @Test
+    fun `a release list larger than the cap yields null`() = runTest {
+        server.enqueue(MockResponse().setBody("[" + " ".repeat(ReleaseChecker.MAX_BODY_BYTES.toInt()) + "]"))
+        assertNull(checker.latest())
+    }
+
+    @Test
     fun `a 404 from github yields null`() = runTest {
         server.enqueue(MockResponse().setResponseCode(404))
         assertNull(checker.latest())

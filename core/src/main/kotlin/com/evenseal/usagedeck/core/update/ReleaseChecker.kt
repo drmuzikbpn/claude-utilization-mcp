@@ -94,7 +94,10 @@ class ReleaseChecker(
     private suspend fun get(url: String): String? = withContext(Dispatchers.IO) {
         runCatching {
             client.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
-                if (response.isSuccessful) response.body?.string() else null
+                if (!response.isSuccessful) return@use null
+                val source = response.body?.source() ?: return@use null
+                // GitHub is not the daemon, but the same rule holds: never buffer without a bound.
+                if (source.request(MAX_BODY_BYTES + 1)) null else source.readUtf8()
             }
         }.getOrNull()
     }
@@ -102,6 +105,9 @@ class ReleaseChecker(
     companion object {
         /** Spec §23.17: the APK's tag namespace inside the daemon's repo. */
         const val TAG_PREFIX = "deck-"
+
+        /** A hundred releases of JSON is well under a megabyte. */
+        const val MAX_BODY_BYTES = 4L * 1024 * 1024
         private const val SUMS_NAME = "SHA256SUMS"
         private const val PAGE = 100
         private val HEX = Regex("^[0-9a-fA-F]{64}$")

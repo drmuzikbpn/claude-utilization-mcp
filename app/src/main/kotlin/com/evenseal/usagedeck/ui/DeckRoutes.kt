@@ -11,9 +11,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evenseal.usagedeck.BuildConfig
 import com.evenseal.usagedeck.core.daemon.DaemonException
-import com.evenseal.usagedeck.core.daemon.OkHttpDaemonApi
 import com.evenseal.usagedeck.core.pairing.PairingInvite
-import com.evenseal.usagedeck.pairing.ScannedPairing
 import com.evenseal.usagedeck.service.DeckGraph
 import com.evenseal.usagedeck.ui.components.usersWithData
 import com.evenseal.usagedeck.ui.machine.MachineScreen
@@ -111,34 +109,20 @@ internal fun PairingRoute(graph: DeckGraph, onBack: () -> Unit, replacing: Strin
     PairingScreen(
         redeeming = redeeming,
         replacing = target,
-        onScanned = { scanned, replace, report ->
-            val replaceId = target?.id?.takeIf { replace }
-            when (scanned) {
-                is ScannedPairing.Legacy -> {
-                    val fresh = scanned.payload.toConfig()
-                    val config =
-                        if (replaceId != null) {
-                            graph.machineStore.replace(
-                                replaceId,
-                                fresh
-                            )
-                        } else {
-                            graph.machineStore.pair(fresh)
-                        }
-                    report(PairingStatus("Saved ${config.name}. Checking the daemon…", busy = true))
-                    scope.launch {
-                        report(PairingStatus(probe(graph, config)))
-                    }
-                }
-                is ScannedPairing.Invite -> {
-                    report(PairingStatus("Pairing with ${scanned.invite.name}…", busy = true))
-                    // The graph's scope, not the screen's: the code is single use, so a redeem
-                    // that has started must finish and store its token even if the screen closes.
-                    graph.scope.launch {
-                        val outcome = redeem(graph, scanned.invite, replaceId)
-                        withContext(Dispatchers.Main) { report(PairingStatus(outcome)) }
-                    }
-                }
+        // A QR whose address is already paired under another certificate would swap that
+        // machine's identity: ask first. Pairing a retired row again, or the same key, is not that.
+        conflictOf = { invite ->
+            graph.machineStore.wouldReplace(invite)
+                ?.takeIf { it.isPinned && it.fp != invite.fp }
+                ?.let { ReplaceTarget(it.id, listOfNotNull(it.name, team.machine(it.id)?.name).distinct()) }
+        },
+        onScanned = { invite, replaceId, mayReplace, report ->
+            report(PairingStatus("Pairing with ${invite.name}…", busy = true))
+            // The graph's scope, not the screen's: the code is single use, so a redeem
+            // that has started must finish and store its token even if the screen closes.
+            graph.scope.launch {
+                val outcome = redeem(graph, invite, replaceId, mayReplace)
+                withContext(Dispatchers.Main) { report(PairingStatus(outcome)) }
             }
         },
         onBack = onBack
@@ -146,29 +130,11 @@ internal fun PairingRoute(graph: DeckGraph, onBack: () -> Unit, replacing: Strin
 }
 
 /** Daemon §23.47: the code buys the bearer over pinned HTTPS; errors are the daemon's own hints. */
-private suspend fun redeem(graph: DeckGraph, invite: PairingInvite, replacing: String?): String = try {
-    "Paired ${graph.invitePairing.pair(invite, replacing).name}."
-} catch (e: DaemonException) {
-    e.userMessage()
-}
-
-/**
- * Spec §6.3: a 401 means the token is wrong and pairing must be re-run; anything else is saved
- * anyway and simply shows as unreachable, because a Mac that is merely asleep is still paired.
- */
-private suspend fun probe(graph: DeckGraph, config: com.evenseal.usagedeck.core.model.MachineConfig): String =
-    withContext(Dispatchers.IO) {
-        try {
-            OkHttpDaemonApi(config, graph.http).health()
-            "Paired ${config.name}."
-        } catch (e: DaemonException) {
-            if (e.code == "unauthorized") {
-                graph.machineStore.remove(config.id)
-                "Token rejected. Re-run pairing on the Mac."
-            } else {
-                "Saved ${config.name}, but it is not answering yet: ${e.userMessage()}"
-            }
-        }
+private suspend fun redeem(graph: DeckGraph, invite: PairingInvite, replacing: String?, mayReplace: Boolean): String =
+    try {
+        "Paired ${graph.invitePairing.pair(invite, replacing, mayReplace).name}."
+    } catch (e: DaemonException) {
+        e.userMessage()
     }
 
 private fun Context.openCaptivePortal() {

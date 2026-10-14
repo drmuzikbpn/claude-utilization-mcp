@@ -30,9 +30,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.evenseal.usagedeck.core.pairing.PairingInvite
 import com.evenseal.usagedeck.pairing.QrScanActivity
 import com.evenseal.usagedeck.pairing.ReplaceCheck
-import com.evenseal.usagedeck.pairing.ScannedPairing
 import com.evenseal.usagedeck.ui.theme.DeckColors
 import com.evenseal.usagedeck.ui.theme.DeckType
 
@@ -42,34 +42,45 @@ data class PairingStatus(val message: String, val busy: Boolean = false)
 /** The row a Re-pair card asked to replace, with every name it goes by. */
 data class ReplaceTarget(val id: String, val names: List<String>)
 
+/** A scanned link held back until the person at the screen says what to do with it. */
+private data class Held(val invite: PairingInvite, val target: ReplaceTarget)
+
 /**
- * Spec §6.3, daemon §23.47. The preferred QR comes from `claude-usage pair` and carries a one-time
- * code that is redeemed over pinned HTTPS; the legacy `claude-usage configure pairing` QR is a
- * bearer token, so it is scanned off the Mac's own screen and rotated if it was ever photographed.
+ * Spec §6.3, daemon §23.47. The QR comes from `claude-usage pair` and carries a one-time code
+ * that is redeemed over HTTPS pinned to the fingerprint beside it; it never carries the token.
+ *
+ * [onScanned] gets the id of the row to replace (null to pair normally) and whether a normal
+ * pairing may still replace a row it matches. Nothing swaps one machine's key for another's
+ * without a question first: from a Re-pair card when the QR names a different machine, and from
+ * the plain pairing screen when the QR would overwrite a paired machine that has a different
+ * certificate ([conflictOf]).
  */
 @Composable
 fun PairingScreen(
-    onScanned: (ScannedPairing, replace: Boolean, report: (PairingStatus) -> Unit) -> Unit,
+    onScanned: (PairingInvite, replaceId: String?, mayReplace: Boolean, report: (PairingStatus) -> Unit) -> Unit,
     onBack: () -> Unit,
     redeeming: Boolean = false,
-    replacing: ReplaceTarget? = null
+    replacing: ReplaceTarget? = null,
+    conflictOf: (PairingInvite) -> ReplaceTarget? = { null }
 ) {
     val context = LocalContext.current
     var status by remember { mutableStateOf<PairingStatus?>(null) }
-    // A QR from a different machine than the card's: held until the user says what it is.
-    var confirming by remember { mutableStateOf<ScannedPairing?>(null) }
-    val accept: (ScannedPairing) -> Unit = { scanned ->
-        if (replacing != null && ReplaceCheck.needsConfirm(replacing.names, scanned.name)) {
-            confirming = scanned
-        } else {
-            onScanned(scanned, replacing != null) { status = it }
+    var confirming by remember { mutableStateOf<Held?>(null) }
+    val accept: (PairingInvite) -> Unit = { scanned ->
+        val conflict = if (replacing == null) conflictOf(scanned) else null
+        when {
+            replacing != null && ReplaceCheck.needsConfirm(replacing.names, scanned.name) ->
+                confirming = Held(scanned, replacing)
+            replacing != null -> onScanned(scanned, replacing.id, true) { status = it }
+            conflict != null -> confirming = Held(scanned, conflict)
+            else -> onScanned(scanned, null, true) { status = it }
         }
     }
 
     val scan = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
         val raw = result.data?.getStringExtra(QrScanActivity.EXTRA_PAYLOAD).orEmpty()
-        ScannedPairing.parse(raw)
+        PairingInvite.parse(raw)
             .onSuccess(accept)
             .onFailure { status = PairingStatus(it.message ?: "That QR is not a pairing code.") }
     }
@@ -107,7 +118,7 @@ fun PairingScreen(
 
         Text(
             modifier = Modifier.padding(horizontal = 10.dp),
-            text = "On the Mac: claude-usage pair\n(older daemons: claude-usage configure pairing)",
+            text = "On the Mac: claude-usage pair",
             color = DeckColors.muted,
             fontFamily = DeckType.mono,
             fontSize = 12.sp
@@ -140,32 +151,39 @@ fun PairingScreen(
         }
     }
 
-    val pending = confirming
-    if (pending != null && replacing != null) {
+    confirming?.let { held ->
         ReplaceConfirmDialog(
-            oldName = replacing.names.firstOrNull() ?: "this machine",
-            newName = pending.name,
+            oldName = held.target.names.firstOrNull() ?: "this machine",
+            newName = held.invite.name,
+            reRepairing = replacing != null,
             onReplace = {
                 confirming = null
-                onScanned(pending, true) { status = it }
+                onScanned(held.invite, held.target.id, true) { status = it }
             },
             onKeepBoth = {
                 confirming = null
-                onScanned(pending, false) { status = it }
+                // From a Re-pair card "keep both" pairs normally, as it always has. From the plain
+                // screen the conflicting row must survive, so nothing at all may be replaced.
+                onScanned(held.invite, null, replacing != null) { status = it }
             },
             onCancel = { confirming = null }
         )
     }
 }
 
-/** Asked when the QR scanned from a Re-pair card names a different machine than the card's. */
+/**
+ * Asked when a scanned QR would swap one paired machine for another: from a Re-pair card whose QR
+ * names a different machine ([reRepairing]), or from the pairing screen when the QR's address
+ * belongs to a machine paired with a different certificate.
+ */
 @Composable
 fun ReplaceConfirmDialog(
     oldName: String,
     newName: String,
     onReplace: () -> Unit,
     onKeepBoth: () -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    reRepairing: Boolean = true
 ) {
     AlertDialog(
         onDismissRequest = onCancel,
@@ -173,8 +191,14 @@ fun ReplaceConfirmDialog(
         title = { Text("Replace $oldName with $newName?", color = DeckColors.fg, fontFamily = DeckType.text) },
         text = {
             Text(
-                text = "This QR is from $newName, but you were re-pairing $oldName. Replace swaps " +
-                    "$oldName for $newName; Keep both pairs $newName as another machine.",
+                text = if (reRepairing) {
+                    "This QR is from $newName, but you were re-pairing $oldName. Replace swaps " +
+                        "$oldName for $newName; Keep both pairs $newName as another machine."
+                } else {
+                    "This QR is from $newName, at an address this deck has paired as $oldName with a " +
+                        "different certificate. Replace swaps $oldName for $newName; Keep both pairs " +
+                        "$newName as another machine."
+                },
                 color = DeckColors.muted,
                 fontFamily = DeckType.text,
                 fontSize = 13.sp
@@ -185,6 +209,34 @@ fun ReplaceConfirmDialog(
         },
         dismissButton = {
             TextButton(onClick = onKeepBoth) { Text("Keep both", color = DeckColors.muted) }
+        }
+    )
+}
+
+/**
+ * Asked before a sideloaded pairing file replaces a machine. Whoever dropped the file is not
+ * necessarily whoever is at the screen, so there is no "keep both" shortcut here: replace, or not.
+ */
+@Composable
+fun ImportConfirmDialog(oldName: String, newName: String, onReplace: () -> Unit, onCancel: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        containerColor = DeckColors.surface,
+        title = { Text("Replace $oldName with $newName?", color = DeckColors.fg, fontFamily = DeckType.text) },
+        text = {
+            Text(
+                text = "A pairing file was copied onto this deck. It would replace $oldName with $newName. " +
+                    "Replace only if you put it there; otherwise cancel and nothing changes.",
+                color = DeckColors.muted,
+                fontFamily = DeckType.text,
+                fontSize = 13.sp
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onReplace) { Text("Replace", color = DeckColors.warn) }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel) { Text("Cancel", color = DeckColors.muted) }
         }
     )
 }

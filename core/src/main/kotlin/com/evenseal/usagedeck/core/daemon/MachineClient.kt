@@ -14,6 +14,7 @@ import com.evenseal.usagedeck.core.model.PauseMode
 import com.evenseal.usagedeck.core.model.RepairReason
 import com.evenseal.usagedeck.core.model.Session
 import com.evenseal.usagedeck.core.model.aged
+import com.evenseal.usagedeck.core.pairing.Labels
 import java.time.Instant
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CoroutineScope
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
@@ -43,6 +45,10 @@ import kotlinx.coroutines.launch
  * network blip: the machine enters `state.needsRepair`, the stream and polling stop, its sessions
  * are dropped and it reads dead, and only a slow `/health` probe runs (every minute) so a restored
  * token recovers on its own. A re-pair replaces the config and with it this client.
+ *
+ * A row left over from the retired plain-HTTP pairing (`config.fp == null`) is never contacted at
+ * all: it starts in `needsRepair` with the `legacy` reason, runs no stream, no polling and no
+ * probe, and its [api] refuses every call before the one it was given is reached.
  */
 class MachineClient(
     val config: MachineConfig,
@@ -54,11 +60,14 @@ class MachineClient(
     private val screenOn: StateFlow<Boolean>,
     private val tickerMs: Long = 1000
 ) {
-    private val _state = MutableStateFlow(MachineState(config))
+    private val _state = MutableStateFlow(
+        MachineState(config, needsRepair = if (config.isPinned) null else LEGACY_ROW.repairReason())
+    )
     val state: StateFlow<MachineState> = _state.asStateFlow()
 
     /** [api] as given, watched: an auth failure from any caller (pause, resume) marks the machine. */
-    val api: DaemonApi = AuthWatchingApi(api) { reason -> enterRepair(reason) }
+    val api: DaemonApi =
+        if (config.isPinned) AuthWatchingApi(api) { reason -> enterRepair(reason) } else RefusingApi(LEGACY_ROW)
 
     private val jobs = mutableListOf<Job>()
     private val lock = Any()
@@ -75,6 +84,8 @@ class MachineClient(
         synchronized(lock) {
             if (started) return
             started = true
+            // Not a pairing: there is nothing to connect to, age or probe.
+            if (!config.isPinned) return
             connectionJob = scope.launch { connectionLoop() }
             jobs += scope.launch { agingLoop() }
             jobs += scope.launch { projectTokensLoop() }
@@ -314,7 +325,7 @@ class MachineClient(
         val sessions = event.sessions.map { it.toModel() }
         updateLive {
             it.copy(
-                name = event.name,
+                name = event.name?.let(Labels::machineName),
                 version = event.version,
                 user = event.user?.toModel(),
                 limits = limitsOf(event.limits),
@@ -423,15 +434,50 @@ class MachineClient(
         dto.toModel(if (known != null) statusOf(known) else statusFor(dto, thresholds))
     }
 
-    private companion object {
-        const val BACKOFF_MIN_MS = 3_000L
-        const val BACKOFF_MAX_MS = 30_000L
-        const val FAILURES_BEFORE_POLLING = 2
-        const val POLL_SCREEN_ON_MS = 2_000L
-        const val POLL_SCREEN_OFF_MS = 30_000L
-        const val PROJECT_TOKENS_MS = 30_000L
-        const val REPAIR_PROBE_MS = 60_000L
+    companion object {
+        private val LEGACY_ROW = DaemonException(DaemonException.LEGACY, 0, null, null)
+
+        /**
+         * The client for a row left over from the retired plain-HTTP pairing. It owns no
+         * transport at all — there is none to build — and only reports that the machine must be
+         * paired again.
+         */
+        fun retired(
+            config: MachineConfig,
+            burn: BurnHistory,
+            clock: Clock,
+            scope: CoroutineScope,
+            screenOn: StateFlow<Boolean>
+        ): MachineClient {
+            require(!config.isPinned) { "a pinned machine needs a real transport" }
+            return MachineClient(config, RefusingApi(LEGACY_ROW), { emptyFlow() }, burn, clock, scope, screenOn)
+        }
+
+        private const val BACKOFF_MIN_MS = 3_000L
+        private const val BACKOFF_MAX_MS = 30_000L
+        private const val FAILURES_BEFORE_POLLING = 2
+        private const val POLL_SCREEN_ON_MS = 2_000L
+        private const val POLL_SCREEN_OFF_MS = 30_000L
+        private const val PROJECT_TOKENS_MS = 30_000L
+        private const val REPAIR_PROBE_MS = 60_000L
     }
+}
+
+/** The API of a row that is not a pairing: every call fails with [error] and nothing is sent. */
+private class RefusingApi(private val error: DaemonException) : DaemonApi {
+    override suspend fun health(): HealthDto = throw error
+
+    override suspend fun summary(): SummaryDto = throw error
+
+    override suspend fun sessions(ifNoneMatch: String?): SessionsResult = throw error
+
+    override suspend fun tokensByProjectToday(): TokensDto = throw error
+
+    override suspend fun pause(scope: String, mode: PauseMode, reason: String): PauseResponseDto = throw error
+
+    override suspend fun resume(scope: String): ResumeResponseDto = throw error
+
+    override suspend fun rules(): RulesDto = throw error
 }
 
 /** Passes every call through; a 401 or pin mismatch also reports the machine as needing a re-pair. */

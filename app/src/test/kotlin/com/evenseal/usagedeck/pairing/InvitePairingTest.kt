@@ -49,6 +49,16 @@ class InvitePairingTest {
     }
 
     @Test
+    fun `a redeem that may not replace leaves the earlier pairing alone`() = runTest {
+        store.add(redeemed.copy(id = "old", token = "stale"))
+
+        val paired = InvitePairing({ redeemed }, store, work).pair(invite, mayReplace = false)
+
+        assertEquals("m1", paired.id)
+        assertEquals(listOf("stale", "tok"), store.machines.value.map { it.token })
+    }
+
+    @Test
     fun `a failed redeem stores nothing`() {
         val rejected = DaemonException("unauthorized", 401, null, "run `claude-usage pair` again")
         val pairing = InvitePairing({ throw rejected }, store, work)

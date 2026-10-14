@@ -49,4 +49,39 @@ class ReplaceConfirmDialogTest {
 
         assertEquals("both", choice)
     }
+
+    @Test
+    fun `a sideloaded file names both machines and can only be accepted or refused`() {
+        var choice: String? = null
+        compose.setContent {
+            ImportConfirmDialog(
+                oldName = "studio",
+                newName = "impostor",
+                onReplace = { choice = "replace" },
+                onCancel = { choice = "cancel" }
+            )
+        }
+
+        compose.onNodeWithText("Replace studio with impostor?").assertExists()
+        compose.onNodeWithText("Keep both").assertDoesNotExist()
+        compose.onNodeWithText("Cancel").performClick()
+
+        assertEquals("cancel", choice)
+    }
+
+    @Test
+    fun `a scan that would overwrite a machine paired with another certificate says so`() {
+        compose.setContent {
+            ReplaceConfirmDialog(
+                oldName = "studio",
+                newName = "impostor",
+                onReplace = {},
+                onKeepBoth = {},
+                onCancel = {},
+                reRepairing = false
+            )
+        }
+
+        compose.onNodeWithText("different certificate", substring = true).assertExists()
+    }
 }

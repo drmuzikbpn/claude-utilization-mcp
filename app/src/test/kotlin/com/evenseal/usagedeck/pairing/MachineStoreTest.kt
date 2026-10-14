@@ -6,7 +6,10 @@ package com.evenseal.usagedeck.pairing
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.evenseal.usagedeck.core.model.MachineConfig
+import com.evenseal.usagedeck.core.pairing.PairingInvite
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -18,8 +21,8 @@ class MachineStoreTest {
     private lateinit var context: Context
     private lateinit var store: MachineStore
 
-    private val mbp = MachineConfig("m1", "macbook-pro-10", "100.1.1.1", 8787, "tok-1")
-    private val mini = MachineConfig("m2", "mac-mini", "100.1.1.2", 8787, "tok-2")
+    private val mbp = MachineConfig("m1", "macbook-pro-10", "192.0.2.1", 8787, "tok-1", fp = "1".repeat(64))
+    private val mini = MachineConfig("m2", "mac-mini", "192.0.2.2", 8787, "tok-2", fp = "2".repeat(64))
 
     @Before
     fun setUp() {
@@ -50,7 +53,7 @@ class MachineStoreTest {
         val reopened = MachineStore.open(context)
         val loaded = reopened.machines.value.single()
         assertEquals(mbp, loaded)
-        assertEquals("http://100.1.1.1:8787", loaded.baseUrl)
+        assertEquals("https://192.0.2.1:8787", loaded.baseUrl)
     }
 
     @Test
@@ -103,16 +106,56 @@ class MachineStoreTest {
         assertEquals("https://192.168.1.30:47292", loaded.baseUrl)
     }
 
-    @Test
-    fun `rows stored before v2 pairing still load, as plain http`() {
-        context.getSharedPreferences("legacy-rows", Context.MODE_PRIVATE).edit()
-            .putString("machines", """[{"id":"m1","name":"mbp","addr":"100.1.1.1","port":8787,"token":"t"}]""")
+    private fun legacyPrefs(name: String) = context.getSharedPreferences(name, Context.MODE_PRIVATE).also {
+        it.edit()
+            .putString(
+                "machines",
+                """[{"id":"m1","name":"mbp","addr":"192.0.2.44","port":8787,"token":"old-bearer"}]"""
+            )
             .commit()
-        val loaded = MachineStore(
-            context.getSharedPreferences("legacy-rows", Context.MODE_PRIVATE)
-        ).machines.value.single()
-        assertEquals(MachineConfig("m1", "mbp", "100.1.1.1", 8787, "t"), loaded)
-        assertEquals("http://100.1.1.1:8787", loaded.baseUrl)
+    }
+
+    @Test
+    fun `a row from the retired plain-http pairing is kept, unpinned, so it can ask for a re-pair`() {
+        val loaded = MachineStore(legacyPrefs("legacy-rows")).machines.value.single()
+
+        assertEquals("m1", loaded.id)
+        assertEquals("mbp", loaded.name)
+        assertFalse(loaded.isPinned)
+    }
+
+    @Test
+    fun `a retired row's bearer is scrubbed from memory and from disk on first load`() {
+        val prefs = legacyPrefs("legacy-scrub")
+
+        assertEquals("", MachineStore(prefs).machines.value.single().token)
+        assertFalse(prefs.getString("machines", "")!!.contains("old-bearer"))
+    }
+
+    private val invite = PairingInvite("studio-new", pinned.addrs, 47292, "c".repeat(64), "AbCdEfGhIjKlMnOpQrSt_-")
+
+    @Test
+    fun `wouldReplace names the row a link would overwrite, before anything is redeemed`() {
+        store.add(mbp)
+        assertNull(store.wouldReplace(invite))
+
+        store.add(pinned)
+        assertEquals("m3", store.wouldReplace(invite)?.id)
+        assertEquals(
+            "m3",
+            store.wouldReplace(PairingInvite("x", listOf("192.0.2.99"), 1, pinned.fp!!, invite.code))?.id
+        )
+    }
+
+    @Test
+    fun `a pairing that may not replace is added beside the row it matches`() {
+        store.add(pinned)
+
+        val stored = store.pair(pinned.copy(id = "new", token = "tok-new"), mayReplace = false)
+
+        assertEquals("new", stored.id)
+        assertEquals(listOf("m3", "new"), store.machines.value.map { it.id })
+        assertEquals("tok-3", store.machines.value.first().token)
     }
 
     @Test

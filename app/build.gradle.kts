@@ -92,6 +92,7 @@ dependencies {
     testImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(project(":fakedaemon"))
     androidTestImplementation(libs.okhttp.mockwebserver)
+    androidTestImplementation(libs.okhttp.tls)
     androidTestImplementation(libs.androidx.test.ext)
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(libs.compose.ui.test.junit4)

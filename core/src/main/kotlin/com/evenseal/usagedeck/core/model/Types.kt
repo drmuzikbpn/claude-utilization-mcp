@@ -6,9 +6,12 @@ package com.evenseal.usagedeck.core.model
 import java.time.Instant
 
 /**
- * One paired daemon. A v1 pairing ([fp] null) talks plain HTTP to [addr]. A v2 pairing (daemon
- * §23.47) talks HTTPS pinned to [fp] for everything, on the TLS [port], and may fall back across
- * [addrs] — the address that redeemed the pairing code is [addr].
+ * One paired daemon (daemon §23.47): HTTPS pinned to [fp] for everything, on the TLS [port],
+ * falling back across [addrs] — the address that redeemed the pairing code is [addr].
+ *
+ * A row with no [fp] is left over from the retired plain-HTTP pairing. It is kept so the owner
+ * sees which machine to pair again, but it is not a pairing: nothing ever connects to it
+ * ([isPinned] is false and the transports refuse to be built for it).
  */
 data class MachineConfig(
     val id: String,
@@ -16,9 +19,9 @@ data class MachineConfig(
     val addr: String,
     val port: Int,
     val token: String,
-    /** Lowercase hex SHA-256 of the daemon certificate's SubjectPublicKeyInfo; null for v1. */
+    /** Lowercase hex SHA-256 of the daemon certificate's SubjectPublicKeyInfo; null on a retired row. */
     val fp: String? = null,
-    /** Every address from the pairing link, in the daemon's order. Empty for v1. */
+    /** Every address from the pairing link, in the daemon's order. */
     val addrs: List<String> = emptyList()
 ) {
     val baseUrl: String get() = baseUrlFor(addr)
@@ -26,7 +29,11 @@ data class MachineConfig(
     /** [addr] first, then the rest of [addrs] in the daemon's order. */
     val candidates: List<String> get() = (listOf(addr) + addrs).distinct()
 
-    fun baseUrlFor(host: String): String = "${if (fp != null) "https" else "http"}://$host:$port"
+    /** Whether this row is a usable pairing: only a pinned machine is ever contacted. */
+    val isPinned: Boolean get() = fp != null
+
+    /** Always HTTPS: the deck has no plain-HTTP path to a daemon. */
+    fun baseUrlFor(host: String): String = "https://$host:$port"
 
     override fun toString(): String =
         "MachineConfig(id=$id, name=$name, addr=$addr, port=$port, token=<redacted>, fp=$fp, addrs=$addrs)"

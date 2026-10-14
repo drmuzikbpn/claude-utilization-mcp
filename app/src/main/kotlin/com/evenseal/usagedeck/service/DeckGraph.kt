@@ -18,6 +18,7 @@ import com.evenseal.usagedeck.core.daemon.DaemonEventSource
 import com.evenseal.usagedeck.core.daemon.Endpoints
 import com.evenseal.usagedeck.core.daemon.MachineClient
 import com.evenseal.usagedeck.core.daemon.OkHttpDaemonApi
+import com.evenseal.usagedeck.core.daemon.PinnedTls
 import com.evenseal.usagedeck.core.model.BurnHistory
 import com.evenseal.usagedeck.core.model.MachineConfig
 import com.evenseal.usagedeck.core.model.TeamState
@@ -30,6 +31,8 @@ import com.evenseal.usagedeck.kiosk.KioskManager
 import com.evenseal.usagedeck.kiosk.ModeController
 import com.evenseal.usagedeck.pairing.InvitePairing
 import com.evenseal.usagedeck.pairing.MachineStore
+import com.evenseal.usagedeck.pairing.PairingImport
+import com.evenseal.usagedeck.pairing.PairingImports
 import com.evenseal.usagedeck.pairing.encryptedPrefs
 import com.evenseal.usagedeck.pause.PrefsEscalationStore
 import com.evenseal.usagedeck.settings.SettingsStore
@@ -72,14 +75,28 @@ class DeckGraph(private val app: Application) {
         }
     )
 
-    val http: OkHttpClient = OkHttpClient.Builder().build()
+    /**
+     * The one HTTP client, for daemons and for GitHub alike. It has no cleartext connection spec,
+     * so nothing built from it can speak plain HTTP even though the manifest has to permit
+     * cleartext for the captive-portal WebView (see `res/xml/network_security_config.xml`).
+     */
+    val http: OkHttpClient = OkHttpClient.Builder().connectionSpecs(PinnedTls.TLS_ONLY).build()
 
     val installId: String = UsageDeckApp.installIdOf(app)
 
     val machineStore: MachineStore = MachineStore.open(app)
 
-    /** v2 pairing: redeems a scanned or sideloaded invite over pinned HTTPS and stores the machine. */
+    /** Pairing: redeems a scanned or sideloaded invite over pinned HTTPS and stores the machine. */
     val invitePairing: InvitePairing = InvitePairing({ PairingClient(http).redeem(it) }, machineStore, scope)
+
+    /** The sideloaded pairing file, which a release build accepts only from its private files dir. */
+    val imports: PairingImports = PairingImports(
+        PairingImport(PairingImport.watched(app.filesDir, app.getExternalFilesDir(null), BuildConfig.DEBUG)),
+        machineStore,
+        invitePairing,
+        scope,
+        log = { Log.i(TAG, it) }
+    )
 
     val settings: SettingsStore = SettingsStore(app.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE))
 
@@ -186,6 +203,10 @@ class DeckGraph(private val app: Application) {
     }
 
     private fun newClient(config: MachineConfig): MachineClient {
+        // A row from the retired plain-HTTP pairing: shown with a Re-pair card, never contacted.
+        if (!config.isPinned) {
+            return MachineClient.retired(config, burn, clock, scope, mode.screenOn).also { apis[config.id] = it.api }
+        }
         // One address memory per machine, shared so an SSE stream that finds the Mac on another
         // address steers REST there too.
         val endpoints = Endpoints(config.candidates)

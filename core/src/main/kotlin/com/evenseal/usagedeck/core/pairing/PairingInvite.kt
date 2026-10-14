@@ -36,6 +36,13 @@ class PairingInvite(
         const val SCHEME = "usagedeck"
         const val SUPPORTED_VERSION = 2
 
+        /** Longer than any link the daemon builds; a QR cannot usefully hold more either. */
+        const val MAX_LINK_LENGTH = 4096
+        const val MAX_NAME_LENGTH = Labels.MAX_NAME_LENGTH
+
+        /** The daemon lists a handful, most useful first; anything past this is dropped. */
+        const val MAX_ADDRS = 8
+
         private val HEX64 = Regex("^[0-9a-f]{64}$")
         private val BASE64URL = Regex("^[A-Za-z0-9_-]{22,256}$")
 
@@ -47,6 +54,10 @@ class PairingInvite(
          * the pairing screen shows verbatim.
          */
         fun parse(text: String): Result<PairingInvite> = runCatching {
+            require(text.length <= MAX_LINK_LENGTH) { "That pairing link is too long to be genuine." }
+            // The retired `claude-usage configure pairing` JSON carried the bearer itself. It is
+            // recognised only to say so; none of it is read, kept or echoed.
+            require(!text.trimStart().startsWith("{")) { RETIRED }
             val uri = try {
                 URI(text.trim())
             } catch (e: URISyntaxException) {
@@ -60,7 +71,7 @@ class PairingInvite(
             val v = requireNotNull(query["v"]?.toIntOrNull()) { "The pairing link has no version." }
             require(v == SUPPORTED_VERSION) { "This pairing link is version $v; update Usage Deck to use it." }
 
-            val name = query["name"].orEmpty().trim()
+            val name = Labels.machineName(query["name"].orEmpty())
             require(name.isNotEmpty()) { "The pairing link has no machine name." }
 
             val addrs = query["addrs"].orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }
@@ -78,8 +89,11 @@ class PairingInvite(
             val code = query["code"].orEmpty()
             require(BASE64URL.matches(code)) { "The pairing link has an invalid pairing code." }
 
-            PairingInvite(name, addrs.distinctBy { it.lowercase() }, port, fp, code)
+            PairingInvite(name, addrs.distinctBy { it.lowercase() }.take(MAX_ADDRS), port, fp, code)
         }
+
+        private const val RETIRED = "That is an old `claude-usage configure pairing` code, which Usage Deck " +
+            "no longer accepts. Run `claude-usage pair` on the Mac and scan the new QR."
 
         private const val NOT_A_LINK = "That isn't a Usage Deck pairing link. Run `claude-usage pair` on the Mac."
 

@@ -42,6 +42,22 @@ class RepairCardTest {
     }
 
     @Test
+    fun `a row from the retired plain-http pairing says to pair again, not that it was rejected`() {
+        val legacy = machine.copy(
+            needsRepair = RepairReason(
+                "legacy",
+                "It was paired the old way, over plain HTTP, which Usage Deck no longer uses. " +
+                    "Re-pair with `claude-usage pair`."
+            )
+        )
+        compose.setContent { RepairCard(machine = legacy, onRepair = {}) }
+
+        compose.onNodeWithText("studio needs to be paired again").assertExists()
+        compose.onNodeWithText("Re-pair with `claude-usage pair`.", substring = true).assertExists()
+        compose.onNodeWithText("studio no longer accepts this deck").assertDoesNotExist()
+    }
+
+    @Test
     fun `re-pair opens pairing for that machine`() {
         var opened: String? = null
         compose.setContent { RepairCard(machine = machine, onRepair = { opened = it }) }

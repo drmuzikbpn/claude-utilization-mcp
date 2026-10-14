@@ -3,7 +3,7 @@
 
 package com.evenseal.usagedeck.core.pairing
 
-/** IPv4 literals and DNS host names (including `.local`). Shared by the v1 and v2 pairing parsers. */
+/** IPv4 literals and DNS host names (including `.local`). Used by the pairing-link parser. */
 object HostValidation {
     private val IPV4 = Regex("""^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$""")
 

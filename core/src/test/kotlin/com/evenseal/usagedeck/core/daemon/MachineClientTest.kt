@@ -30,7 +30,7 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class MachineClientTest {
     private val t0 = Instant.parse("2026-09-13T14:00:00Z")
-    private val cfg = MachineConfig("m1", "adams-mbp", "100.68.1.2", 47291, "tok")
+    private val cfg = MachineConfig("m1", "adams-mbp", "192.0.2.2", 47292, "tok", fp = "a".repeat(64))
 
     private class FakeApi : DaemonApi {
         val calls = mutableListOf<String>()
@@ -149,10 +149,10 @@ class MachineClientTest {
         createdBy = "dashboard"
     )
 
-    private fun TestScope.fixture(): Fixture {
+    private fun TestScope.fixture(config: MachineConfig = cfg): Fixture {
         val f = Fixture(this)
         f.client = MachineClient(
-            config = cfg,
+            config = config,
             api = f.api,
             eventSource = {
                 f.connects++
@@ -167,6 +167,39 @@ class MachineClientTest {
         f.client.start()
         runCurrent()
         return f
+    }
+
+    @Test
+    fun `a row from the old plain-http pairing is never contacted and asks for a re-pair`() = runTest {
+        val f = fixture(cfg.copy(fp = null))
+        advanceTimeBy(10 * 60_000)
+        runCurrent()
+
+        val state = f.client.state.value
+        assertEquals("legacy", state.needsRepair?.code)
+        assertTrue(state.needsRepair!!.message.contains("claude-usage pair"))
+        assertEquals(Health.DEAD, state.health)
+        assertEquals(0, f.connects)
+        assertEquals(emptyList<String>(), f.api.calls)
+    }
+
+    @Test
+    fun `a legacy row's api refuses every call without touching the network`() = runTest {
+        val f = fixture(cfg.copy(fp = null))
+        val e = runCatching { f.client.api.pause("all", PauseMode.SOFT, "usage-deck:x") }.exceptionOrNull()
+        assertEquals("legacy", (e as DaemonException).code)
+        assertEquals(emptyList<String>(), f.api.calls)
+    }
+
+    @Test
+    fun `a daemon name is shown without control characters and capped`() = runTest {
+        val f = fixture()
+        f.events.emit(Connection.Open)
+        f.events.emit(snapshot().copy(name = "stu\u0000dio\u202E" + "x".repeat(200)))
+        runCurrent()
+        val name = f.client.state.value.name!!
+        assertTrue(name.startsWith("studiox"))
+        assertEquals(64, name.length)
     }
 
     @Test

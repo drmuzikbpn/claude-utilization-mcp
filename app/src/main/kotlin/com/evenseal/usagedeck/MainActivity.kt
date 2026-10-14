@@ -4,7 +4,6 @@
 package com.evenseal.usagedeck
 
 import android.os.Bundle
-import android.util.Log
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,19 +12,23 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
-import com.evenseal.usagedeck.core.daemon.DaemonException
+import androidx.lifecycle.repeatOnLifecycle
 import com.evenseal.usagedeck.kiosk.LockTaskReceiver
 import com.evenseal.usagedeck.kiosk.ScreenHold
-import com.evenseal.usagedeck.pairing.PairingImport
-import com.evenseal.usagedeck.pairing.PairingImport.Companion.loggable
 import com.evenseal.usagedeck.service.DeckService
 import com.evenseal.usagedeck.ui.DeckNav
 import com.evenseal.usagedeck.ui.alerts.AlertOverlay
 import com.evenseal.usagedeck.ui.kiosk.ExitGate
+import com.evenseal.usagedeck.ui.pairing.ImportConfirmDialog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The whole app is one activity: it is the launcher, the kiosk and the dashboard. Lock task is
@@ -44,8 +47,8 @@ class MainActivity : ComponentActivity() {
             // write the battery whitelist itself on API 29 (spec §4).
             if (!graph.kiosk.dozeExempt) graph.kiosk.requestDozeExemption(this)
         }
-        consumePairingImport()
         DeckService.start(this)
+        watchForPairingImport()
         lifecycleScope.launch {
             combine(graph.settings.settings, graph.mode.mode) { prefs, mode ->
                 ScreenHold.shouldHold(mode, prefs.keepScreenOn)
@@ -70,6 +73,16 @@ class MainActivity : ComponentActivity() {
                     onDismiss = { graph.notifier.dismissOverlay() }
                 )
 
+                val importQuestion by graph.imports.pending.collectAsStateWithLifecycle()
+                importQuestion?.let { asked ->
+                    ImportConfirmDialog(
+                        oldName = asked.oldName,
+                        newName = asked.newName,
+                        onReplace = { graph.imports.confirm() },
+                        onCancel = { graph.imports.decline() }
+                    )
+                }
+
                 ExitGate(
                     pin = graph.exitPin,
                     clock = graph.clock,
@@ -82,7 +95,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        consumePairingImport()
         // Coming back from the captive portal or the QR scanner must re-pin the deck, unless a
         // maintenance window is deliberately open.
         if (graph.kiosk.isDeviceOwner && System.currentTimeMillis() >= maintenanceUntil) {
@@ -107,28 +119,20 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * A sideloaded pairing file is picked up on every resume, not only at process start: the
-     * kiosk process is protected and cannot be force-stopped, so "relaunch" often means resume.
+     * A sideloaded pairing file is looked for every few seconds while the deck is in the
+     * foreground, not only on resume: a kiosk that nobody leaves never resumes again, and its
+     * process is protected, so it cannot be relaunched to pick one up either.
      */
-    private fun consumePairingImport() {
-        val dirs = listOfNotNull(filesDir, getExternalFilesDir(null))
-        when (val imported = PairingImport(dirs, graph.machineStore).consume()) {
-            is PairingImport.Result.Imported -> Log.i(TAG, "paired ${loggable(imported.name)} from import file")
-            // Redeeming needs the network, so it runs on the graph's scope; only the name is logged.
-            is PairingImport.Result.Redeem -> graph.scope.launch {
-                try {
-                    Log.i(TAG, "paired ${loggable(graph.invitePairing.pair(imported.invite).name)} from import file")
-                } catch (e: DaemonException) {
-                    Log.w(
-                        TAG,
-                        "pairing import of ${loggable(imported.invite.name)} failed: ${loggable(e.userMessage())}"
-                    )
+    private fun watchForPairingImport() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                while (isActive) {
+                    withContext(Dispatchers.IO) { graph.imports.poll() }
+                    delay(IMPORT_POLL_MILLIS)
                 }
             }
-            is PairingImport.Result.Rejected -> Log.w(TAG, "pairing import rejected: ${loggable(imported.reason)}")
-            PairingImport.Result.Nothing -> Unit
         }
     }
 }
 
-private const val TAG = "UsageDeck"
+private const val IMPORT_POLL_MILLIS = 5_000L

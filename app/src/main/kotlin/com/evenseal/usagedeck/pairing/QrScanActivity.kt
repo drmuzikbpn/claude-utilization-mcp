@@ -26,7 +26,7 @@ import com.journeyapps.barcodescanner.DefaultDecoderFactory
 
 /**
  * Scans the pairing QR. Returns the raw text in the [EXTRA_PAYLOAD] extra; validation is
- * [ScannedPairing.parse]'s job, so a bad QR produces a message on the pairing screen rather than
+ * `PairingInvite.parse`'s job, so a bad QR produces a message on the pairing screen rather than
  * a silent failure here.
  */
 class QrScanActivity : ComponentActivity() {
@@ -99,18 +99,17 @@ class QrScanActivity : ComponentActivity() {
     )
 
     companion object {
-        /** Raw QR text; feed it to [ScannedPairing.parse]. */
+        /** Raw QR text; feed it to `PairingInvite.parse`. */
         const val EXTRA_PAYLOAD = "payload"
 
         /**
          * Daemon §23.47 / spec §6.3. A `claude-usage pair` QR holds a one-time code that expires
-         * in five minutes; the legacy `configure pairing` QR is a live credential.
+         * in five minutes and the fingerprint the deck will pin; it never holds the token.
          */
         const val WARNING =
             "Scan the QR straight off the Mac's screen, never off a photo or a shared screen. " +
-                "A `claude-usage pair` code works once and expires after five minutes. An older " +
-                "`claude-usage configure pairing` QR is a live credential: if one was ever exposed, " +
-                "run `claude-usage configure rotate-token` on that machine."
+                "A `claude-usage pair` code works once and expires after five minutes. If a code " +
+                "may have been seen by someone else, run `claude-usage pair` again for a new one."
 
         private val GROUND = Color.parseColor("#0E1013")
         private val WARN = Color.parseColor("#F0B429")

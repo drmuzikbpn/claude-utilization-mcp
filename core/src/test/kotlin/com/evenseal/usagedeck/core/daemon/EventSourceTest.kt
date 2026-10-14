@@ -10,7 +10,6 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -20,13 +19,44 @@ import org.junit.Before
 import org.junit.Test
 
 class EventSourceTest {
-    private val server = MockWebServer()
+    private val pinned = PinnedServer()
+    private val server = pinned.server
     private lateinit var cfg: MachineConfig
 
     @Before
     fun up() {
-        server.start()
-        cfg = MachineConfig("m", "n", server.hostName, server.port, "tok")
+        pinned.start()
+        cfg = pinned.config()
+    }
+
+    @Test
+    fun `refuses to be built for a machine that was never pinned`() {
+        val legacy = MachineConfig("m", "n", server.hostName, server.port, "tok")
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            DaemonEventSource(legacy, OkHttpClient())
+        }
+    }
+
+    @Test
+    fun `a line longer than the cap ends the stream instead of filling memory`() = runTest {
+        val body = "event: heartbeat\ndata: {}\n\n" +
+            "event: snapshot\ndata: " + "x".repeat(BodyLimits.SSE_LINE_BYTES.toInt() + 1) + "\n\n"
+        server.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream").setBody(body))
+        val items = DaemonEventSource(cfg, OkHttpClient()).events().toList()
+        assertEquals(DaemonEvent.Heartbeat(), items[1])
+        assertEquals(3, items.size)
+        assertEquals("network", (items.last() as Connection.Closed).error?.code)
+    }
+
+    @Test
+    fun `an event of many lines longer than the cap ends the stream`() = runTest {
+        val line = "data: " + "x".repeat(1024 * 1024) + "\n"
+        val lines = (BodyLimits.SSE_EVENT_BYTES / line.length).toInt() + 2
+        val body = "event: snapshot\n" + line.repeat(lines) + "\n"
+        server.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream").setBody(body))
+        val items = DaemonEventSource(cfg, OkHttpClient()).events().toList()
+        assertEquals(2, items.size)
+        assertEquals("network", (items.last() as Connection.Closed).error?.code)
     }
 
     @After

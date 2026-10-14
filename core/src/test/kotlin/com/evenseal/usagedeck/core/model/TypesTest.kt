@@ -34,8 +34,11 @@ class TypesTest {
     }
 
     @Test
-    fun `machine config builds http base url`() {
-        assertEquals("http://100.68.1.2:47291", MachineConfig("m", "n", "100.68.1.2", 47291, "t").baseUrl)
+    fun `a machine config never builds a plain http url, pinned or not`() {
+        val legacy = MachineConfig("m", "n", "192.0.2.10", 47291, "t")
+        assertEquals("https://192.0.2.10:47291", legacy.baseUrl)
+        assertFalse(legacy.isPinned)
+        assertTrue(legacy.copy(fp = "a".repeat(64)).isPinned)
     }
 
     @Test

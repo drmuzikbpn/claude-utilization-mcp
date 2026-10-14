@@ -18,13 +18,58 @@ import org.junit.Before
 import org.junit.Test
 
 class DaemonApiTest {
-    private val server = MockWebServer()
+    private val pinned = PinnedServer()
+    private val server = pinned.server
     private lateinit var api: DaemonApi
 
     @Before
     fun up() {
-        server.start()
-        api = OkHttpDaemonApi(MachineConfig("m", "n", server.hostName, server.port, "tok"), OkHttpClient())
+        pinned.start()
+        api = OkHttpDaemonApi(pinned.config(), OkHttpClient())
+    }
+
+    @Test
+    fun `refuses to be built for a machine that was never pinned`() {
+        val legacy = MachineConfig("m", "n", server.hostName, server.port, "tok")
+        assertThrows(IllegalArgumentException::class.java) { OkHttpDaemonApi(legacy, OkHttpClient()) }
+    }
+
+    @Test
+    fun `a daemon that only speaks plain http is never sent the bearer`() = runTest {
+        val plain = MockWebServer()
+        plain.start()
+        try {
+            plain.enqueue(MockResponse().setBody(fixture("health.json")))
+            val config = MachineConfig("m", "n", plain.hostName, plain.port, "tok", fp = pinned.fp)
+            val e = assertThrows(DaemonException::class.java) {
+                runBlocking { OkHttpDaemonApi(config, OkHttpClient()).health() }
+            }
+            assertEquals("network", e.code)
+            assertEquals(0, plain.requestCount)
+        } finally {
+            plain.shutdown()
+        }
+    }
+
+    @Test
+    fun `a reply that is not the expected json is bad_response, not a crash`() = runTest {
+        server.enqueue(MockResponse().setBody("<html>captive portal</html>"))
+        val e = assertThrows(DaemonException::class.java) { runBlocking { api.summary() } }
+        assertEquals("bad_response", e.code)
+    }
+
+    @Test
+    fun `a reply larger than the cap is refused as bad_response`() = runTest {
+        server.enqueue(MockResponse().setBody("{\"pad\":\"" + "x".repeat(BodyLimits.REST_BYTES.toInt()) + "\"}"))
+        val e = assertThrows(DaemonException::class.java) { runBlocking { api.summary() } }
+        assertEquals("bad_response", e.code)
+    }
+
+    @Test
+    fun `an oversized error body still maps to its status`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(401).setBody("x".repeat(BodyLimits.ERROR_BYTES.toInt() + 10)))
+        val e = assertThrows(DaemonException::class.java) { runBlocking { api.summary() } }
+        assertEquals("unauthorized", e.code)
     }
 
     @After

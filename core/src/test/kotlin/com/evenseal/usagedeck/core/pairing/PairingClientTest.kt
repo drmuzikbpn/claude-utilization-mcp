@@ -208,4 +208,21 @@ class PairingClientTest {
         assertEquals("reply_lost", e.code)
         assertEquals(1, server.requestCount)
     }
+
+    @Test
+    fun `the daemon's own name is sanitised like the link's`() = runTest {
+        server.enqueue(ok(name = "stu\\u0000dio" + "x".repeat(200)))
+        val config = PairingClient(client).redeem(invite(addrs = listOf("live.test")))
+        assertTrue(config.name.startsWith("studiox"))
+        assertEquals(PairingInvite.MAX_NAME_LENGTH, config.name.length)
+    }
+
+    @Test
+    fun `a reply far larger than a token is bad_response`() = runTest {
+        server.enqueue(ok(token = "x".repeat(200_000)))
+        val e = assertThrows(DaemonException::class.java) {
+            runBlocking { PairingClient(client).redeem(invite(addrs = listOf("live.test"))) }
+        }
+        assertEquals("bad_response", e.code)
+    }
 }

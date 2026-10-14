@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: MIT
+  Copyright (c) 2026 Even Seal Productions
+-->
+<!--
+  Cleartext is permitted here for one reason: the captive-portal WebView. A hotel or venue login
+  page is served over plain HTTP from an address nobody can know in advance, so no domain list can
+  describe it, and Android offers no way to grant cleartext to a single WebView or activity: this
+  setting is per app.
+
+  Nothing else in the app may use it, and that is enforced in code rather than here:
+    - every OkHttp client is built with TLS-only connection specs (PinnedTls.TLS_ONLY), so an
+      http:// URL fails inside the client before a socket is opened;
+    - a daemon is only ever reached over HTTPS pinned to its own key (there is no plain-HTTP
+      transport to build), and GitHub over HTTPS with the system trust store;
+    - NoCleartextTest fails the build if any shipped source other than the portal probe names an
+      http:// URL or touches the platform HTTP stack, which would honour this permission.
+
+  Trust is the system store only: certificates a user installs are not trusted.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

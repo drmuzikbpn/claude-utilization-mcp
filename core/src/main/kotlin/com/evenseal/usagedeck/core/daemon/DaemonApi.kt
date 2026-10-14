@@ -8,6 +8,7 @@ import com.evenseal.usagedeck.core.model.PauseMode
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import okhttp3.MediaType.Companion.toMediaType
@@ -41,8 +42,9 @@ interface DaemonApi {
 private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
 
 /**
- * REST against one daemon. A pinned machine (`config.fp`) talks HTTPS with [PinnedTls] and tries
- * each of its addresses via [endpoints]; a v1 machine has one address and plain HTTP.
+ * REST against one daemon: HTTPS pinned with [PinnedTls], trying each of the machine's addresses
+ * via [endpoints]. There is no plain-HTTP variant — it cannot be built for a row without a pin.
+ * Replies are read through [BodyLimits], and one that is not the expected JSON is `bad_response`.
  */
 class OkHttpDaemonApi(
     private val config: MachineConfig,
@@ -54,7 +56,12 @@ class OkHttpDaemonApi(
         .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .callTimeout(CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .build()
-        .let { if (config.fp != null) PinnedTls.client(it, config.fp) else it }
+        .let {
+            PinnedTls.client(
+                it,
+                requireNotNull(config.fp) { "no plain-HTTP transport: ${config.id} is not pinned" }
+            )
+        }
 
     /** One request, built per candidate address. */
     private class Call(
@@ -73,11 +80,21 @@ class OkHttpDaemonApi(
                 .apply(spec.configure)
                 .build()
             client.newCall(request).execute().use { r ->
-                val body = runCatching { r.body?.string() }.getOrNull()
                 if (r.code == NOT_MODIFIED || r.isSuccessful) {
-                    parse(r, body.orEmpty())
+                    val body = try {
+                        BodyLimits.text(r, BodyLimits.REST_BYTES)
+                    } catch (e: BodyTooLargeException) {
+                        throw DaemonException("bad_response", r.code, null, null)
+                    }
+                    try {
+                        parse(r, body)
+                    } catch (e: SerializationException) {
+                        throw DaemonException("bad_response", r.code, null, null)
+                    } catch (e: IllegalArgumentException) {
+                        throw DaemonException("bad_response", r.code, null, null)
+                    }
                 } else {
-                    throw daemonExceptionOf(r.code, body)
+                    throw daemonExceptionOf(r.code, BodyLimits.textOrNull(r, BodyLimits.ERROR_BYTES))
                 }
             }
         }

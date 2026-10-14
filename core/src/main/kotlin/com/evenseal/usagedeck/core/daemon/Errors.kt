@@ -17,6 +17,9 @@ class DaemonException(
     fun userMessage(): String = hint ?: message ?: DEFAULTS[code] ?: "Daemon error ($code)"
 
     companion object {
+        /** A row left over from the retired plain-HTTP pairing: nothing is ever sent to it. */
+        const val LEGACY = "legacy"
+
         val DEFAULTS = mapOf(
             "unauthorized" to "Token rejected. Re-run pairing on the Mac.",
             "network" to "Machine unreachable.",
@@ -28,7 +31,9 @@ class DaemonException(
             "bad_response" to "The machine sent a reply Usage Deck can't read.",
             "reply_lost" to "The Mac may have accepted the pairing code, but its reply was lost. " +
                 "Run `claude-usage pair` again.",
-            "internal" to "Pairing failed unexpectedly. Run `claude-usage pair` again."
+            "internal" to "Pairing failed unexpectedly. Run `claude-usage pair` again.",
+            LEGACY to "This machine was paired the old way and must be paired again. " +
+                "Run `claude-usage pair` on it."
         )
     }
 }
@@ -40,6 +45,11 @@ class DaemonException(
 fun DaemonException.repairReason(): RepairReason? = when (code) {
     "unauthorized" -> RepairReason(code, "It rejected this deck's token — it was probably rotated.")
     "pinning" -> RepairReason(code, "Its certificate changed, so this deck can no longer verify it.")
+    DaemonException.LEGACY -> RepairReason(
+        code,
+        "It was paired the old way, over plain HTTP, which Usage Deck no longer uses. " +
+            "Re-pair with `claude-usage pair`."
+    )
     else -> null
 }
 
@@ -67,8 +77,7 @@ internal fun daemonExceptionOf(status: Int, body: String?): DaemonException {
 /** Maps an SSE/HTTP failure (throwable and/or response) onto a [DaemonException]. */
 internal fun toDaemonException(t: Throwable?, response: Response?): DaemonException {
     if (response != null && !response.isSuccessful) {
-        val body = runCatching { response.body?.string() }.getOrNull()
-        return daemonExceptionOf(response.code, body)
+        return daemonExceptionOf(response.code, BodyLimits.textOrNull(response, BodyLimits.ERROR_BYTES))
     }
     if (t is DaemonException) return t
     if (PinnedTls.isPinMismatch(t)) return DaemonException("pinning", 0, null, null)

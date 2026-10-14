@@ -3,6 +3,8 @@
 
 package com.evenseal.usagedeck.core.pairing
 
+import com.evenseal.usagedeck.core.daemon.BodyLimits
+import com.evenseal.usagedeck.core.daemon.BodyTooLargeException
 import com.evenseal.usagedeck.core.daemon.DaemonException
 import com.evenseal.usagedeck.core.daemon.DaemonJson
 import com.evenseal.usagedeck.core.daemon.Endpoints
@@ -67,7 +69,7 @@ class PairingClient(client: OkHttpClient) {
             }
             MachineConfig(
                 id = id,
-                name = reply.name?.takeIf { it.isNotBlank() } ?: invite.name,
+                name = reply.name?.let(Labels::machineName)?.takeIf { it.isNotEmpty() } ?: invite.name,
                 addr = winner,
                 port = invite.port,
                 token = reply.token,
@@ -78,10 +80,14 @@ class PairingClient(client: OkHttpClient) {
 
     private fun replyOf(response: Response): PairResponseDto {
         if (!response.isSuccessful) {
-            throw daemonExceptionOf(response.code, runCatching { response.body?.string() }.getOrNull())
+            throw daemonExceptionOf(response.code, BodyLimits.textOrNull(response, BodyLimits.ERROR_BYTES))
         }
-        // Not inside runCatching: a reply cut off here means the code is spent (reply_lost).
-        val text = response.body?.string().orEmpty()
+        // A reply cut off here means the code is spent (reply_lost), so only "too large" is caught.
+        val text = try {
+            BodyLimits.text(response, BodyLimits.PAIR_BYTES)
+        } catch (e: BodyTooLargeException) {
+            throw DaemonException("bad_response", response.code, null, null)
+        }
         val dto = runCatching { DaemonJson.decodeFromString(PairResponseDto.serializer(), text) }.getOrNull()
         if (dto == null || dto.token.isBlank()) throw DaemonException("bad_response", response.code, null, null)
         return dto

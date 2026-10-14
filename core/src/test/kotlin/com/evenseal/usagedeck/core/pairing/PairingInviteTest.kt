@@ -62,6 +62,40 @@ class PairingInviteTest {
     }
 
     @Test
+    fun `the name loses control and direction characters and is capped`() {
+        val invite = parse(link(name = "stu%00dio%0A%E2%80%AE" + "x".repeat(200))).getOrThrow()
+        assertTrue(invite.name.startsWith("studiox"))
+        assertEquals(PairingInvite.MAX_NAME_LENGTH, invite.name.length)
+    }
+
+    @Test
+    fun `a name that is nothing but control characters is no name`() {
+        assertTrue(failure(link(name = "%00%0A")).contains("no machine name"))
+    }
+
+    @Test
+    fun `keeps only the first addresses when the link lists too many`() {
+        val many = (1..40).joinToString("%2C") { "192.0.2.$it" }
+        val invite = parse(link(addrs = many)).getOrThrow()
+        assertEquals(PairingInvite.MAX_ADDRS, invite.addrs.size)
+        assertEquals("192.0.2.1", invite.addrs.first())
+    }
+
+    @Test
+    fun `rejects an absurdly long link before parsing it`() {
+        assertTrue(failure(link(name = "x".repeat(PairingInvite.MAX_LINK_LENGTH))).contains("too long"))
+    }
+
+    @Test
+    fun `the old json pairing is refused by name, without echoing it`() {
+        val v1 = """{"v":1,"name":"studio","addr":"192.0.2.9","port":47291,"token":"super-secret-bearer"}"""
+        val message = failure(v1)
+        assertTrue(message.contains("claude-usage pair"))
+        assertTrue(message.contains("no longer"))
+        assertFalse(message.contains("super-secret-bearer"))
+    }
+
+    @Test
     fun `rejects a link that is not a pairing link`() {
         assertTrue(parse("https://example.com/pair?v=2").isFailure)
         assertTrue(parse("usagedeck://other?v=2").isFailure)

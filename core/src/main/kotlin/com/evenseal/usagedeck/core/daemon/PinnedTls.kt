@@ -10,6 +10,7 @@ import java.security.cert.X509Certificate
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLEngine
 import javax.net.ssl.X509ExtendedTrustManager
+import okhttp3.ConnectionSpec
 import okhttp3.OkHttpClient
 
 /** The daemon presented a certificate whose key is not the one this deck paired with. */
@@ -26,11 +27,18 @@ object PinnedTls {
     fun fingerprint(cert: X509Certificate): String =
         MessageDigest.getInstance("SHA-256").digest(cert.publicKey.encoded).joinToString("") { "%02x".format(it) }
 
-    /** [base] with its TLS trust replaced by the pin on [fp]. */
+    /**
+     * The only connection specs a client that talks to a daemon may carry: TLS 1.2 or newer,
+     * and no cleartext entry, so an `http://` URL fails inside OkHttp before a socket opens.
+     */
+    val TLS_ONLY: List<ConnectionSpec> = listOf(ConnectionSpec.MODERN_TLS)
+
+    /** [base] with its TLS trust replaced by the pin on [fp], and no cleartext fallback. */
     fun client(base: OkHttpClient, fp: String): OkHttpClient {
         val trust = PinnedTrustManager(fp)
         val context = SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), null) }
         return base.newBuilder()
+            .connectionSpecs(TLS_ONLY)
             .sslSocketFactory(context.socketFactory, trust)
             .hostnameVerifier { _, _ -> true }
             .build()

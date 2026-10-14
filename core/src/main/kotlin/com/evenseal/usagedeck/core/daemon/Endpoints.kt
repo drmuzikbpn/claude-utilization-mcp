@@ -29,7 +29,7 @@ fun neverSent(e: IOException): Boolean = e is ConnectException ||
  * A v2 pairing hands over every address the daemon listens on (LAN IP, `<host>.local`, tailnet
  * IP), all presenting the same pinned certificate. Requests try the address that worked last
  * first and then the rest in order, so a Mac that leaves the LAN for the tailnet is found again
- * without re-pairing. A v1 pairing has exactly one address and behaves as it always has.
+ * without re-pairing.
  */
 class Endpoints(addrs: List<String>) {
     private val addrs: List<String> = addrs.distinct().also { require(it.isNotEmpty()) { "no addresses" } }

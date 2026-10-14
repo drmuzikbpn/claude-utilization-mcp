@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Redeems a v2 invite (normally `PairingClient.redeem`) and stores the machine it yields,
+ * Redeems a pairing invite (normally `PairingClient.redeem`) and stores the machine it yields,
  * replacing any earlier pairing of the same machine. Nothing is stored when the redeem fails,
  * and the one-time code is never kept: it lives only in the [PairingInvite] passed in and, while
  * its redeem runs, as the key that de-duplicates it.
@@ -46,11 +46,15 @@ class InvitePairing(
     /** True while any redeem is in flight; the pairing screen keeps Scan disabled meanwhile. */
     val redeeming: StateFlow<Boolean> = _redeeming.asStateFlow()
 
-    /** [replacing]: the id of the row a Re-pair card asked to replace (see [MachineStore.replace]). */
-    suspend fun pair(invite: PairingInvite, replacing: String? = null): MachineConfig {
+    /**
+     * [replacing]: the id of the row a Re-pair card, or a confirmed import, asked to replace (see
+     * [MachineStore.replace]). With [mayReplace] false and no [replacing], the machine is only
+     * ever added, never swapped for a row it happens to match.
+     */
+    suspend fun pair(invite: PairingInvite, replacing: String? = null, mayReplace: Boolean = true): MachineConfig {
         val job = synchronized(lock) {
             running.getOrPut(invite.code) {
-                work.async(start = CoroutineStart.LAZY) { redeemAndStore(invite, replacing) }.also { job ->
+                work.async(start = CoroutineStart.LAZY) { redeemAndStore(invite, replacing, mayReplace) }.also { job ->
                     job.invokeOnCompletion {
                         synchronized(lock) {
                             running.remove(invite.code)
@@ -65,14 +69,15 @@ class InvitePairing(
         return job.await()
     }
 
-    private suspend fun redeemAndStore(invite: PairingInvite, replacing: String?): MachineConfig = try {
-        val config = redeem(invite)
-        if (replacing != null) store.replace(replacing, config) else store.pair(config)
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: DaemonException) {
-        throw e
-    } catch (e: Throwable) {
-        throw DaemonException("internal", 0, null, null)
-    }
+    private suspend fun redeemAndStore(invite: PairingInvite, replacing: String?, mayReplace: Boolean): MachineConfig =
+        try {
+            val config = redeem(invite)
+            if (replacing != null) store.replace(replacing, config) else store.pair(config, mayReplace)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: DaemonException) {
+            throw e
+        } catch (e: Throwable) {
+            throw DaemonException("internal", 0, null, null)
+        }
 }

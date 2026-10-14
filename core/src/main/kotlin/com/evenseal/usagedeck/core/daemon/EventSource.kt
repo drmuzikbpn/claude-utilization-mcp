@@ -27,7 +27,8 @@ sealed interface Connection {
  * Each collection opens one connection and emits [Connection.Open], then [DaemonEvent]s, then
  * exactly one [Connection.Closed] before completing. Reconnection is the caller's job.
  *
- * A pinned machine (`config.fp`) streams over HTTPS with [PinnedTls]. Each connection dials
+ * The stream is HTTPS pinned with [PinnedTls] — it cannot be built for a row without a pin — and
+ * is read through [BodyLimits.sseGuard]. Each connection dials
  * [Endpoints.current]; one that never opens moves the next connection on to the following
  * address, and one that opens makes its address the preferred one for REST as well.
  */
@@ -40,8 +41,14 @@ class DaemonEventSource(
         .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .callTimeout(0, TimeUnit.MILLISECONDS)
+        .addNetworkInterceptor(BodyLimits.sseGuard)
         .build()
-        .let { if (config.fp != null) PinnedTls.client(it, config.fp) else it }
+        .let {
+            PinnedTls.client(
+                it,
+                requireNotNull(config.fp) { "no plain-HTTP transport: ${config.id} is not pinned" }
+            )
+        }
 
     /** Elements are either a [DaemonEvent] or a [Connection]. */
     fun events(): Flow<Any> = callbackFlow {

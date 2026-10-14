@@ -4,27 +4,32 @@
 package com.evenseal.usagedeck
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.evenseal.usagedeck.core.daemon.DaemonEvent
+import com.evenseal.usagedeck.core.daemon.DaemonEventSource
+import com.evenseal.usagedeck.core.daemon.OkHttpDaemonApi
+import com.evenseal.usagedeck.core.daemon.SessionsResult
+import com.evenseal.usagedeck.core.model.MachineConfig
+import com.evenseal.usagedeck.core.pairing.PairingClient
+import com.evenseal.usagedeck.core.pairing.PairingInvite
 import com.evenseal.usagedeck.fakedaemon.FakeDaemon
 import com.evenseal.usagedeck.fakedaemon.Scenarios
 import java.util.concurrent.TimeUnit
-import okhttp3.MediaType.Companion.toMediaType
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Proves the Ktor `fakedaemon` module really serves from inside an Android process, so a manual
- * run on the emulator can point the deck at it instead of a Mac.
- *
- * Scope is deliberately REST only. As of 2026-09-13 the same server's `/v1/events` stream
- * truncates the large `snapshot` frame on-device — the client gets `event: snapshot` and then the
- * connection closes before `data:` — which is why [EndToEndTest] scripts its own stream. When
- * that is fixed, the SSE half belongs here and `EndToEndTest` can use the real fake again.
+ * Proves the `fakedaemon` module really serves the deck from inside an Android process, the way
+ * the deck talks to any daemon: a pairing link redeemed over pinned HTTPS, then REST and the
+ * event stream over the same pin, with the app's own clients.
  */
 @RunWith(AndroidJUnit4::class)
 class FakeDaemonOnDeviceTest {
@@ -36,7 +41,7 @@ class FakeDaemonOnDeviceTest {
 
     @Before
     fun setUp() {
-        daemon = FakeDaemon(port = PORT, token = TOKEN, scenario = Scenarios.idle)
+        daemon = FakeDaemon(port = PORT, scenario = Scenarios.idle)
         daemon.start()
     }
 
@@ -45,55 +50,45 @@ class FakeDaemonOnDeviceTest {
         daemon.stop()
     }
 
-    private fun get(path: String) = Request.Builder()
-        .url("http://127.0.0.1:$PORT$path")
-        .header("Authorization", "Bearer $TOKEN")
-        .get()
-        .build()
-
-    @Test
-    fun servesRestFromInsideTheAppProcess() {
-        client.newCall(get("/health")).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            assertTrue("status ${response.code} body '$body'", response.isSuccessful)
-            assertTrue("body was '$body'", body.contains("\"ok\""))
-        }
+    private fun pair(): MachineConfig = runBlocking {
+        PairingClient(client).redeem(PairingInvite.parse(daemon.pairingLink()).getOrThrow())
     }
 
     @Test
-    fun servesTheSessionsEndpointItsScenariosBuildOn() {
-        client.newCall(get("/v1/sessions")).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            assertTrue("status ${response.code} body '$body'", response.isSuccessful)
-            assertTrue("body was '$body'", body.contains("\"sessionId\""))
-        }
+    fun pairsOverPinnedHttpsFromInsideTheAppProcess() {
+        val config = pair()
+        assertEquals(daemon.token, config.token)
+        assertEquals(daemon.fingerprint, config.fp)
     }
 
-    /** The fake deliberately lets loopback GETs through unauthenticated so `curl` stays easy. */
     @Test
-    fun allowsAnUnauthenticatedLoopbackGet() {
-        val request = Request.Builder().url("http://127.0.0.1:$PORT/health").get().build()
-        client.newCall(request).execute().use { response ->
-            assertTrue("status was ${response.code}", response.isSuccessful)
-        }
+    fun servesRestToThePairedDeck() = runBlocking {
+        val api = OkHttpDaemonApi(pair(), client)
+        assertEquals("fake-mbp", api.health().name)
+        val sessions = api.sessions(null) as SessionsResult.Changed
+        assertTrue("no sessions in ${sessions.dto}", sessions.dto.sessions.isNotEmpty())
     }
 
-    /** Writes are guarded whatever the origin. */
+    /** The whole `snapshot` frame arrives and parses: the stream is usable on-device. */
     @Test
-    fun rejectsAWrongTokenOnAWrite() {
-        val request = Request.Builder()
-            .url("http://127.0.0.1:$PORT/v1/pause")
-            .header("Authorization", "Bearer nope")
-            .post("""{"scope":"all","mode":"soft"}""".toRequestBody(JSON))
-            .build()
-        client.newCall(request).execute().use { response ->
-            assertTrue("status was ${response.code}", response.code == 401)
-        }
+    fun streamsASnapshotToThePairedDeck() = runBlocking {
+        val events = DaemonEventSource(pair(), client).events()
+        val snapshot = withTimeout(STREAM_TIMEOUT_MS) { events.first { it is DaemonEvent.Snapshot } }
+        assertEquals("fake-mbp", (snapshot as DaemonEvent.Snapshot).name)
+        assertTrue(snapshot.sessions.isNotEmpty())
+    }
+
+    /** The plain listener is loopback only and still wants the bearer for anything but liveness. */
+    @Test
+    fun anUnauthenticatedLoopbackReadIsRefusedButLivenessAnswers() {
+        fun status(path: String) =
+            client.newCall(Request.Builder().url("http://127.0.0.1:$PORT$path").get().build()).execute().use { it.code }
+        assertEquals(200, status("/health"))
+        assertEquals(401, status("/v1/sessions"))
     }
 
     private companion object {
         const val PORT = 47298
-        const val TOKEN = "fake-token"
-        val JSON = "application/json".toMediaType()
+        const val STREAM_TIMEOUT_MS = 15_000L
     }
 }

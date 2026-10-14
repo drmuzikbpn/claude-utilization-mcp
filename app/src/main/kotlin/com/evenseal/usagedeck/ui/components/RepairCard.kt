@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.evenseal.usagedeck.core.daemon.DaemonException
 import com.evenseal.usagedeck.core.model.MachineState
 import com.evenseal.usagedeck.ui.theme.DeckColors
 import com.evenseal.usagedeck.ui.theme.DeckType
@@ -44,7 +45,7 @@ fun RepairCard(machine: MachineState, onRepair: (String) -> Unit, modifier: Modi
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "$name no longer accepts this deck",
+                text = RepairCardDefaults.title(name, reason.code),
                 color = DeckColors.warn,
                 fontFamily = DeckType.text,
                 fontWeight = FontWeight.SemiBold,
@@ -87,4 +88,10 @@ fun RepairCard(machine: MachineState, onRepair: (String) -> Unit, modifier: Modi
                 .padding(horizontal = 16.dp, vertical = 10.dp)
         )
     }
+}
+
+object RepairCardDefaults {
+    /** A retired plain-HTTP row was never rejected by its machine; it simply has to be paired again. */
+    fun title(name: String, code: String): String =
+        if (code == DaemonException.LEGACY) "$name needs to be paired again" else "$name no longer accepts this deck"
 }

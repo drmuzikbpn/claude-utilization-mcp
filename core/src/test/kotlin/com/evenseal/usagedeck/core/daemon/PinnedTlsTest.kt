@@ -40,6 +40,18 @@ class PinnedTlsTest {
     }
 
     @Test
+    fun `the pinned client is tls only and refuses a cleartext url`() {
+        server.start()
+        server.enqueue(MockResponse().setBody("ok"))
+        val client = PinnedTls.client(OkHttpClient(), "a".repeat(64))
+
+        assertTrue(client.connectionSpecs.none { !it.isTls })
+        val url = server.url("/health").newBuilder().scheme("http").build()
+        assertThrows(IOException::class.java) { client.newCall(Request.Builder().url(url).build()).execute() }
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
     fun `accepts the pinned self-signed certificate whatever host name it was dialled by`() {
         val held = serveHttps(commonName = "not-this-host")
         server.enqueue(MockResponse().setBody("ok"))
