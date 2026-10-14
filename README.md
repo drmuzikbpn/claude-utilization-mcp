@@ -1,5 +1,7 @@
 # Usage Deck for iPhone and Apple Watch
 
+Not affiliated with Anthropic.
+
 See how close your Claude account is to its 5-hour and 7-day limits, how many tokens your Claude
 Code sessions are burning, and pause or freeze sessions — from your iPhone, your lock screen and
 your wrist.
@@ -18,7 +20,9 @@ the computer where you use Claude Code (macOS or Linux), and talks only to that 
    app.)
 
 Pairing happens over HTTPS pinned to the device's own certificate, and the QR holds a one-time
-code that expires after five minutes — it never contains your access token. Your iPhone and the
+code that expires after five minutes — it never contains your access token. When you re-pair a
+device and the code carries a different certificate from the one you paired, the app says so
+before it replaces anything: continue only if you ran `claude-usage pair` on that device yourself. Your iPhone and the
 device need to be on the same Wi-Fi, or on the same VPN (Tailscale works) when you are away.
 
 The Apple Watch app needs no setup: it gets everything from the iPhone, never from the device
@@ -45,7 +49,7 @@ pair the ones you still use again with `claude-usage pair`.
 
 ```bash
 brew install xcodegen swiftlint swiftformat lefthook
-lefthook install
+lefthook install            # lint, licence headers and scripts/public-check.sh on every commit
 (cd Packages/UsageCore && swift test)
 xcodegen generate
 xcodebuild -project UsageDeck.xcodeproj -scheme UsageDeck -destination 'generic/platform=iOS Simulator' build
@@ -56,4 +60,5 @@ devices and no daemon; the UI smoke test (`xcodebuild ... test`) does exactly th
 
 Requires Xcode with the iOS 18 and watchOS 11 SDKs or later. Design:
 [`docs/superpowers/specs/2026-10-01-usage-ios-design.md`](docs/superpowers/specs/2026-10-01-usage-ios-design.md).
-Privacy: [`PRIVACY.md`](PRIVACY.md).
+Privacy: [`PRIVACY.md`](PRIVACY.md). Licence: [MIT](LICENSE); the bundled fonts are under the SIL
+Open Font License (`App/Resources/Fonts/OFL.txt`, `SharedUI/Fonts/OFL.txt`).

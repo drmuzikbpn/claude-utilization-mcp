@@ -36,8 +36,9 @@ extension PairingInvite: CustomStringConvertible, CustomDebugStringConvertible, 
     }
 }
 
-/// The v1 JSON that `claude-usage configure pairing` prints: a live bearer for plain HTTP.
-/// Parsed so a paste can be recognised and explained; the iOS app only pairs over pinned HTTPS.
+/// The v1 JSON that older daemons printed (`claude-usage configure pairing`): a live bearer for
+/// plain HTTP. Parsed only so a paste can be recognised and explained; the app pairs over pinned
+/// HTTPS and nothing else.
 public struct LegacyPairing: Sendable, Equatable {
     public var name: String
     public var addr: String

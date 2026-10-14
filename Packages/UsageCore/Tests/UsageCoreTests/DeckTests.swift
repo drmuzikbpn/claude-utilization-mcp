@@ -142,13 +142,13 @@ struct PairingInputTests {
         #expect(invite.name == "studio")
     }
 
-    @Test func aV1JsonPasteIsExplainedAsAndroid() {
+    @Test func aV1JsonPasteIsExplainedAndRefused() {
         let json = #"{"v":1,"name":"studio","addr":"100.64.0.7","port":47291,"token":"secret-value"}"#
         guard case let .rejected(message) = PairingInput.classify(json) else {
             Issue.record("expected a rejection")
             return
         }
-        #expect(message.plain == PairingInput.androidMessage)
+        #expect(message.plain == PairingInput.legacyMessage)
         #expect(!message.plain.contains("secret-value"))
         #expect(message.isTrusted, "our own sentence, so its `code` may be styled")
     }

@@ -9,18 +9,20 @@ public enum PairingInput: Sendable, Equatable {
     /// Shown under the paste field; only its literal parts may be styled.
     case rejected(DeckText)
 
-    public static let androidText = DeckText.literal("This is an Android pairing code — run `claude-usage pair` on the device instead")
-    public static var androidMessage: String {
-        androidText.plain
+    public static let legacyText = DeckText.literal(
+        "This old pairing code carries an access token and is not accepted. Run `claude-usage pair` on the device instead."
+    )
+    public static var legacyMessage: String {
+        legacyText.plain
     }
 
-    /// The v1 JSON from `claude-usage configure pairing` is the Android deck's plain-HTTP bearer
-    /// pairing; the iPhone pairs only through the v2 one-time-code link, so it is explained,
-    /// never used (and its token is never kept or echoed).
+    /// The v1 JSON that older daemons printed (`claude-usage configure pairing`) holds a live
+    /// bearer for plain HTTP. Daemons no longer issue it and this app pairs only through the v2
+    /// one-time-code link, so a paste is explained, never used (its token is never kept or echoed).
     public static func classify(_ raw: String) -> PairingInput {
         switch PairingLink.parse(raw) {
         case let .success(.invite(invite)): .invite(invite)
-        case .success(.legacy): .rejected(androidText)
+        case .success(.legacy): .rejected(legacyText)
         case let .failure(error): .rejected(error.text)
         }
     }

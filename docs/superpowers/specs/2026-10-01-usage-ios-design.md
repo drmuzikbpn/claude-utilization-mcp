@@ -2,7 +2,8 @@
 
 Copied on 2026-10-01 from the approved plan (sections reproduced verbatim, so wording that
 predates the audit — Bonjour, `{refresh}` every 5 s, a token in the pairing QR — is superseded by
-**Audit amendments** below, which win wherever they conflict). The daemon side of the wire is
+**Audit amendments** below, and those in turn by **Hardening amendments**; the later section wins
+wherever they conflict). The daemon side of the wire is
 specified in the daemon's own spec (`main`, §23.44–§23.48) and `docs/api.md`.
 
 ## Contents
@@ -12,13 +13,14 @@ specified in the daemon's own spec (`main`, §23.44–§23.48) and `docs/api.md`
 - [Part C — `usage-ios` branch](#part-c--usage-ios-branch)
 - [Audit amendments](#audit-amendments-fable-audit-2026-10-01--these-override-the-text-above-where-they-conflict)
 - [Phases](#phases-each-ends-green-committed-pushes-per-push-protocol-below)
+- [Hardening amendments](#hardening-amendments-2026-10-13--these-override-everything-above)
 - [Deferred](#deferred)
 
 ## Context
 
-Adam's Android kiosk (`usage-deck` branch → renamed `usage-android`) shows Claude account
-rate-limit % and local token spend from `claude-usage` daemons and pauses sessions. He wants the
-same on his wrist — specifically the **landscape left rail** (`ui/widedock/WideDockScreen.kt`
+The owner's Android kiosk (`usage-deck` branch → renamed `usage-android`) shows Claude account
+rate-limit % and local token spend from `claude-usage` daemons and pauses sessions. The owner wants the
+same on the wrist — specifically the **landscape left rail** (`ui/widedock/WideDockScreen.kt`
 `Rail`: per-account 5 h / 7 d rings with countdown + reset time, account pager, Pause all
 (tap soft / hold hard), Projects, `team today · N live` footer) — spread across multiple watch
 screens, plus project drill-in with pause. An iPhone companion app is required (watchOS has no
@@ -52,8 +54,8 @@ Devices: iPhone 14 Pro Max (iOS 26.6.2), Apple Watch Series 10 (watchOS 26).
 | D15 | User-facing copy says "device", not "Mac" (daemon runs on Linux too). Empty state: "No paired devices — pair one in the iPhone app". |
 
 **Deferred todo (record in spec §Deferred):** push relay (APNs) for real-time alerts/complications;
-daemon-side `escalateAfter`; Android deck accepting the v2 pairing link + HTTPS; remote access
-without a VPN.
+daemon-side `escalateAfter`; remote access without a VPN. (The Android deck accepting the v2
+pairing link + HTTPS was on this list and has since shipped.)
 
 ## Part C — `usage-ios` branch
 
@@ -82,7 +84,7 @@ App Group `group.com.evenseal.usagedeck`; URL scheme `usagedeck`; Swift 6, stric
 | `core/model/TeamState.kt`, `Types.kt`, `Aging.kt`, `BurnHistory.kt` | same names; users keyed `accountUuid/organizationUuid`; aging 30 s / 120 s |
 | `core/pause/PauseController.kt`, `PauseTarget.kt`, `EscalationStore.kt` | same; reason `usage-deck:<installId>`; project resume fans out to session rules (deck gotcha) |
 | `core/alerts/AlertEvaluator.kt` + `app/alerts/AlertLedger.kt` | `AlertEvaluator.swift` + `AlertLedger.swift` (UserDefaults; key = limit `resetsAt`) |
-| `app/pairing/PairingPayload.kt` | `PairingLink.swift` (v2 URL; v1 JSON paste accepted) |
+| `app/pairing/PairingPayload.kt` | `PairingLink.swift` (v2 URL; a v1 JSON paste is recognised, explained and refused) |
 | `app/ui/components/Format.kt` (`resetCountdown`, `resetAt`, `tokens`) | `Shared/Format.swift` |
 New: `PinnedTrust.swift` — `URLSessionDelegate` that accepts the server trust **iff** SPKI SHA-256
 == stored fingerprint; everything else rejected. Build only on `limits[]`; never `legacyWindows`.
@@ -128,15 +130,19 @@ accessories. Timeline from App-Group snapshot; entries stepped so countdowns sta
   with `XDG_CONFIG_HOME` temp + `lan`/TLS bound to loopback alias, run UsageCore contract tests
   (pairing link, pinning, SSE, pause/resume round-trip).
 - Release on push to `usage-ios`: archive + upload via App Store Connect API key
-  (`-allowProvisioningUpdates`). Secrets: **1Password first** (item `usage-ios-ci` in the project
-  vault: key id, issuer id, `.p8`), then GitHub secrets. `CFBundleShortVersionString = 0.MINOR`,
-  build = `GITHUB_RUN_NUMBER * 10 + GITHUB_RUN_ATTEMPT` (monotonic; the commit count was not).
+  (`-allowProvisioningUpdates`). Secrets: **1Password first** (the release secrets in
+  1Password: key id, issuer id, `.p8`), then GitHub secrets. `CFBundleShortVersionString = 0.MINOR`,
+  build = `(GITHUB_RUN_NUMBER + 1000) * 10 + GITHUB_RUN_ATTEMPT` (monotonic; the commit count was not, and
+  the offset keeps it rising across the repository being recreated — see Hardening amendments).
 - External testing needs Beta App Review, feedback email, `PRIVACY.md` URL on GitHub (no data
   collected; talks only to your own devices). Check "Usage Deck" name availability in App Store Connect.
 
 ---
 
 ## Audit amendments (Fable audit, 2026-10-01) — these override the text above where they conflict
+
+The [Hardening amendments](#hardening-amendments-2026-10-13--these-override-everything-above) further down
+override these in turn (A1, A5 and A7 in particular).
 
 - **A1 TLS addressing:** TLS is a per-listener flag. Rule: every bound address keeps plain HTTP on
   `port` (A7 — backward compatible, incl. deck emulator on LAN literal); every *non-loopback* address
@@ -198,15 +204,47 @@ accessories. Timeline from App-Group snapshot; entries stepped so countdowns sta
 
 ## Phases (each ends green, committed; pushes per push protocol below)
 
-0. **Spike (throwaway):** iOS 18 sim + Adam's iPhone reach a Node HTTPS server with self-signed cert
+0. **Spike (throwaway):** iOS 18 sim + the owner's iPhone reach a Node HTTPS server with self-signed cert
    on LAN via pinned delegate; observe Local Network prompt; Camera opens `usagedeck://` link.
 1. **Daemon Part A** (§23.44–48), TDD, PR to `main`, release.
-2. **Branch rename Part B** (after Adam approves the rename + ruleset change).
+2. **Branch rename Part B** (after the owner approves the rename + ruleset change).
 3. **`usage-ios` scaffold + UsageCore** port with fixtures + contract tests; iPhone pairing + setup check.
 4. **Watch app** + WatchBridge.
 5. **iPhone full home** (Ledger, WideDock, Project, Projects, Device, Settings).
 6. **Alerts, widgets, complications, background refresh.**
 7. **CI → TestFlight**, internal then external group; docs (README, CLAUDE.md, PRIVACY.md).
+
+## Hardening amendments (2026-10-13) — these override everything above
+
+Made before the project was publicised. Where the earlier text disagrees, this section wins.
+
+- **Daemon surface (replaces A1's plain-HTTP rule, A5 and A7):** plain HTTP is loopback-only;
+  every non-loopback address is HTTPS. Legacy v1 pairing (`configure pairing`, a bearer in a QR)
+  is gone. Every request needs the bearer except `POST /v1/pair` and a liveness-only
+  `GET /health`: without a bearer `/health` returns no identity and no install state, so this
+  app always sends the bearer on `/health`, the setup check included. A pasted v1 JSON is still
+  recognised so it can be explained and refused; its token is never kept.
+- **Untrusted text:** anything a pairing link, an invite or a device had a hand in is drawn
+  character for character. Markdown is for literals in the app's source (`DeckText`); swiftlint
+  fails on an interpolated SwiftUI string. A pairing error never quotes the offending value.
+- **Links:** only `usagedeck://pair…` does anything; every other `usagedeck://` URL (the widgets
+  open `usagedeck://open`) just brings the app forward. An invite that arrives as a link never
+  replaces the device a Re-pair is open for; only a scan or paste inside that sheet may.
+- **Re-pair:** whenever the invite's certificate fingerprint differs from the stored one the
+  confirmation says so, whatever name or address the invite carries. Invite names are cut to 64
+  printable characters, addresses to the first 8 (16 after `/health` merges).
+- **Network:** no session follows a redirect; a refused certificate is remembered per
+  fingerprint; REST bodies, SSE lines and SSE events are capped.
+- **Keychain:** tokens with no paired device are deleted on the first activation after launch.
+  Removing a device does not revoke its token; `claude-usage configure rotate-token` does.
+- **Debug log:** alert kind and key only, error codes only when shaped like one, names and
+  addresses cleaned and marked, redacted on export by default, mirrored to the system log in
+  Debug builds only.
+- **CI:** actions pinned to commit SHAs, tools to versions and digests, no pip; signing secrets
+  in the `release` environment and only on the steps that use them; build number
+  `(GITHUB_RUN_NUMBER + 1000) * 10 + GITHUB_RUN_ATTEMPT` because recreating the repository
+  restarts run numbers at 1 (the last build before that was run 110) and TestFlight refuses a
+  number that does not increase.
 
 ## Deferred
 
@@ -214,5 +252,4 @@ Not in v1; recorded here so nothing is lost (and so code never carries TODOs):
 
 - Push relay (APNs) for real-time alerts and complications.
 - Daemon-side `escalateAfter`, so soft→hard escalation does not depend on an awake app.
-- Android deck accepting the v2 pairing link and HTTPS.
 - Remote access without a VPN.
