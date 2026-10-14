@@ -6,6 +6,7 @@ package com.evenseal.usagedeck
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.evenseal.usagedeck.core.daemon.DaemonEvent
 import com.evenseal.usagedeck.core.daemon.DaemonEventSource
+import com.evenseal.usagedeck.core.daemon.DaemonException
 import com.evenseal.usagedeck.core.daemon.OkHttpDaemonApi
 import com.evenseal.usagedeck.core.daemon.SessionsResult
 import com.evenseal.usagedeck.core.model.MachineConfig
@@ -50,8 +51,13 @@ class FakeDaemonOnDeviceTest {
         daemon.stop()
     }
 
+    /** A failed redeem says why: the exception alone carries only its code. */
     private fun pair(): MachineConfig = runBlocking {
-        PairingClient(client).redeem(PairingInvite.parse(daemon.pairingLink()).getOrThrow())
+        try {
+            PairingClient(client).redeem(PairingInvite.parse(daemon.pairingLink()).getOrThrow())
+        } catch (e: DaemonException) {
+            throw AssertionError("redeem failed: code=${e.code} message=${e.message}", e)
+        }
     }
 
     @Test

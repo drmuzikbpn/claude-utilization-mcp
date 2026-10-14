@@ -170,7 +170,8 @@ a `deck-<version>` pre-release with `gh release create` once the signing secrets
 `SIGNING_KEY_PASSWORD`) exist. Keep every `uses:` pinned to a full commit SHA with the version in
 a trailing comment, never add `set -x` to a step that sees a secret, and keep third-party actions
 out of `release`. `gradle-wrapper.properties` carries `distributionSha256Sum`: update it with the
-Gradle version.
+Gradle version. Dependency verification is on (`gradle/verification-metadata.xml`, sha256): after any
+dependency change regenerate it as its header says and keep the aapt2 `-linux` entry, or CI fails.
 
 ## Public repository
 
