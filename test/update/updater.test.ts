@@ -21,8 +21,10 @@ import {
 } from '../../src/update/index.js';
 import { releasesLatestUrl } from '../../src/update/check.js';
 import { currentVersion, listVersions } from '../../src/update/apply.js';
+import { tmpRoot } from '../../src/update/download.js';
+import { RELEASE_PUBLIC_KEY_PLACEHOLDER } from '../../src/update/trusted-keys.js';
 import { FakeTimers } from '../helpers/fake-timers.js';
-import { fakeFetch, makeTarball, releaseJson, seedVersion, TempDirs, type FakeResponseSpec } from './helpers.js';
+import { fakeFetch, makeSigner, makeTarball, releaseJson, seedVersion, TempDirs, type FakeResponseSpec, type TestSigner } from './helpers.js';
 
 const dirs = new TempDirs();
 afterAll(() => {
@@ -34,6 +36,9 @@ const LATEST = releasesLatestUrl(REPO);
 const CURRENT = '1.0.0+old';
 const NEXT = '1.1.0+new';
 const SHASUMS_URL = 'https://github.example/dl/SHA256SUMS';
+const SIG_URL = 'https://github.example/dl/SHA256SUMS.sig';
+/** §23.59: this file's own release key, generated in memory. */
+const SIGNER = makeSigner();
 
 function config(overrides: Partial<Config['autoUpdate']> = {}): Config {
   const c = defaultConfig();
@@ -49,14 +54,18 @@ function installedEnv(): NodeJS.ProcessEnv {
 }
 
 /** Routes serving a real release: the JSON, a real tarball and its real SHA256SUMS. */
-function releaseRoutes(opts: { version?: string; prints?: string; corrupt?: boolean } = {}): Record<string, FakeResponseSpec> {
+function releaseRoutes(
+  opts: { version?: string; prints?: string; corrupt?: boolean; unsigned?: boolean; signedBy?: TestSigner; tamper?: boolean } = {},
+): Record<string, FakeResponseSpec> {
   const version = opts.version ?? NEXT;
   const tarball = readFileSync(makeTarball(dirs, version, opts.prints === undefined ? {} : { prints: opts.prints }));
   const digest = opts.corrupt === true ? '0'.repeat(64) : createHash('sha256').update(tarball).digest('hex');
+  const sums = `${digest}  claude-usage-${version}.tgz\n`;
   return {
     [LATEST]: { body: releaseJson(version), headers: { etag: 'W/"one"' } },
     [`https://github.example/dl/claude-usage-${version}.tgz`]: { body: tarball },
-    [SHASUMS_URL]: { body: `${digest}  claude-usage-${version}.tgz\n` },
+    [SHASUMS_URL]: { body: sums },
+    [SIG_URL]: opts.unsigned === true ? { status: 404 } : { body: (opts.signedBy ?? SIGNER).sign(opts.tamper === true ? `${sums}# tampered\n` : sums) },
   };
 }
 
@@ -83,6 +92,7 @@ function harness(opts: Partial<UpdaterOptions> & { routes?: Record<string, FakeR
     timers,
     random: opts.random ?? ((): number => 0.5),
     fetch: fakeFetch(opts.routes ?? releaseRoutes()).fetch,
+    trustedKeys: opts.trustedKeys ?? SIGNER.keys,
     // The layout check is the real one unless a test overrides it.
     ...(opts.packageRoot === undefined ? { packageRoot: versionDir(CURRENT, env) } : { packageRoot: opts.packageRoot }),
     ...(opts.hardFrozen === undefined ? {} : { hardFrozen: opts.hardFrozen }),
@@ -221,6 +231,28 @@ describe('the off switches (§20)', () => {
 });
 
 describe('failure handling (§20)', () => {
+  it.each([
+    ['is not signed at all', { unsigned: true }],
+    ['is signed by someone else', { signedBy: makeSigner('stranger') }],
+    ['had SHA256SUMS changed after signing', { tamper: true }],
+  ] as Array<[string, Parameters<typeof releaseRoutes>[0]]>)('never installs a release that %s (§23.59)', async (_label, opts) => {
+    const h = harness({ routes: releaseRoutes(opts) });
+    const status = await h.updater.runOnce();
+    expect(status.state).toBe('error');
+    expect(currentVersion(h.env)).toBe(CURRENT);
+    expect(listVersions(h.env)).toEqual([CURRENT]);
+    expect(h.restarts).toBe(0);
+    // Nothing of the download survives.
+    expect(existsSync(tmpRoot(h.env)) ? readdirSync(tmpRoot(h.env)) : []).toEqual([]);
+  });
+
+  it('never installs anything when no usable key is compiled in — the placeholder build (§23.59)', async () => {
+    const h = harness({ trustedKeys: [{ id: 'placeholder', publicKey: RELEASE_PUBLIC_KEY_PLACEHOLDER }] });
+    expect((await h.updater.runOnce()).state).toBe('error');
+    expect(currentVersion(h.env)).toBe(CURRENT);
+    expect(h.restarts).toBe(0);
+  });
+
   it('a sha256 mismatch ends in error, installs nothing and deletes the download', async () => {
     const h = harness({ routes: releaseRoutes({ corrupt: true }) });
     await h.updater.runOnce();

@@ -10,7 +10,10 @@ import { repointSymlink } from '../../src/install/versions.js';
 import { currentVersion } from '../../src/update/apply.js';
 import { releasesLatestUrl } from '../../src/update/check.js';
 import { createUpdater, runUpdateCli, type UpdateCliIo } from '../../src/update/index.js';
-import { fakeFetch, makeTarball, releaseJson, seedVersion, TempDirs, type FakeResponseSpec } from './helpers.js';
+import { fakeFetch, makeSigner, makeTarball, releaseJson, seedVersion, TempDirs, type FakeResponseSpec } from './helpers.js';
+
+/** §23.59: this file's own release key, generated in memory. */
+const SIGNER = makeSigner();
 
 const dirs = new TempDirs();
 afterAll(() => {
@@ -48,6 +51,7 @@ function ctx(opts: { routes?: Record<string, FakeResponseSpec>; versions?: strin
     env,
     packageRoot: null,
     fetch: fakeFetch(opts.routes ?? {}).fetch,
+    trustedKeys: SIGNER.keys,
     restart: (): void => {},
   });
   return {
@@ -75,10 +79,12 @@ function ctx(opts: { routes?: Record<string, FakeResponseSpec>; versions?: strin
 function routes(version = NEXT): Record<string, FakeResponseSpec> {
   const tarball = readFileSync(makeTarball(dirs, version));
   const digest = createHash('sha256').update(tarball).digest('hex');
+  const sums = `${digest}  claude-usage-${version}.tgz\n`;
   return {
     [LATEST]: { body: releaseJson(version) },
     [`https://github.example/dl/claude-usage-${version}.tgz`]: { body: tarball },
-    ['https://github.example/dl/SHA256SUMS']: { body: `${digest}  claude-usage-${version}.tgz\n` },
+    ['https://github.example/dl/SHA256SUMS']: { body: sums },
+    ['https://github.example/dl/SHA256SUMS.sig']: { body: SIGNER.sign(sums) },
   };
 }
 
@@ -115,7 +121,10 @@ describe('claude-usage update (§20)', () => {
 
   it('exits 1 without restarting when the download does not verify', async () => {
     const bad = routes();
-    bad['https://github.example/dl/SHA256SUMS'] = { body: `${'0'.repeat(64)}  claude-usage-${NEXT}.tgz\n` };
+    const wrong = `${'0'.repeat(64)}  claude-usage-${NEXT}.tgz\n`;
+    bad['https://github.example/dl/SHA256SUMS'] = { body: wrong };
+    // Correctly signed, wrong digest: this is the checksum failing, not the signature.
+    bad['https://github.example/dl/SHA256SUMS.sig'] = { body: SIGNER.sign(wrong) };
     const c = ctx({ routes: bad });
     expect(await run(['update'], c.io)).toBe(1);
     expect(c.out.join('')).toContain('state:     error');

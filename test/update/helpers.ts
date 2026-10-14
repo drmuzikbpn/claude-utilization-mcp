@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Even Seal Productions
 import { execFileSync } from 'node:child_process';
+import { generateKeyPairSync, sign as cryptoSign, type KeyObject } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { versionDir } from '../../src/paths.js';
 import type { UpdateFetch, UpdateRequestInit } from '../../src/update/check.js';
 import type { ExecResult, ExecRunner } from '../../src/service/index.js';
+import type { TrustedKey } from '../../src/update/trusted-keys.js';
 
 /** Temp directories created by a test file, torn down in one `afterAll`. */
 export class TempDirs {
@@ -136,6 +138,29 @@ export function releaseJson(version: string, base = 'https://github.example/dl')
     assets: [
       { name: `claude-usage-${version}.tgz`, browser_download_url: `${base}/claude-usage-${version}.tgz` },
       { name: 'SHA256SUMS', browser_download_url: `${base}/SHA256SUMS` },
+      { name: 'SHA256SUMS.sig', browser_download_url: `${base}/SHA256SUMS.sig` },
     ],
   });
+}
+
+/**
+ * A release-signing identity made up for one test file (§23.59). The key pair is generated
+ * here, in memory, every run — no key, real or otherwise, is ever written to this repo.
+ */
+export interface TestSigner {
+  /** What the updater is told to trust. */
+  keys: TrustedKey[];
+  privateKey: KeyObject;
+  /** The body of a `SHA256SUMS.sig` for `data`: base64 of the Ed25519 signature, newline. */
+  sign(data: string | Buffer): string;
+}
+
+export function makeSigner(id = 'test-key'): TestSigner {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const spki = publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+  return {
+    keys: [{ id, publicKey: spki }],
+    privateKey,
+    sign: (data) => `${cryptoSign(null, Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8'), privateKey).toString('base64')}\n`,
+  };
 }

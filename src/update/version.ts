@@ -88,3 +88,5 @@ export function tarballName(version: string): string {
 
 /** The checksum asset name on every release. */
 export const SHASUMS_NAME = 'SHA256SUMS';
+/** The detached Ed25519 signature over `SHA256SUMS`, on every release (§23.59). */
+export const SIGNATURE_NAME = 'SHA256SUMS.sig';

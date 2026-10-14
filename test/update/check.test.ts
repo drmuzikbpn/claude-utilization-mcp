@@ -15,6 +15,7 @@ describe('check() — GET /repos/<repo>/releases/latest (§20)', () => {
       version: '0.1.418+abc1234',
       tarballUrl: 'https://github.example/dl/claude-usage-0.1.418+abc1234.tgz',
       shasumsUrl: 'https://github.example/dl/SHA256SUMS',
+      signatureUrl: 'https://github.example/dl/SHA256SUMS.sig',
     });
     expect(result.etag).toBe('W/"abc"');
     expect(result.error).toBeNull();
@@ -61,6 +62,17 @@ describe('check() — GET /repos/<repo>/releases/latest (§20)', () => {
     ['no tag_name', JSON.stringify({ assets: [] }), /no tag_name/],
     ['no tarball asset', JSON.stringify({ tag_name: 'v9.9.9', assets: [{ name: 'SHA256SUMS', browser_download_url: 'https://x/y' }] }), /claude-usage-9\.9\.9\.tgz/],
     ['no SHA256SUMS', JSON.stringify({ tag_name: 'v9.9.9', assets: [{ name: 'claude-usage-9.9.9.tgz', browser_download_url: 'https://x/y' }] }), /SHA256SUMS/],
+    [
+      'no SHA256SUMS.sig (§23.59)',
+      JSON.stringify({
+        tag_name: 'v9.9.9',
+        assets: [
+          { name: 'claude-usage-9.9.9.tgz', browser_download_url: 'https://x/y' },
+          { name: 'SHA256SUMS', browser_download_url: 'https://x/z' },
+        ],
+      }),
+      /is missing SHA256SUMS\.sig/,
+    ],
     ['a draft', JSON.stringify({ tag_name: 'v9.9.9', draft: true, assets: [] }), /draft or prerelease/],
   ])('reports malformed release: %s', async (_name, body, pattern) => {
     const f = fakeFetch({ [URL_LATEST]: { body } });

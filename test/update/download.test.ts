@@ -3,7 +3,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { download, downloadTo, MAX_DOWNLOAD_BYTES, makeTempDir, tmpRoot, UpdateError } from '../../src/update/download.js';
+import { download, downloadTo, MAX_DOWNLOAD_BYTES, makeTempDir, tmpRoot, UpdateError, SMALL_ASSET_MAX_BYTES } from '../../src/update/download.js';
 import { fakeFetch, TempDirs } from './helpers.js';
 
 const dirs = new TempDirs();
@@ -15,13 +15,15 @@ const RELEASE = {
   version: '0.1.418+abc',
   tarballUrl: 'https://github.example/dl/claude-usage-0.1.418+abc.tgz',
   shasumsUrl: 'https://github.example/dl/SHA256SUMS',
+  signatureUrl: 'https://github.example/dl/SHA256SUMS.sig',
 };
 
 describe('download() (§20 "Integrity")', () => {
-  it('writes both assets into a temp dir under XDG_DATA_HOME/claude-usage/tmp', async () => {
+  it('writes all three assets into a temp dir under XDG_DATA_HOME/claude-usage/tmp', async () => {
     const env = dirs.env();
     const f = fakeFetch({
       [RELEASE.tarballUrl]: { body: 'tarball-bytes' },
+      [RELEASE.signatureUrl]: { body: 'c2lnbmF0dXJl\n' },
       [RELEASE.shasumsUrl]: { body: 'deadbeef  claude-usage-0.1.418+abc.tgz\n' },
     });
     const got = await download(RELEASE, { fetch: f.fetch, currentVersion: '0.1.417', env });
@@ -31,6 +33,10 @@ describe('download() (§20 "Integrity")', () => {
     expect(readFileSync(got.tarballPath, 'utf8')).toBe('tarball-bytes');
     expect(readFileSync(got.shasumsPath, 'utf8')).toMatch(/SHA256SUMS|deadbeef/);
     expect(got.bytes).toBe('tarball-bytes'.length);
+    expect(readFileSync(got.signaturePath, 'utf8')).toBe('c2lnbmF0dXJl\n');
+    expect(statSync(got.signaturePath).mode & 0o077).toBe(0);
+    // §23.59: the signature and the checksums are fetched before the tarball.
+    expect(f.requests.map((r) => r.url)).toEqual([RELEASE.signatureUrl, RELEASE.shasumsUrl, RELEASE.tarballUrl]);
     // The download is not world-readable.
     expect(statSync(got.tarballPath).mode & 0o077).toBe(0);
   });
@@ -86,9 +92,23 @@ describe('download() (§20 "Integrity")', () => {
     });
   });
 
+  it('a release with no signature is abandoned before the tarball is even requested (§23.59)', async () => {
+    const env = dirs.env();
+    const f = fakeFetch({ [RELEASE.tarballUrl]: { body: 'ok' }, [RELEASE.shasumsUrl]: { body: 'x' } }); // SHA256SUMS.sig 404s
+    await expect(download(RELEASE, { fetch: f.fetch, currentVersion: '0.1.417', env })).rejects.toMatchObject({ code: 'http' });
+    expect(f.requests.map((r) => r.url)).toEqual([RELEASE.signatureUrl]);
+    expect(readdirSync(tmpRoot(env))).toEqual([]);
+  });
+
+  it('refuses an implausibly large signature or checksum file', async () => {
+    const env = dirs.env();
+    const f = fakeFetch({ [RELEASE.signatureUrl]: { body: 'A'.repeat(SMALL_ASSET_MAX_BYTES + 1) } });
+    await expect(download(RELEASE, { fetch: f.fetch, currentVersion: '0.1.417', env })).rejects.toMatchObject({ code: 'too_large' });
+  });
+
   it('cleans the temp dir up when the second asset fails', async () => {
     const env = dirs.env();
-    const f = fakeFetch({ [RELEASE.tarballUrl]: { body: 'ok' } }); // SHA256SUMS 404s
+    const f = fakeFetch({ [RELEASE.tarballUrl]: { body: 'ok' }, [RELEASE.signatureUrl]: { body: 'c2ln' } }); // SHA256SUMS 404s
     await expect(download(RELEASE, { fetch: f.fetch, currentVersion: '0.1.417', env })).rejects.toBeInstanceOf(UpdateError);
     // A half-downloaded release never survives under tmp/.
     expect(readdirSync(tmpRoot(env))).toEqual([]);

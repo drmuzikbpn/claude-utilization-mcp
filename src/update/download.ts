@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Even Seal Productions
 /**
- * Fetch a release's tarball and `SHA256SUMS` into a throwaway directory (§20).
+ * Fetch a release's tarball, `SHA256SUMS` and `SHA256SUMS.sig` into a throwaway directory (§20, §23.59).
  *
  * Two hard rules, both enforced here rather than at the call site: the URL must be
  * `https:` (no plaintext, no `file:` smuggled in through a redirect-free asset URL),
@@ -10,12 +10,14 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { dataDir } from '../paths.js';
-import { SHASUMS_NAME, tarballName } from './version.js';
+import { SHASUMS_NAME, SIGNATURE_NAME, tarballName } from './version.js';
 import { defaultUpdateFetch, type ReleaseInfo, type UpdateFetch, type UpdateRequestInit } from './check.js';
 
 /** Anything bigger is a mistake or an attack; the real tarball is ~100 kB. */
 export const MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024;
 export const DOWNLOAD_TIMEOUT_MS = 60_000;
+/** `SHA256SUMS` and its signature are a few hundred bytes. */
+export const SMALL_ASSET_MAX_BYTES = 64 * 1024;
 
 /** A download that never happened, with a machine-readable reason. */
 export class UpdateError extends Error {
@@ -113,6 +115,8 @@ export interface DownloadedRelease {
   dir: string;
   tarballPath: string;
   shasumsPath: string;
+  /** `SHA256SUMS.sig` (§23.59). */
+  signaturePath: string;
   /** The tarball's filename — the key `SHA256SUMS` is looked up under. */
   tarballFile: string;
   bytes: number;
@@ -127,10 +131,13 @@ export async function download(
   const tarballFile = tarballName(release.version);
   const tarballPath = join(dir, tarballFile);
   const shasumsPath = join(dir, SHASUMS_NAME);
+  const signaturePath = join(dir, SIGNATURE_NAME);
   try {
+    // The two small files first: a release with no signature costs no tarball download.
+    await downloadTo(release.signatureUrl, signaturePath, { ...opts, maxBytes: Math.min(opts.maxBytes ?? SMALL_ASSET_MAX_BYTES, SMALL_ASSET_MAX_BYTES) });
+    await downloadTo(release.shasumsUrl, shasumsPath, { ...opts, maxBytes: Math.min(opts.maxBytes ?? SMALL_ASSET_MAX_BYTES, SMALL_ASSET_MAX_BYTES) });
     const bytes = await downloadTo(release.tarballUrl, tarballPath, opts);
-    await downloadTo(release.shasumsUrl, shasumsPath, opts);
-    return { dir, tarballPath, shasumsPath, tarballFile, bytes };
+    return { dir, tarballPath, shasumsPath, signaturePath, tarballFile, bytes };
   } catch (err) {
     rmSync(dir, { recursive: true, force: true });
     throw err;

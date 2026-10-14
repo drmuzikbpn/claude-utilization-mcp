@@ -7,7 +7,7 @@
  * anonymous limit is 60 requests/hour per IP and the loop asks 6 times an hour, so the
  * conditional request (`If-None-Match`) is politeness rather than necessity.
  */
-import { SHASUMS_NAME, tarballName } from './version.js';
+import { SHASUMS_NAME, SIGNATURE_NAME, tarballName } from './version.js';
 
 export const GITHUB_API_ORIGIN = 'https://api.github.com';
 export const CHECK_TIMEOUT_MS = 10_000;
@@ -41,6 +41,8 @@ export interface ReleaseInfo {
   version: string;
   tarballUrl: string;
   shasumsUrl: string;
+  /** `SHA256SUMS.sig` (§23.59). A release without one is not a release we can install. */
+  signatureUrl: string;
 }
 
 export interface CheckOptions {
@@ -153,14 +155,10 @@ export async function check(opts: CheckOptions): Promise<CheckResult> {
   const version = body.tag_name.replace(/^v/, '');
   const tarballUrl = assetUrl(body.assets, tarballName(version));
   const shasumsUrl = assetUrl(body.assets, SHASUMS_NAME);
-  if (tarballUrl === null || shasumsUrl === null) {
-    return {
-      release: null,
-      etag,
-      notModified: false,
-      error: `malformed: release ${body.tag_name} is missing ${tarballUrl === null ? tarballName(version) : SHASUMS_NAME}`,
-    };
+  const signatureUrl = assetUrl(body.assets, SIGNATURE_NAME);
+  if (tarballUrl === null || shasumsUrl === null || signatureUrl === null) {
+    const missing = tarballUrl === null ? tarballName(version) : shasumsUrl === null ? SHASUMS_NAME : SIGNATURE_NAME;
+    return { release: null, etag, notModified: false, error: `malformed: release ${body.tag_name} is missing ${missing}` };
   }
-
-  return { release: { version, tarballUrl, shasumsUrl }, etag, notModified: false, error: null };
+  return { release: { version, tarballUrl, shasumsUrl, signatureUrl }, etag, notModified: false, error: null };
 }

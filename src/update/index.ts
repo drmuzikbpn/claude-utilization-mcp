@@ -45,6 +45,7 @@ import { check, type ReleaseInfo, type UpdateFetch } from './check.js';
 import { download, UpdateError } from './download.js';
 import { apply, currentVersion, listVersions, rollback, runningUnderCurrent } from './apply.js';
 import { verify } from './verify.js';
+import type { TrustedKey } from './trusted-keys.js';
 import { isNewerVersion } from './version.js';
 
 export type UpdateState = UpdateStatus['state'];
@@ -84,6 +85,8 @@ export interface UpdaterOptions {
   hardFrozen?: () => boolean;
   /** What "restart now" means; defaults to `process.exit(UPDATE_RESTART_EXIT_CODE)`. */
   restart?: () => void | Promise<void>;
+  /** §23.59: the keys a release must be signed with; the compiled-in list outside tests. */
+  trustedKeys?: readonly TrustedKey[];
   log?: (line: string) => void;
   /** Verbose-only lines (why the updater is off); defaults to `log`. */
   debug?: (line: string) => void;
@@ -262,7 +265,9 @@ class Updater implements UpdaterHandle {
       await verify({
         tarballPath: downloaded.tarballPath,
         shasumsPath: downloaded.shasumsPath,
+        signaturePath: downloaded.signaturePath,
         tarballFile: downloaded.tarballFile,
+        ...(this.opts.trustedKeys === undefined ? {} : { trustedKeys: this.opts.trustedKeys }),
       });
       await apply({
         version: release.version,
