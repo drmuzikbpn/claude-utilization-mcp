@@ -1,6 +1,11 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Even Seal Productions
 pre-commit:
   parallel: false
   commands:
+    # First, and cheap: nothing that must stay private may enter a public repository.
+    public-check:
+      run: scripts/public-check.sh
     ktlint:
       run: JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew ktlintCheck --offline -q
     unit:

@@ -7,3 +7,5 @@ local.properties
 .DS_Store
 .rom/
 .claude/
+# Extra literals for scripts/public-check.sh to block; private to this checkout.
+.public-check.local
