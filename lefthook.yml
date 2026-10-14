@@ -10,6 +10,8 @@ pre-commit:
     swiftlint:
       glob: "*.swift"
       run: swiftlint lint --strict --quiet {staged_files}
+    public-check:
+      run: scripts/public-check.sh
     licence-headers:
       glob: "*.{swift,sh,py,yml,yaml}"
       run: scripts/check-license-headers.sh {staged_files}

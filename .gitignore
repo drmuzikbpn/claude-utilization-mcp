@@ -22,3 +22,6 @@ xcuserdata/
 *.mobileprovision
 
 .DS_Store
+
+# Extra literal strings for scripts/public-check.sh; never committed
+.public-check.local
