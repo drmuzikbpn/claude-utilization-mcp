@@ -444,7 +444,7 @@ export function resumeAll(configDir: string, deps: FreezeDeps = defaultFreezeDep
     session.pausedSince = null;
   }
 
-  let removed: string[] = [];
+  let removed: string[];
   try {
     const parsed = JSON.parse(readFileSync(pauseFilePath(configDir), 'utf8')) as { rules?: PauseRule[] };
     removed = (parsed.rules ?? []).map((r) => r.id).filter((id) => typeof id === 'string');

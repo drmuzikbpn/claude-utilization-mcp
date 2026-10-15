@@ -56,6 +56,9 @@ npm run lint
 npm run build            # dist/, ESM, Node >= 20
 ```
 
+The installed daemon runs on Node 20 or later; working on it (vitest 5, eslint 10) needs
+Node 22.12 or later.
+
 `npm ci` installs the lefthook pre-commit hook for you via `prepare`; it runs lint, typecheck
 and `scripts/public-check.sh` on every commit.
 

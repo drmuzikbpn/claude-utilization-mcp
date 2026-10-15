@@ -273,7 +273,7 @@ export async function walkTranscripts(projectsDir: string): Promise<TranscriptFi
       const segments = rel.split('/');
       const projectKey = segments[0] ?? '';
       if (segments.length < 2) continue; // a stray *.jsonl directly in projects/
-      let size = 0;
+      let size: number;
       try {
         size = (await stat(abs)).size;
       } catch {

@@ -83,7 +83,7 @@ export function rawRequest(opts: RawRequestOptions): Promise<RawResponse> {
 
 export async function rawJson(opts: RawRequestOptions): Promise<{ status: number; json: Record<string, unknown> }> {
   const res = await rawRequest(opts);
-  let json: Record<string, unknown> = {};
+  let json: Record<string, unknown>;
   try {
     json = JSON.parse(res.body) as Record<string, unknown>;
   } catch {
