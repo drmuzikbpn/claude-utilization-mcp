@@ -83,7 +83,7 @@ class FakeDaemonTest {
     fun `health reports name version user and update`() {
         get("/health").use { r ->
             assertEquals(200, r.code)
-            val body = r.body!!.string()
+            val body = r.body.string()
             assertTrue(body.contains("\"name\":\"fake-mbp\""))
             assertTrue(body.contains("\"version\""))
             assertTrue(body.contains("\"user\""))
@@ -94,7 +94,7 @@ class FakeDaemonTest {
     @Test
     fun `summary nests the limits body and carries a status map`() {
         get("/v1/summary").use { r ->
-            val body = r.body!!.string()
+            val body = r.body.string()
             assertTrue(body.contains("\"limits\":{"))
             assertTrue(body.contains("\"weekly_all\""))
             assertTrue(body.contains("\"status\":{"))
@@ -106,7 +106,7 @@ class FakeDaemonTest {
     fun `sessions carries a weak etag and answers 304 when it matches`() {
         val etag = get("/v1/sessions").use { r ->
             assertEquals(200, r.code)
-            assertEquals(4, Regex("\"sessionId\"").findAll(r.body!!.string()).count())
+            assertEquals(4, Regex("\"sessionId\"").findAll(r.body.string()).count())
             r.header("ETag")
         }
         assertNotNull(etag)
@@ -117,7 +117,7 @@ class FakeDaemonTest {
     fun `tokens only answers groupBy project`() {
         get("/v1/tokens?since=today&groupBy=project").use { r ->
             assertEquals(200, r.code)
-            assertTrue(r.body!!.string().contains("\"groups\""))
+            assertTrue(r.body.string().contains("\"groups\""))
         }
         get("/v1/tokens?since=today&groupBy=model").use { r -> assertEquals(400, r.code) }
     }
@@ -126,7 +126,7 @@ class FakeDaemonTest {
     fun `a mutating request without the token is refused with the error envelope`() {
         post("/v1/pause", """{"scope":"all","mode":"soft","reason":"x"}""", token = null).use { r ->
             assertEquals(401, r.code)
-            val body = r.body!!.string()
+            val body = r.body.string()
             assertTrue(body.contains("\"code\":\"unauthorized\""))
             assertTrue(body.contains("\"message\""))
         }
@@ -143,32 +143,32 @@ class FakeDaemonTest {
     fun `pause is idempotent and returns the same rule twice`() {
         val first = post("/v1/pause", """{"scope":"all","mode":"soft","reason":"usage-deck:t"}""").use { r ->
             assertEquals(200, r.code)
-            r.body!!.string()
+            r.body.string()
         }
         val id = Regex("\"id\":\"([^\"]+)\"").find(first)!!.groupValues[1]
         val second = post("/v1/pause", """{"scope":"all","mode":"soft","reason":"usage-deck:t"}""").use { r ->
             assertEquals(200, r.code)
-            r.body!!.string()
+            r.body.string()
         }
         assertEquals(id, Regex("\"id\":\"([^\"]+)\"").find(second)!!.groupValues[1])
         assertEquals(1, daemon.state.rules.size)
 
         get("/v1/pause/rules").use { r ->
             assertEquals(200, r.code)
-            assertTrue(r.body!!.string().contains("usage-deck:t"))
+            assertTrue(r.body.string().contains("usage-deck:t"))
         }
     }
 
     @Test
     fun `a soft pause marks its sessions paused and resume clears them`() {
         post("/v1/pause", """{"scope":"all","mode":"soft","reason":"usage-deck:t"}""").use { r ->
-            assertTrue(r.body!!.string().contains("\"affected\""))
+            assertTrue(r.body.string().contains("\"affected\""))
         }
         assertTrue(daemon.state.sessions.all { it.pause != null })
 
         post("/v1/resume", """{"scope":"all"}""").use { r ->
             assertEquals(200, r.code)
-            assertTrue(r.body!!.string().contains("\"removed\""))
+            assertTrue(r.body.string().contains("\"removed\""))
         }
         assertTrue(daemon.state.sessions.all { it.pause == null })
         assertTrue(daemon.state.rules.isEmpty())
@@ -178,7 +178,7 @@ class FakeDaemonTest {
     fun `resume with nothing to remove is still a 200 with empty arrays`() {
         post("/v1/resume", """{"scope":"session:nope"}""").use { r ->
             assertEquals(200, r.code)
-            assertEquals("""{"removed":[],"resumed":[]}""", r.body!!.string())
+            assertEquals("""{"removed":[],"resumed":[]}""", r.body.string())
         }
     }
 
@@ -187,7 +187,7 @@ class FakeDaemonTest {
         val transcript = daemon.state.sessions.first { it.discovered == "transcript" && it.alive }
         post("/v1/pause", """{"scope":"session:${transcript.sessionId}","mode":"hard","reason":"x"}""").use { r ->
             assertEquals(409, r.code)
-            assertTrue(r.body!!.string().contains("\"code\":\"conflict\""))
+            assertTrue(r.body.string().contains("\"code\":\"conflict\""))
         }
         assertTrue("no rule is created for a refused hard pause", daemon.state.rules.isEmpty())
 
@@ -201,7 +201,7 @@ class FakeDaemonTest {
     fun `pause on an unknown or exited session is a 410 and creates no rule`() {
         post("/v1/pause", """{"scope":"session:nope","mode":"soft","reason":"x"}""").use { r ->
             assertEquals(410, r.code)
-            assertTrue(r.body!!.string().contains("\"code\":\"gone\""))
+            assertTrue(r.body.string().contains("\"code\":\"gone\""))
         }
         val dead = daemon.state.sessions.first { !it.alive }
         post("/v1/pause", """{"scope":"session:${dead.sessionId}","mode":"soft","reason":"x"}""").use { r ->
@@ -227,7 +227,7 @@ class FakeDaemonTest {
 
     @Test
     fun `deleting a rule by id removes it and an unknown id is a 404`() {
-        val body = post("/v1/pause", """{"scope":"all","mode":"soft","reason":"x"}""").use { it.body!!.string() }
+        val body = post("/v1/pause", """{"scope":"all","mode":"soft","reason":"x"}""").use { it.body.string() }
         val id = Regex("\"id\":\"([^\"]+)\"").find(body)!!.groupValues[1]
         delete("/v1/pause/rules/$id").use { r -> assertEquals(204, r.code) }
         assertTrue(daemon.state.rules.isEmpty())
@@ -245,7 +245,7 @@ class FakeDaemonTest {
         client.newCall(request).execute().use { response ->
             assertEquals(200, response.code)
             assertTrue(response.header("Content-Type")!!.startsWith("text/event-stream"))
-            val source = response.body!!.source()
+            val source = response.body.source()
 
             val firstEvent = generateSequence { source.readUtf8Line() }.first { it.startsWith("event:") }
             assertEquals("event: snapshot", firstEvent)
@@ -327,7 +327,7 @@ class FakeDaemonTest {
             repeat(5) { d.tick() }
             client.newCall(summary()).execute().use { r ->
                 assertEquals(401, r.code)
-                assertTrue(r.body!!.string().contains("unauthorized"))
+                assertTrue(r.body.string().contains("unauthorized"))
             }
         } finally {
             d.stop()
@@ -346,9 +346,9 @@ class FakeDaemonTest {
     fun `health without the bearer is liveness only`() {
         get("/health", token = null).use { r ->
             assertEquals(200, r.code)
-            assertEquals("""{"ok":true}""", r.body!!.string())
+            assertEquals("""{"ok":true}""", r.body.string())
         }
-        get("/health").use { r -> assertTrue(r.body!!.string().contains("\"name\"")) }
+        get("/health").use { r -> assertTrue(r.body.string().contains("\"name\"")) }
     }
 
     @Test

@@ -6,7 +6,6 @@ package com.evenseal.usagedeck.core.daemon
 import java.io.IOException
 import okhttp3.Interceptor
 import okhttp3.Response
-import okhttp3.ResponseBody
 import okhttp3.ResponseBody.Companion.asResponseBody
 import okio.Buffer
 import okio.ForwardingSource
@@ -39,7 +38,7 @@ object BodyLimits {
 
     /** The body as text, or [BodyTooLargeException] once it passes [limit] — never more than that is buffered. */
     fun text(response: Response, limit: Long, what: String = "reply"): String {
-        val body = response.body ?: return ""
+        val body = response.body
         val source = body.source()
         if (source.request(limit + 1)) throw BodyTooLargeException(what, limit)
         return source.readString(body.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8)
@@ -58,9 +57,9 @@ object BodyLimits {
      */
     val sseGuard = Interceptor { chain ->
         val response = chain.proceed(chain.request())
-        val body = response.body ?: return@Interceptor response
+        val body = response.body
         val guarded = SseGuardSource(body.source()).buffer().asResponseBody(body.contentType(), body.contentLength())
-        response.newBuilder().body(guarded as ResponseBody).build()
+        response.newBuilder().body(guarded).build()
     }
 }
 

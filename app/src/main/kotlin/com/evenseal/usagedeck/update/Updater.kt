@@ -210,7 +210,7 @@ class Updater(
             val request = Request.Builder().url(info.apkUrl).get().build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@runCatching Download.Failed
-                val body = response.body ?: return@runCatching Download.Failed
+                val body = response.body
                 if (body.contentLength() > maxApkBytes) return@runCatching Download.TooLarge
                 val complete = target.outputStream().use { out -> copyCapped(body.byteStream(), out) }
                 if (!complete) {
