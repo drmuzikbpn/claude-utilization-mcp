@@ -31,13 +31,13 @@
     "@modelcontextprotocol/sdk": "^1.20.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.30.0",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22.0.0",
-    "eslint": "^9.30.0",
-    "lefthook": "^1.11.0",
+    "eslint": "^10.12.0",
+    "lefthook": "^2.2.2",
     "qrcode-terminal": "^0.12.0",
-    "typescript": "^5.8.0",
-    "typescript-eslint": "^8.35.0",
-    "vitest": "^4.1.11"
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.2",
+    "vitest": "^5.0.5"
   }
 }

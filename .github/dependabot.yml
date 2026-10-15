@@ -14,6 +14,13 @@ updates:
     groups:
       dev-dependencies:
         dependency-type: development
+    ignore:
+      # typescript-eslint supports TypeScript below 6.1 only; lift this once it accepts 7.
+      - dependency-name: typescript
+        versions: [">=6.1.0"]
+      # Types track the oldest Node CI runs (22), so code cannot lean on newer APIs unnoticed.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     target-branch: main

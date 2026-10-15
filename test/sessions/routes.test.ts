@@ -49,7 +49,7 @@ async function call(
     ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
   });
   const text = await res.text();
-  let body: Record<string, unknown> = {};
+  let body: Record<string, unknown>;
   try {
     body = text.length === 0 ? {} : (JSON.parse(text) as Record<string, unknown>);
   } catch {
