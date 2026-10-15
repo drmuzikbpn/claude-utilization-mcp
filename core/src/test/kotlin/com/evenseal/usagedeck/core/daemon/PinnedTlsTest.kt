@@ -28,7 +28,7 @@ class PinnedTlsTest {
     }
 
     private fun get(client: OkHttpClient): String =
-        client.newCall(Request.Builder().url(server.url("/health")).build()).execute().use { it.body!!.string() }
+        client.newCall(Request.Builder().url(server.url("/health")).build()).execute().use { it.body.string() }
 
     @Test
     fun `fingerprint is the SHA-256 of the SubjectPublicKeyInfo, matching the daemon's fixture`() {
