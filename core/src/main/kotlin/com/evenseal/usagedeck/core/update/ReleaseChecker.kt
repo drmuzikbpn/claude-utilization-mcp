@@ -95,7 +95,7 @@ class ReleaseChecker(
         runCatching {
             client.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
                 if (!response.isSuccessful) return@use null
-                val source = response.body?.source() ?: return@use null
+                val source = response.body.source()
                 // GitHub is not the daemon, but the same rule holds: never buffer without a bound.
                 if (source.request(MAX_BODY_BYTES + 1)) null else source.readUtf8()
             }

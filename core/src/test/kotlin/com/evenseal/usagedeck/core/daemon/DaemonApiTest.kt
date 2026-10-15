@@ -13,7 +13,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -48,13 +48,14 @@ class DaemonApiTest {
                 runBlocking { OkHttpDaemonApi(config, OkHttpClient()).health() }
             }
             assertEquals("network", e.code)
-            // The TLS ClientHello can reach a plain server, which may log it as an
+            // The TLS ClientHello can reach a plain server, which may record it as an
             // unparseable request (it does on Linux). What must never arrive is HTTP, and
-            // above all the bearer.
+            // above all the bearer. MockWebServer marks such a request with `failure` (5.x
+            // then reports a placeholder request line, so the line itself proves nothing).
             val seen = plain.takeRequest(1, TimeUnit.SECONDS)
             if (seen != null) {
                 assertNull(seen.getHeader("Authorization"))
-                assertFalse(seen.requestLine.contains("HTTP/1."))
+                assertNotNull("a plain listener parsed an HTTP request", seen.failure)
             }
         } finally {
             plain.shutdown()
