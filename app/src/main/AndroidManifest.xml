@@ -56,6 +56,8 @@
           Components the libraries declare and the deck does not use. zxing-android-embedded
           ships its own capture activity (the deck scans in QrScanActivity), and AndroidX
           ProfileInstaller ships an exported receiver for adb-driven profile installs.
+          Kept on purpose: androidx.startup's InitializationProvider (exported="false"), which
+          emoji2, lifecycle and OkHttp 5 use to receive the app Context at start-up.
         -->
         <activity
             android:name="com.journeyapps.barcodescanner.CaptureActivity"

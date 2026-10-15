@@ -36,21 +36,7 @@ jobs:
           if [ -n "$BASE_REF" ]; then
             scripts/public-check.sh --diff "origin/$BASE_REF...HEAD"
           fi
-      # TEMPORARY: record every artifact the Linux build resolves, then drop this step.
-      - run: ./gradlew --write-verification-metadata sha256 --dry-run ktlintCheck :core:test :fakedaemon:test :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease
-        continue-on-error: true
-      - if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: verification-dryrun
-          path: gradle/verification-metadata.dryrun.xml
       - run: ./gradlew ktlintCheck :core:test :fakedaemon:test :app:testDebugUnitTest :app:assembleDebug
-      # TEMPORARY: keep the merged manifests to review the components libraries add.
-      - if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: merged-manifests
-          path: app/build/intermediates/merged_manifests/**/AndroidManifest.xml
       # Without this the emulator has no hardware acceleration on the Linux runner, takes
       # ten minutes to boot and then stops answering adb ("No compatible devices connected").
       - name: Enable KVM
