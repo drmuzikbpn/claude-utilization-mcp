@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Even Seal Productions
 [versions]
-agp = "8.7.3"
+agp = "9.4.1"
 kotlin = "2.4.21"
 coroutines = "1.11.0"
 serialization = "1.7.3"
@@ -15,7 +15,7 @@ zxingEmbedded = "4.3.0"
 ktor = "2.3.12"
 junit = "4.13.2"
 robolectric = "4.13"
-ktlint = "12.1.1"
+ktlint = "14.2.0"
 androidxTestExt = "1.2.1"
 espresso = "3.6.1"
 
@@ -51,7 +51,6 @@ espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref =
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

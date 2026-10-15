@@ -5,7 +5,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
 }
@@ -29,7 +28,7 @@ val shortSha = git("rev-parse", "--short", "HEAD").ifBlank { "dev" }
 
 android {
     namespace = "com.evenseal.usagedeck"
-    compileSdk = 34
+    compileSdk = 37
     defaultConfig {
         applicationId = "com.evenseal.usagedeck"
         minSdk = 29
