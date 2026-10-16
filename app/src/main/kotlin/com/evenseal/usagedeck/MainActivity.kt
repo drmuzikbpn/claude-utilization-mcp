@@ -27,6 +27,7 @@ import com.evenseal.usagedeck.ui.kiosk.FirstPinDialog
 import com.evenseal.usagedeck.ui.kiosk.StorageErrorScreen
 import com.evenseal.usagedeck.ui.pairing.ImportConfirmDialog
 import com.evenseal.usagedeck.ui.setOrChangePin
+import com.evenseal.usagedeck.ui.theme.DeckColorsTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
@@ -81,39 +82,42 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            Box(modifier = Modifier.fillMaxSize()) {
-                DeckNav(graph)
+            // The dialogs here sit outside DeckNav's DeckTheme, so they need the colours too.
+            DeckColorsTheme {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    DeckNav(graph)
 
-                val overlay by graph.notifier.overlay.collectAsStateWithLifecycle()
-                val mode by graph.mode.mode.collectAsStateWithLifecycle()
-                AlertOverlay(
-                    alert = overlay,
-                    mode = mode,
-                    onDismiss = { graph.notifier.dismissOverlay() }
-                )
+                    val overlay by graph.notifier.overlay.collectAsStateWithLifecycle()
+                    val mode by graph.mode.mode.collectAsStateWithLifecycle()
+                    AlertOverlay(
+                        alert = overlay,
+                        mode = mode,
+                        onDismiss = { graph.notifier.dismissOverlay() }
+                    )
 
-                val importQuestion by graph.imports.pending.collectAsStateWithLifecycle()
-                importQuestion?.let { asked ->
-                    ImportConfirmDialog(
-                        oldName = asked.oldName,
-                        newName = asked.newName,
-                        onReplace = { graph.imports.confirm() },
-                        onCancel = { graph.imports.decline() }
+                    val importQuestion by graph.imports.pending.collectAsStateWithLifecycle()
+                    importQuestion?.let { asked ->
+                        ImportConfirmDialog(
+                            oldName = asked.oldName,
+                            newName = asked.newName,
+                            onReplace = { graph.imports.confirm() },
+                            onCancel = { graph.imports.decline() }
+                        )
+                    }
+
+                    // A locked kiosk never runs without an exit PIN: whoever provisions it chooses one.
+                    val prefs by graph.settings.settings.collectAsStateWithLifecycle()
+                    if (graph.kiosk.isDeviceOwner && !prefs.pinSet && !graph.exitPin.isSet()) {
+                        FirstPinDialog(onSet = { setOrChangePin(graph, null, it) })
+                    }
+
+                    ExitGate(
+                        pin = graph.exitPin,
+                        clock = graph.clock,
+                        onUnlocked = ::openMaintenanceWindow,
+                        modifier = Modifier.align(Alignment.TopStart)
                     )
                 }
-
-                // A locked kiosk never runs without an exit PIN: whoever provisions it chooses one.
-                val prefs by graph.settings.settings.collectAsStateWithLifecycle()
-                if (graph.kiosk.isDeviceOwner && !prefs.pinSet && !graph.exitPin.isSet()) {
-                    FirstPinDialog(onSet = { setOrChangePin(graph, null, it) })
-                }
-
-                ExitGate(
-                    pin = graph.exitPin,
-                    clock = graph.clock,
-                    onUnlocked = ::openMaintenanceWindow,
-                    modifier = Modifier.align(Alignment.TopStart)
-                )
             }
         }
     }
