@@ -60,7 +60,8 @@ The installed daemon runs on Node 20 or later; working on it (vitest 5, eslint 1
 Node 22.12 or later.
 
 `npm ci` installs the lefthook pre-commit hook for you via `prepare`; it runs lint, typecheck
-and `scripts/public-check.sh` on every commit.
+and `scripts/public-check.sh` on every commit. If your npm is set to skip install scripts (it
+prints an `allow-scripts` warning), run `npx lefthook install` yourself.
 
 ## What may not be committed
 
