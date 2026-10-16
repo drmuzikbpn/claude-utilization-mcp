@@ -526,12 +526,28 @@ final class DeckStore {
 
     /// Tap: resume when paused, soft pause otherwise.
     func tap(_ target: PauseTarget) {
+        if isDemo {
+            return demoPause(target, mode: visual(target).isPaused ? nil : .soft)
+        }
         Task { await report(pause.tap(target), target: target) }
     }
 
     /// After the "Freeze?" confirmation.
     func freeze(_ target: PauseTarget) {
+        if isDemo {
+            return demoPause(target, mode: .hard)
+        }
         Task { await report(pause.hold(target), target: target) }
+    }
+
+    /// The demo has no daemon to ask: its made-up sessions change in place (`DemoPause`).
+    private func demoPause(_ target: PauseTarget, mode: PauseMode?) {
+        let ids = records.map(\.id)
+        let next = DemoPause.apply(target, mode: mode, to: ids.compactMap { states[$0] }, now: Date())
+        for device in next {
+            states[device.id] = device
+        }
+        fold()
     }
 
     private func report(_ outcomes: [PauseOutcome], target: PauseTarget) async {
