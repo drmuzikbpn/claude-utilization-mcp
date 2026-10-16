@@ -1,5 +1,7 @@
 # Usage Deck for iPhone and Apple Watch
 
+<img src="docs/images/header.png" width="100%" alt="Usage Deck: your Claude Code rate limits and every live session, on iPhone, Apple Watch and your desk">
+
 Not affiliated with Anthropic.
 
 See how close your Claude account is to its 5-hour and 7-day limits, how many tokens your Claude
@@ -18,10 +20,14 @@ Every picture here is the app's demo mode: made-up devices, accounts and project
 | --- | --- | --- | --- | --- |
 | <img src="docs/images/iphone-ledger.png" width="160" alt="iPhone home: two accounts and three live projects"> | <img src="docs/images/iphone-ledger-expanded.png" width="160" alt="A project unfolded into its sessions"> | <img src="docs/images/iphone-project.png" width="160" alt="Project drill-in with a five-hour burn chart"> | <img src="docs/images/iphone-device.png" width="160" alt="Device screen with its setup checklist"> | <img src="docs/images/iphone-pairing.png" width="160" alt="Pairing sheet"> |
 
-Landscape turns the iPhone into the wide dock, and a re-pair that would change a device's
-certificate says so first:
+Landscape turns the iPhone into the wide dock, the way it looks best on a desk stand, and every
+screen follows it round:
 
-<img src="docs/images/iphone-wide-dock.png" width="420" alt="Landscape wide dock"> <img src="docs/images/iphone-re-pair-warning.png" width="160" alt="Re-pair confirmation warning that the certificate differs">
+<img src="docs/images/iphone-wide-dock.png" width="520" alt="Landscape wide dock: an account's limit rings beside every live session"> <img src="docs/images/iphone-landscape-project.png" width="520" alt="A project's five-hour burn chart in landscape">
+
+A re-pair that would change a device's certificate says so first:
+
+<img src="docs/images/iphone-re-pair-warning.png" width="160" alt="Re-pair confirmation warning that the certificate differs">
 
 Widgets (small, medium, and the lock-screen circular, rectangular and inline families):
 
