@@ -49,7 +49,7 @@ Devices: iPhone 14 Pro Max (iOS 26.6.2), Apple Watch Series 10 (watchOS 26).
 | D10 | Escalation (soft→hard after 90 s) is best-effort: runs while iPhone/watch app awake; overdue timers fire on next wake. Daemon-side `escalateAfter` = todo. |
 | D11 | Tailscale-independent: daemon `lan` listener, HTTPS with self-signed cert, fingerprint pinned via pairing link, Bonjour discovery. Tailscale optional. |
 | D12 | Easy pairing: `claude-usage pair` (also offered at end of `install`) serves a one-time loopback page with an SVG QR of `usagedeck://pair?...`; iPhone Camera → "Open in Usage Deck". |
-| D13 | App empty state: "Get the Mac app" → `https://github.com/drmuzikbpn/claude-utilization-mcp`, Share sheet with install commands. |
+| D13 | App empty state: "Get the Mac app" → `https://github.com/drmuzikbpn/usage-deck`, Share sheet with install commands. |
 | D14 | Daemon adds `/health.install` (hooks / statusline / MCP registered, bound listeners) so the app's setup check is definitive. |
 | D15 | User-facing copy says "device", not "Mac" (daemon runs on Linux too). Empty state: "No paired devices — pair one in the iPhone app". |
 

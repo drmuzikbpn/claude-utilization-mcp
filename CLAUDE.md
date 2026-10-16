@@ -2,7 +2,7 @@
 
 iPhone app (relay + full dashboard) and single-target watchOS app that read Claude account
 rate-limit % and local token spend from paired `claude-usage` daemons and pause/resume sessions.
-Lives on the orphan branch `usage-ios` of `drmuzikbpn/claude-utilization-mcp`.
+Lives on the orphan branch `usage-ios` of `drmuzikbpn/usage-deck`.
 **Spec is authoritative:** `docs/superpowers/specs/2026-10-01-usage-ios-design.md` — its
 "Audit amendments" override the earlier text, and its "Hardening amendments" override both.
 Wire contract: daemon spec §23.44–§23.48 on `main`. Licence: MIT (`LICENSE`); fonts are OFL.
