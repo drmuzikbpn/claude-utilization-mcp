@@ -3,7 +3,7 @@
 # Copyright (c) 2026 Even Seal Productions
 """App Store Connect helpers for CI. The key comes from the environment and is never printed.
 
-  ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8   (the workflow's `release` environment; kept in 1Password)
+  ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8   (the workflow's `release-ios` environment; kept in 1Password)
 
 Standard library only: the token is signed through the system's openssl (ci/es256.py).
 

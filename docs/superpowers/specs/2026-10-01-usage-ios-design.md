@@ -241,7 +241,7 @@ Made before the project was publicised. Where the earlier text disagrees, this s
   addresses cleaned and marked, redacted on export by default, mirrored to the system log in
   Debug builds only.
 - **CI:** actions pinned to commit SHAs, tools to versions and digests, no pip; signing secrets
-  in the `release` environment and only on the steps that use them; build number
+  in the `release-ios` environment and only on the steps that use them; build number
   `(GITHUB_RUN_NUMBER + 1000) * 10 + GITHUB_RUN_ATTEMPT` because recreating the repository
   restarts run numbers at 1 (the last build before that was run 110) and TestFlight refuses a
   number that does not increase.

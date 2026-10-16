@@ -43,7 +43,7 @@ swift scripts/make-icon.swift App/Assets.xcassets/AppIcon.appiconset/icon-1024.p
   `ci/install-tools.sh` installs XcodeGen (and SwiftLint/SwiftFormat for the lint job) at exact
   versions checked against SHA-256 digests; nothing is installed with pip (`ci/es256.py` signs
   the App Store Connect JWT through the system `openssl`, key on stdin). The `test` job has no
-  secrets and `contents: read`. The `testflight` job runs in the **`release` environment** and
+  secrets and `contents: read`. The `testflight` job runs in the **`release-ios` environment** and
   reads `ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_KEY_P8` only on the two steps that use them, plus
   `DIST_P12_B64` / `DIST_P12_PASSWORD` on the keychain step; an `always()` step deletes the
   keychain, key files, archive, export and profiles. Keep all of that true when editing it.
@@ -58,8 +58,8 @@ swift scripts/make-icon.swift App/Assets.xcassets/AppIcon.appiconset/icon-1024.p
   `UsageDeckWatch AppStore`, `UsageComplications AppStore` (all carry
   `group.com.evenseal.usagedeck`). CI installs the profiles by name with `ci/asc.py profiles …`.
 - Secrets: the release secrets in 1Password are the source of truth (`.env.tmpl` lists the
-  references); the `release` environment's secrets are loaded from it with
-  `op read … | gh secret set NAME --env release` (never as an argument). Profiles and the
+  references); the `release-ios` environment's secrets are loaded from it with
+  `op read … | gh secret set NAME --env release-ios` (never as an argument). Profiles and the
   certificate expire 2027-10-02.
 - App Store Connect app: "Usage Deck", id 6818383053, SKU `usagedeck-ios`.
 
