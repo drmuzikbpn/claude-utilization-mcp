@@ -4,7 +4,7 @@
 agp = "9.4.1"
 kotlin = "2.4.21"
 coroutines = "1.11.0"
-serialization = "1.7.3"
+serialization = "1.11.0"
 okhttp = "5.5.0"
 composeBom = "2024.10.01"
 navigation = "2.8.3"
