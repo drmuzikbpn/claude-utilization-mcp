@@ -23,6 +23,7 @@ struct WideDockView: View {
                     .deckCard(radius: 24)
                     .padding(.bottom, 8)
                 VStack(spacing: 0) {
+                    DemoBanner(store: store, compact: true)
                     RepairBanners(store: store, compact: true)
                     if let empty {
                         HomeEmptyView(store: store, empty: empty, compact: true)

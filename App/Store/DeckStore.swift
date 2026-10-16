@@ -22,6 +22,9 @@ final class DeckStore {
     // MARK: - observed state
 
     private(set) var records: [DeviceRecord] = []
+    /// Showing `DemoData` instead of real devices ("Try the demo" with nothing paired). Memory
+    /// only: nothing about the demo is saved, and pairing for real leaves it first.
+    private(set) var isDemo = false
     private(set) var team = TeamState()
     /// The one-second ticker every countdown and age on screen reads.
     private(set) var now = Date()
@@ -136,50 +139,79 @@ final class DeckStore {
         fold()
     }
 
-    #if DEBUG
-        /// `-UsageDeckDemo`: made-up devices with no clients behind them (see `DemoData`).
-        func seedDemo() {
-            let at = Date()
-            var devices = DemoData.devices(now: at)
-            if DemoData.needsRepair {
-                devices[0].repairReason = .tokenRejected
-                devices[0].lastError = DaemonError(code: "unauthorized").userMessage
-            }
-            DemoData.seedBurn(burn, devices: devices, now: at)
-            records = devices.map(\.record)
-            for device in devices {
-                states[device.id] = device
-            }
-            fold()
-            if DemoData.opensConnecting, let studio = devices.first {
-                seedConnecting(studio)
-            }
-        }
+    /// "Try the demo": made-up devices, offered only while nothing is paired, so the demo never
+    /// sits beside (or is saved with) a real device. Alerts stay quiet while it runs.
+    func startDemo() {
+        guard records.isEmpty, !isDemo else { return }
+        isDemo = true
+        notifier.muted = true
+        seedDemo()
+        DiagLog.shared.log(.app, "demo started")
+    }
 
-        /// Plays a pairing's first load for `studio`: nothing in hand, then all of it at once.
-        private func seedConnecting(_ studio: DeviceState) {
-            var waiting = studio
-            waiting.summaryLoaded = false
-            states[studio.id] = waiting
-            if DemoData.holdsConnecting {
-                connect = ConnectTracker(timeout: 600)
-            }
-            _ = connect.begin(deviceId: studio.id, name: studio.record.name, now: Date())
-            armConnectTimer()
-            fold()
-            guard !DemoData.holdsConnecting else { return }
-            Task { [weak self] in
-                try? await Task.sleep(for: DemoData.connectingDelay)
-                guard let self, let attempt = connecting else { return }
-                var arrived = studio
-                arrived.summaryLoaded = true
-                states[studio.id] = arrived
-                setupChecks[studio.id] = SetupCheck.evaluate(health: DemoData.health(studio), error: nil, limitsFresh: true)
-                connect.settle(attempt.id)
-                fold()
-            }
+    /// Back to the real, saved devices (none, unless one was paired from inside the demo).
+    func endDemo() {
+        guard isDemo else { return }
+        for id in states.keys {
+            burn.forget(prefix: "\(id)/")
         }
-    #endif
+        states = [:]
+        setupChecks = [:]
+        path = []
+        expanded = []
+        isDemo = false
+        notifier.muted = false
+        records = registry.load()
+        for record in records {
+            connect(record)
+        }
+        fold()
+        DiagLog.shared.log(.app, "demo ended")
+    }
+
+    /// Made-up devices with no clients behind them (see `DemoData`): "Try the demo", and in
+    /// Debug builds the `-UsageDeckDemo` launch argument for the smoke test and screenshots.
+    func seedDemo() {
+        let at = Date()
+        var devices = DemoData.devices(now: at)
+        if DemoData.needsRepair {
+            devices[0].repairReason = .tokenRejected
+            devices[0].lastError = DaemonError(code: "unauthorized").userMessage
+        }
+        DemoData.seedBurn(burn, devices: devices, now: at)
+        records = devices.map(\.record)
+        for device in devices {
+            states[device.id] = device
+        }
+        fold()
+        if DemoData.opensConnecting, let studio = devices.first {
+            seedConnecting(studio)
+        }
+    }
+
+    /// Plays a pairing's first load for `studio`: nothing in hand, then all of it at once.
+    private func seedConnecting(_ studio: DeviceState) {
+        var waiting = studio
+        waiting.summaryLoaded = false
+        states[studio.id] = waiting
+        if DemoData.holdsConnecting {
+            connect = ConnectTracker(timeout: 600)
+        }
+        _ = connect.begin(deviceId: studio.id, name: studio.record.name, now: Date())
+        armConnectTimer()
+        fold()
+        guard !DemoData.holdsConnecting else { return }
+        Task { [weak self] in
+            try? await Task.sleep(for: DemoData.connectingDelay)
+            guard let self, let attempt = connecting else { return }
+            var arrived = studio
+            arrived.summaryLoaded = true
+            states[studio.id] = arrived
+            setupChecks[studio.id] = SetupCheck.evaluate(health: DemoData.health(studio), error: nil, limitsFresh: true)
+            connect.settle(attempt.id)
+            fold()
+        }
+    }
 
     // MARK: - lifecycle
 
@@ -588,6 +620,7 @@ final class DeckStore {
     }
 
     func beginPairing(replacing id: String? = nil) {
+        endDemo()
         pairing.begin(replacing: id.flatMap { id in records.contains { $0.id == id } ? id : nil })
     }
 
@@ -613,6 +646,7 @@ final class DeckStore {
             return
         }
         pendingOffer = nil
+        endDemo()
         pairingInFlight = true
         defer { pairingInFlight = false }
         let invite = offer.invite
