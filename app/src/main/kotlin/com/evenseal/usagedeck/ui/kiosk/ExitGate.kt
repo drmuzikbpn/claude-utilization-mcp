@@ -40,8 +40,9 @@ import com.evenseal.usagedeck.ui.theme.DeckType
 
 /**
  * The only way out of the kiosk (spec §4): an invisible corner that needs a three-second hold,
- * then the six-digit PIN. Invisible and slow on purpose — a guest poking the screen must never
- * find it, and a technician who knows about it always can.
+ * then the six-digit PIN if one is set in Settings. Invisible and slow on purpose — a guest
+ * poking the screen must never find it, and a technician who knows about it always can. With no
+ * PIN the hold alone opens the maintenance window.
  */
 @Composable
 fun ExitGate(pin: ExitPin, clock: Clock, onUnlocked: () -> Unit, modifier: Modifier = Modifier) {
@@ -79,7 +80,9 @@ fun ExitGate(pin: ExitPin, clock: Clock, onUnlocked: () -> Unit, modifier: Modif
                                 break
                             }
                         }
-                        if (heldLongEnough) prompting = true
+                        if (heldLongEnough) {
+                            if (pin.isSet()) prompting = true else onUnlocked()
+                        }
                     }
                 }
         )
@@ -102,38 +105,23 @@ fun ExitGate(pin: ExitPin, clock: Clock, onUnlocked: () -> Unit, modifier: Modif
 private fun PinDialog(pin: ExitPin, clock: Clock, onDismiss: () -> Unit, onUnlocked: () -> Unit) {
     var entry by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
-    val configured = pin.isSet()
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = DeckColors.surface,
         title = {
-            Text(
-                text = if (configured) "Maintenance exit" else "Set an exit PIN first",
-                color = DeckColors.fg,
-                fontFamily = DeckType.text
-            )
+            Text(text = "Maintenance exit", color = DeckColors.fg, fontFamily = DeckType.text)
         },
         text = {
             Column {
-                if (configured) {
-                    OutlinedTextField(
-                        value = entry,
-                        onValueChange = { entry = it.filter(Char::isDigit).take(PIN_LENGTH) },
-                        label = { Text("PIN") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
-                    )
-                } else {
-                    Text(
-                        text = "Settings → kiosk exit PIN. Until one is set the deck can only be " +
-                            "unpinned over adb.",
-                        color = DeckColors.muted,
-                        fontFamily = DeckType.text,
-                        fontSize = 13.sp
-                    )
-                }
+                OutlinedTextField(
+                    value = entry,
+                    onValueChange = { entry = it.filter(Char::isDigit).take(PIN_LENGTH) },
+                    label = { Text("PIN") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
+                )
                 message?.let {
                     Text(
                         modifier = Modifier.semantics { contentDescription = ExitGateDefaults.ERROR_DESCRIPTION },
@@ -147,7 +135,6 @@ private fun PinDialog(pin: ExitPin, clock: Clock, onDismiss: () -> Unit, onUnloc
         },
         confirmButton = {
             TextButton(
-                enabled = configured,
                 onClick = {
                     when (val result = pin.verify(entry)) {
                         ExitPin.Result.Ok -> onUnlocked()
@@ -168,60 +155,7 @@ private fun PinDialog(pin: ExitPin, clock: Clock, onDismiss: () -> Unit, onUnloc
     )
 }
 
-/**
- * Shown on a provisioned kiosk that has no exit PIN yet, and not dismissable: the first person to
- * start a locked deck is the one setting it up, and from then on a PIN always exists — so nobody
- * who wanders up to the Settings screen later gets to choose it. Asked twice, because a typo here
- * would lock the owner out of their own kiosk.
- */
-@Composable
-fun FirstPinDialog(onSet: (String) -> Unit) {
-    var first by remember { mutableStateOf("") }
-    var second by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = {},
-        containerColor = DeckColors.surface,
-        title = { Text("Choose the kiosk exit PIN", color = DeckColors.fg, fontFamily = DeckType.text) },
-        text = {
-            Column {
-                Text(
-                    text = "Six digits. It is the only way out of the locked deck from the screen, and " +
-                        "changing it later needs this one.",
-                    color = DeckColors.muted,
-                    fontFamily = DeckType.text,
-                    fontSize = 13.sp
-                )
-                OutlinedTextField(
-                    modifier = Modifier.semantics { contentDescription = ExitGateDefaults.FIRST_PIN },
-                    value = first,
-                    onValueChange = { first = it.filter(Char::isDigit).take(PIN_LENGTH) },
-                    label = { Text("PIN") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
-                )
-                OutlinedTextField(
-                    modifier = Modifier.semantics { contentDescription = ExitGateDefaults.FIRST_PIN_AGAIN },
-                    value = second,
-                    onValueChange = { second = it.filter(Char::isDigit).take(PIN_LENGTH) },
-                    label = { Text("Again") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = first.length == PIN_LENGTH && first == second, onClick = { onSet(first) }) {
-                Text("Set PIN", color = DeckColors.accent)
-            }
-        }
-    )
-}
-
 object ExitGateDefaults {
-    const val FIRST_PIN = "first exit pin"
-    const val FIRST_PIN_AGAIN = "first exit pin again"
     const val CONTENT_DESCRIPTION = "kiosk exit gate"
     const val ERROR_DESCRIPTION = "kiosk exit error"
 

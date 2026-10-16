@@ -144,8 +144,9 @@ and `:core:test` on pre-commit. Install with `lefthook install` if the hook is m
   `DeckService` stops itself and `MainActivity` shows `StorageErrorScreen` (still locked).
   `allowBackup` is false and the extraction rules exclude every domain. Never log a parser
   exception from a store: its message quotes the stored JSON.
-- Exit PIN (`kiosk/ExitPin`): `set` only while none exists; afterwards only `change(current, new)`,
-  which goes through `verify` so the attempt counter and lockout apply and are reset only by a
+- Exit PIN (`kiosk/ExitPin`): optional — with none set the 3 s corner hold alone opens the
+  maintenance window. `set` only while none exists; afterwards only `change(current, new)` or
+  `clear(current)`, which go through `verify` so the attempt counter and lockout apply and are reset only by a
   verified PIN. PBKDF2-HMAC-SHA256; an old salted SHA-256 record is rewritten on the next correct
   entry. The lockout is timed on `Uptime` (elapsedRealtime + boot count), never the wall clock; a
   reboot restarts it in full. A Device Owner deck with no PIN shows `FirstPinDialog` at launch.
