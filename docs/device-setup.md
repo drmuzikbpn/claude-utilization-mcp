@@ -198,7 +198,7 @@ carries the proof, and only the release key is needed from then on.
 
 ## Daemon install on the Mac Studio
 
-Install from a git checkout of `drmuzikbpn/claude-utilization-mcp` and run `claude-usage install`
+Install from a git checkout of `drmuzikbpn/usage-deck` and run `claude-usage install`
 from there, with `bind: tailscale` in the config.
 
 **Run `install` from the Mac's own desktop session, not over ssh.** A LaunchAgent bootstrapped

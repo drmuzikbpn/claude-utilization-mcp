@@ -84,7 +84,7 @@ and `:core:test` on pre-commit. Install with `lefthook install` if the hook is m
   "last heard 2d ago") and returns with its first check-in.
 - Escalation default 90 s; range 30 s–600 s or off; persisted across process death.
 - Self-update defers while a gesture is in progress, a hold is mid-press, or any escalation is pending.
-- Version: `versionName = 0.MINOR.<commit-count>+<sha>`, `versionCode = commit-count`. Release repo `BuildConfig.RELEASE_REPO`, default `drmuzikbpn/claude-utilization-mcp` (shared with the daemon): APK releases are tags `deck-<version>`, pre-release, assets `usage-deck.apk` + `usage-deck.apk.sha256`; the checker considers `deck-` tags only. CI signs with `apksigner` + `app/signing/usage-deck.lineage` (v3, rotated from the debug key the phone was provisioned with) so it updates in place; Gradle never signs release.
+- Version: `versionName = 0.MINOR.<commit-count>+<sha>`, `versionCode = commit-count`. Release repo `BuildConfig.RELEASE_REPO`, default `drmuzikbpn/usage-deck` (shared with the daemon): APK releases are tags `deck-<version>`, pre-release, assets `usage-deck.apk` + `usage-deck.apk.sha256`; the checker considers `deck-` tags only. CI signs with `apksigner` + `app/signing/usage-deck.lineage` (v3, rotated from the debug key the phone was provisioned with) so it updates in place; Gradle never signs release.
 - Before `ApkInstaller` sees a download, `Updater` requires: size ≤ `MAX_APK_BYTES`, the release's sha256 (fetched first), and `ApkGate` (`PackageApkGate`/`ApkRules`: same package, higher `versionCode`, signer in the installed app's lineage or vice versa). A release that fails any of those, or fails to install (`InstallResultReceiver` included), goes into `UpdateSkips` and the periodic check leaves it alone until a newer release or Settings › Check now. A network failure is never a skip.
 - A limit alert fires **once per window**. `Alert.window` is the limit's `resetsAt`, and `AlertLedger`
   (SharedPreferences `alerts`) remembers what has spoken across process death — a self-update must
@@ -160,7 +160,7 @@ and `:core:test` on pre-commit. Install with `lefthook install` if the hook is m
 
 ## Remote and pushing
 
-This project lives on the orphan branch `usage-android` of `drmuzikbpn/claude-utilization-mcp` (the
+This project lives on the orphan branch `usage-android` of `drmuzikbpn/usage-deck` (the
 daemon's repo; renamed from `usage-deck` on 2026-10-01); the iPhone + Apple Watch app lives on
 `usage-ios`. Do not `git push` without explicit approval in the session. CI (`.github/workflows/ci.yml`)
 has a `test` job (pull requests and pushes; read-only token, no secrets) and a `release` job

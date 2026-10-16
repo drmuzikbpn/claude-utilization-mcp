@@ -142,7 +142,7 @@ class UpdaterTest {
 
     private fun updater(scope: TestScope, deferWhile: () -> String? = { null }) = Updater(
         checker = ReleaseChecker(
-            repo = "drmuzikbpn/claude-utilization-mcp",
+            repo = "drmuzikbpn/usage-deck",
             client = client,
             baseUrl = server.url("/").toString().trimEnd('/')
         ),

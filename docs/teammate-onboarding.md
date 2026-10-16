@@ -19,8 +19,8 @@ You do **not** need an exit node, and you should not enable one — the deck pol
 There is no npm package yet, so install from a checkout:
 
 ```bash
-git clone https://github.com/drmuzikbpn/claude-utilization-mcp.git
-cd claude-utilization-mcp
+git clone https://github.com/drmuzikbpn/usage-deck.git
+cd usage-deck
 claude-usage install
 ```
 
