@@ -259,7 +259,8 @@ Additional refusals, checked *before* any rule is created:
   forks), carrying the `npm pack` tarball, a `SHA256SUMS` file and `SHA256SUMS.sig`.
 - **Signed (§23.59).** `SHA256SUMS.sig` is an Ed25519 signature over the exact bytes of
   `SHA256SUMS`, made in CI with a private key kept as the `RELEASE_SIGNING_KEY` secret of
-  the `release` environment. The updater verifies it with `node:crypto` against the public
+  the `release-daemon` environment, which only `main`'s release job can enter and which holds
+  no other secret (the Android and iOS signing material lives in their own environments). The updater verifies it with `node:crypto` against the public
   keys compiled into `src/update/trusted-keys.ts` **before** it believes a checksum or
   extracts anything. A missing, malformed or unknown signature is refused, the download is
   deleted and nothing is applied. The keys are a list so one can be rotated.
@@ -285,7 +286,10 @@ Additional refusals, checked *before* any rule is created:
 
 **Remaining trust:** whoever holds the release signing key can ship code to every
 installation that has auto-update on. That is the point of the key; keep it out of anywhere
-but the `release` environment.
+but the `release-daemon` environment. The signature protects the release files from
+tampering, not from the account that publishes them: anyone who can merge to `main`, which
+today means the owner's GitHub account, can publish an update. Run `claude-usage configure autoupdate off` if you would rather review
+and update by hand.
 
 ## Reporting a security issue
 

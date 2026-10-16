@@ -13,8 +13,10 @@ name: Release
 #   publish  holds the signing key and may write releases — runs no third-party code,
 #            only this repository's own stdlib-only scripts on the artifact `build` made
 #
-# The signing key is the secret RELEASE_SIGNING_KEY of the `release` environment, which
-# should be restricted to the `main` branch in the repository settings.
+# The signing key is the secret RELEASE_SIGNING_KEY of the `release-daemon` environment, which
+# holds nothing else and is restricted to the `main` branch in the repository settings. The
+# Android and iOS builds sign in their own environments (`release-android`, `release-ios`), so
+# no Gradle or Xcode build ever runs where this key can be read.
 on:
   push: { branches: [main] }
   workflow_dispatch:
@@ -141,7 +143,7 @@ jobs:
     needs: [guard, build]
     if: github.ref == 'refs/heads/main' && needs.guard.outputs.released != 'true'
     runs-on: ubuntu-latest
-    environment: release
+    environment: release-daemon
     permissions:
       contents: write
     env:
