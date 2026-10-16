@@ -13,8 +13,9 @@ section covering anything you are about to change.
 
 - **Pull requests only.** `main` does not accept direct pushes. Fork, branch from `main`, open a
   PR against `main`.
-- **CI must be green.** `test (ubuntu-latest)` and `test (macos-latest)` are required. Every push
-  to `main` cuts a release, so a red `main` ships.
+- **CI must be green.** `test (ubuntu-latest)` and `test (macos-latest)` are required. Every merge
+  to `main` builds a release, which re-runs these checks and publishes only after the owner
+  approves the `release-daemon` deployment.
 - **Tests are TDD, and a new test must fail first.** Write it, watch it fail against the unfixed
   code, then fix. Several bugs in Part III were introduced by tests that passed against a fake
   which never returned an error — a test that has never failed has not been tested.
@@ -59,8 +60,8 @@ npm run build            # dist/, ESM, Node >= 20
 The installed daemon runs on Node 20 or later; working on it (vitest 5, eslint 10) needs
 Node 22.12 or later.
 
-`npm ci` installs the lefthook pre-commit hook for you via `prepare`; it runs lint, typecheck
-and `scripts/public-check.sh` on every commit. If your npm is set to skip install scripts (it
+`npm ci` installs the lefthook pre-commit hook for you via `prepare`; it runs lint, typecheck,
+`scripts/public-check.sh` and (when installed) `ggshield secret scan` on every commit. If your npm is set to skip install scripts (it
 prints an `allow-scripts` warning), run `npx lefthook install` yourself.
 
 ## What may not be committed

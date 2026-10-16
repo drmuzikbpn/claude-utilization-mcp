@@ -327,21 +327,22 @@ Whatever it would do next is stopped at the same gate soft pause uses.
 > kills the command that was in flight — the session survives and sees a timeout error.
 > Short freezes are lossless; hold one for minutes and expect to lose the running tool.
 
-Other subcommands: `serve [--verbose]`, `install`, `configure`, `pair`, `uninstall`, `mcp`,
-`hook`, `statusline`, `observe`, `--version`, `help`.
+Other subcommands: `serve [--verbose]`, `install`, `configure`, `pair`, `uninstall`,
+`update [--check]`, `rollback`, `config`, `mcp`, `hook`, `statusline`, `observe`, `--version`,
+`help`.
 
 ## Phone and watch (iPhone, Apple Watch, Android)
 
 A phone can show your limits and live sessions and pause them. It talks to the daemon over
-your **Wi-Fi**, encrypted, with nothing else to install on the Mac. Tailscale is optional,
+your **Wi-Fi**, encrypted, with nothing else to install on the computer. Tailscale is optional,
 for when you are away from home.
 
 ### Get the app
 
-- **iPhone + Apple Watch:** **Usage Deck**, in TestFlight (invite only for now; ask the
-  maintainer). The watch app installs with it.
+- **iPhone + Apple Watch:** **Usage Deck**, free on the App Store (in App Review now). The
+  watch app installs with it. No computer yet? Tap **Try the demo**.
 - **Android:** the **Usage Deck** dashboard, a kiosk build for a wall or desk phone. APKs are
-  the `deck-` [pre-releases](https://github.com/drmuzikbpn/usage-deck/releases)
+  the `deck-` [pre-releases](https://github.com/drmuzikbpn/usage-deck/releases?q=deck-&expanded=true)
   of this repo, and the app updates itself after that.
 
 ### Pair a phone
@@ -355,8 +356,8 @@ for when you are away from home.
    - *iPhone:* point the Camera at it and tap **Open in Usage Deck**, or scan it from the
      app's **Pair a device** screen. On the same Apple account you can also press
      **Copy link** on the page and paste it on that screen.
-   - *Android deck:* scan it from the deck's pairing screen (deck builds released after
-     2026-10-02; older builds use [legacy pairing](#legacy-pairing-older-android-deck-builds)).
+   - *Android deck:* tap **Pair** on the home screen (or, once a machine is paired,
+     *Settings › Pair a machine*), then **Scan QR**.
 5. **Done.** The page swaps the QR code for **Pairing successful — it is now safe to close
    this tab**, and the command exits by itself.
 
@@ -517,7 +518,9 @@ is genuinely off — no `current` symlink, or `configure autoupdate off`.
 
 - Versioning `MAJOR.MINOR.<commit-count>+<short-sha>`, computed in CI from
   `git rev-list --count HEAD` on `main`.
-- Every green CI run on `main` tags `v<version>` and publishes a GitHub Release with the
+- Every push to `main` runs the release workflow: it re-runs lint, typecheck, tests and build,
+  then, once the owner approves the `release-daemon` deployment, tags `v<version>` and
+  publishes a GitHub Release with the
   `npm pack` tarball (which carries its own `npm-shrinkwrap.json`), `SHA256SUMS` and
   `SHA256SUMS.sig`, an Ed25519 signature over `SHA256SUMS`. The package is not published to
   npm.
@@ -533,8 +536,6 @@ is genuinely off — no `current` symlink, or `configure autoupdate off`.
   `deferredReason: "hard_frozen_sessions"`), re-checked every 30 s. Soft pauses do not defer.
 - Disabled automatically when there is no `current` symlink (i.e. you did not use
   `install`), or with `claude-usage configure autoupdate off`.
-- Signature verification (minisign) is a follow-up; today integrity rests on sha256 over
-  TLS from the same release.
 - The Android dashboard ships its APK from this same repo under `deck-<version>` tags,
   published as pre-releases so they are never `releases/latest`. The updater also skips any
   `deck-` tag outright, reporting *no update* rather than an error — an error would mask the
@@ -620,7 +621,8 @@ npm run build     # tsc -p tsconfig.build.json → dist/
 ```
 
 TDD per module; fixtures under `test/fixtures/` contain no credentials and no real prompt
-text. lefthook runs lint + typecheck pre-commit (`npm run prepare` installs it). CI runs
+text. lefthook runs lint, typecheck, `scripts/public-check.sh` and (when installed) `ggshield secret
+scan` pre-commit (`npm run prepare` installs it). CI runs
 lint, typecheck, test and build on `ubuntu-latest` and `macos-latest`.
 
 What CI cannot cover — launchd, systemd, the Keychain, a real Tailscale peer, a real

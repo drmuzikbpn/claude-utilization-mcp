@@ -24,8 +24,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   against keys compiled into the daemon, before it trusts a checksum; dependencies install
   with `npm ci` from the shrinkwrap inside the signed tarball; the archive is checked for
   unsafe members (§23.59, §23.60).
-- The release workflow builds with a read-only token and signs in a separate `release`
-  environment job; every action is pinned to a commit SHA; nothing is published to npm and
+- The release workflow builds with a read-only token and signs in a separate `release-daemon`
+  environment job, which waits for the owner's approval; every action is pinned to a commit SHA; nothing is published to npm and
   the package is `private`.
 - `configure rotate-token` also reaches a daemon run in the foreground, and says so plainly if
   it did not take (§23.58).
@@ -64,7 +64,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - **Upgrade note:** a daemon whose `bind` already includes `tailscale`, `lan` or any
   non-loopback IP gains an HTTPS listener on `port + 1` (**47292** by default) on those
   addresses, and generates a TLS key (`tls-key.pem`, `tls-cert.pem`, `0600`) in the config
-  directory on its first start after the upgrade. Plain HTTP on 47291 is unchanged. Set
+  directory on its first start after the upgrade. Plain HTTP on 47291 is now served on loopback only (§23.57). Set
   `tls.port` if 47292 is taken; it must differ from `port`.
 - Live headline limits without spending the usage endpoint's budget: `claude-usage observe`
   (and `claude-usage statusline`, automatically) forwards the `rate_limits` Claude Code passes
