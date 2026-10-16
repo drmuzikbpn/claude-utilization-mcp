@@ -452,7 +452,7 @@ CLI mirrors: `claude-usage sessions`, `claude-usage pause <all|project:<path>|se
   `install` copies the running package into this layout first, whether it came from npm or a
   tarball — after install, the install method no longer matters.
 - **Loop:** every `autoUpdate.intervalMs` (default 10 min, jittered ±10 %) `GET
-  https://api.github.com/repos/drmuzikbpn/claude-utilization-mcp/releases/latest` (repo pinned in code, overridable
+  https://api.github.com/repos/drmuzikbpn/usage-deck/releases/latest` (repo pinned in code, overridable
   in config for forks). Newer → download tarball + `SHA256SUMS` to a temp dir, verify sha256,
   extract into `versions/<v>/`, run `node bin/claude-usage --version` from it as a smoke test,
   atomically repoint `current`, then `process.exit(0)` → `KeepAlive`/`Restart=always` relaunches.
@@ -470,7 +470,7 @@ CLI mirrors: `claude-usage sessions`, `claude-usage pause <all|project:<path>|se
 { "name": "adams-mbp",
   "bind": ["127.0.0.1", "tailscale"],
   "auth": { "token": "…" },
-  "autoUpdate": { "enabled": true, "intervalMs": 600000, "repo": "drmuzikbpn/claude-utilization-mcp" },
+  "autoUpdate": { "enabled": true, "intervalMs": 600000, "repo": "drmuzikbpn/usage-deck" },
   "events": { "maxClients": 16 } }
 ```
 `config.json` is written with mode `0600` because it now holds the token.

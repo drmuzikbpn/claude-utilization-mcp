@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { check, isForeignTag, releasesLatestUrl, userAgent } from '../../src/update/check.js';
 import { fakeFetch, releaseJson } from './helpers.js';
 
-const REPO = 'drmuzikbpn/claude-utilization-mcp';
+const REPO = 'drmuzikbpn/usage-deck';
 const URL_LATEST = releasesLatestUrl(REPO);
 
 describe('check() — GET /repos/<repo>/releases/latest (§20)', () => {

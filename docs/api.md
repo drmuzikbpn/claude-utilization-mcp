@@ -377,7 +377,7 @@ appear here too.
   "projectsDir": "/Users/you/.claude/projects",
   "integrations": { "service": true, "hook": true, "mcp": true, "statusline": false },
   "autoUpdate": { "enabled": true, "intervalMs": 600000,
-                  "repo": "drmuzikbpn/claude-utilization-mcp" },
+                  "repo": "drmuzikbpn/usage-deck" },
   "events": { "maxClients": 16 } }
 ```
 

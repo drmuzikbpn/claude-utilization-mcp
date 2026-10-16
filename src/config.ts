@@ -108,7 +108,7 @@ export function defaultConfig(): Config {
     retentionDays: 90,
     projectsDir: '~/.claude/projects',
     integrations: { service: true, hook: true, mcp: true, statusline: false },
-    autoUpdate: { enabled: true, intervalMs: 600_000, repo: 'drmuzikbpn/claude-utilization-mcp' },
+    autoUpdate: { enabled: true, intervalMs: 600_000, repo: 'drmuzikbpn/usage-deck' },
     events: { maxClients: 16 },
     tls: { port: null, loopback: false },
     allowPublicBind: false,
@@ -227,7 +227,7 @@ export function validateConfig(input: unknown): Config {
       ...autoUpdateRaw,
       enabled: reqBool(autoUpdateRaw, 'enabled', 'autoUpdate.enabled', d.autoUpdate.enabled),
       intervalMs: nestedInt(autoUpdateRaw, 'intervalMs', 'autoUpdate.intervalMs', d.autoUpdate.intervalMs, 1_000, 86_400_000),
-      repo: reqString(autoUpdateRaw, 'repo', 'autoUpdate.repo', d.autoUpdate.repo),
+      repo: renamedRepo(reqString(autoUpdateRaw, 'repo', 'autoUpdate.repo', d.autoUpdate.repo)),
     },
     events: {
       ...eventsRaw,
@@ -341,4 +341,11 @@ export function redactConfig(config: Config): Config {
     ...config,
     auth: { ...config.auth, token: token.length > 0 ? '<redacted>' : '' },
   };
+}
+
+/** The repository's old name. GitHub redirects it, but a saved config is moved to the new one. */
+const LEGACY_REPO = 'drmuzikbpn/claude-utilization-mcp';
+
+function renamedRepo(repo: string): string {
+  return repo === LEGACY_REPO ? 'drmuzikbpn/usage-deck' : repo;
 }

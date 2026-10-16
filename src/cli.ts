@@ -51,7 +51,7 @@ Usage: claude-usage <command> [options]
   help                              print this help
 
 
-Docs: https://github.com/drmuzikbpn/claude-utilization-mcp
+Docs: https://github.com/drmuzikbpn/usage-deck
 Works with Claude Code. Not affiliated with, endorsed by, or sponsored by Anthropic.
 `;
 

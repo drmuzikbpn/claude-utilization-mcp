@@ -20,7 +20,7 @@ afterAll(() => {
   dirs.cleanup();
 });
 
-const REPO = 'drmuzikbpn/claude-utilization-mcp';
+const REPO = 'drmuzikbpn/usage-deck';
 const LATEST = releasesLatestUrl(REPO);
 const CURRENT = '1.0.0+old';
 const NEXT = '1.1.0+new';

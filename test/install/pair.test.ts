@@ -68,7 +68,7 @@ describe('the pair page', () => {
   it('shows the QR, steps, GitHub link and the password warning — the code only behind the copy button', () => {
     const html = renderPairPage({ link: LINK, name: 'studio', expiresAt: '2026-10-01T12:05:00Z', testflightUrl: '' });
     expect(html).toContain('<svg');
-    expect(html).toContain('https://github.com/drmuzikbpn/claude-utilization-mcp');
+    expect(html).toContain('https://github.com/drmuzikbpn/usage-deck');
     expect(html).toContain('Treat this like a password; if it was shown on a call, run <code>claude-usage pair</code> again');
     expect(html).not.toContain('TestFlight</a>');
     // §23.52: the link is in the page exactly once — the copy button's attribute — never as text.

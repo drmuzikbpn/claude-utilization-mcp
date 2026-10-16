@@ -28,7 +28,7 @@ import { qrSvg } from './qr.js';
 
 /** Public TestFlight invite; empty until there is one, which hides the link. */
 export const TESTFLIGHT_URL = '';
-export const GITHUB_URL = 'https://github.com/drmuzikbpn/claude-utilization-mcp';
+export const GITHUB_URL = 'https://github.com/drmuzikbpn/usage-deck';
 /** The page closes after this long even if nobody presses Enter; the code expires with it. */
 export const PAIR_PAGE_TIMEOUT_MS = 300_000;
 

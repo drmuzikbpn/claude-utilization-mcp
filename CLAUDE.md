@@ -1,4 +1,4 @@
-# claude-usage (repo: claude-utilization-mcp)
+# claude-usage (repo: usage-deck)
 
 Local daemon + hooks + MCP server giving Claude Code sessions account rate-limit % and local
 token spend; remote dashboards consume it over the LAN (HTTPS, pinned) or Tailscale — the Android

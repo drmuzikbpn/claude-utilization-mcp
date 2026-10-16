@@ -65,6 +65,24 @@ describe('defaults', () => {
   });
 });
 
+describe('autoUpdate.repo', () => {
+  it('moves a config saved under the old repository name to the new one', () => {
+    const dir = tempDir();
+    writeFileSync(configPath(dir), JSON.stringify({ autoUpdate: { repo: 'drmuzikbpn/claude-utilization-mcp' } }));
+    expect(loadConfig(dir).autoUpdate.repo).toBe('drmuzikbpn/usage-deck');
+  });
+
+  it('leaves any other repository alone (forks)', () => {
+    const dir = tempDir();
+    writeFileSync(configPath(dir), JSON.stringify({ autoUpdate: { repo: 'someone/usage-deck-fork' } }));
+    expect(loadConfig(dir).autoUpdate.repo).toBe('someone/usage-deck-fork');
+  });
+
+  it('defaults to the new name', () => {
+    expect(loadConfig(tempDir()).autoUpdate.repo).toBe('drmuzikbpn/usage-deck');
+  });
+});
+
 describe('unknown keys', () => {
   it('are preserved at the top level through a load/save round-trip', () => {
     const dir = tempDir();
