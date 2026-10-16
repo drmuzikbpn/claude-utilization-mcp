@@ -70,18 +70,36 @@ Remove everything again with `claude-usage uninstall`.
 ## Add your phone
 
 1. Get the app:
-   - **iPhone + Apple Watch** — *Usage Deck* on TestFlight (invite only for now; ask the
-     maintainer). The watch app comes with it.
-   - **Android** — the *Usage Deck* APK from the [`deck-` releases](https://github.com/drmuzikbpn/usage-deck/releases).
-     It updates itself after that.
-2. On each machine you want to see, run:
+   - **iPhone + Apple Watch** — *Usage Deck*, free on the App Store (in App Review now; the
+     link goes here once it is live). The watch app comes with it. No computer yet? Tap
+     **Try the demo**.
+   - **Android** — a **dedicated-device dashboard**, not an everyday phone app: it is built to
+     run as the kiosk launcher on a spare phone on your desk or wall (Device Owner, so it can
+     stay pinned on screen and update itself). That is why it asks for location (Android
+     requires it to read the Wi-Fi network name) and permission to install packages (its own
+     signed updates). Set-up: [device setup guide](https://github.com/drmuzikbpn/usage-deck/blob/usage-android/docs/device-setup.md);
+     APK from the [`deck-` releases](https://github.com/drmuzikbpn/usage-deck/releases).
+2. On each machine you want to see, turn on LAN access (an interactive install offers it), then
+   pair:
 
    ```bash
+   claude-usage configure lan on    # once, if you skipped it during install
    claude-usage pair
    ```
 
 3. Scan the QR code it shows. That's it — the code works once and expires in five minutes,
    and the token it unlocks never appears on screen.
+
+## Known limitations
+
+- **Your phone or watch must be on the same network as the computer running Claude Code.**
+  Remote monitoring talks straight to that computer over your local network; there is no
+  cloud relay. To check in from anywhere, put both on a private VPN such as
+  [Tailscale](https://tailscale.com) (free for personal use): run
+  `claude-usage install --tailscale` and pair again. See
+  [Away from home](docs/guide.md#away-from-home-tailscale-optional).
+- **It only works with Claude Code for now.** Limits come from your Claude Code sign-in and
+  session data from Claude Code's own files. Support for more tools is coming.
 
 ## Screenshots
 
