@@ -13,11 +13,11 @@ and on your phone and wrist.**
 ![macOS | Linux](https://img.shields.io/badge/runs%20on-macOS%20%7C%20Linux-555)
 ![Node 20+](https://img.shields.io/badge/node-20%2B-339933)
 
-<img src="docs/images/iphone-ledger.png" alt="Usage Deck on iPhone: two accounts with 5-hour and 7-day rings, and live sessions with their burn rate" width="230">
+<img src="docs/images/header.png" alt="Usage Deck: your Claude Code rate limits and every live session, on iPhone, Apple Watch and your desk" width="100%">
+
+<img src="docs/images/iphone-landscape-dock.png" alt="Usage Deck on iPhone in landscape: an account's 5-hour and 7-day rings beside every live session and its burn rate" width="560">
 &nbsp;
 <img src="docs/images/watch-account.png" alt="Usage Deck on Apple Watch: an account's two limit rings" width="170">
-&nbsp;
-<img src="docs/images/deck-ledger.png" alt="Usage Deck on an Android desk phone: limit bars and live sessions" width="230">
 
 *Works with Claude Code. Not affiliated with, endorsed by, or sponsored by Anthropic.*
 
@@ -85,10 +85,16 @@ Remove everything again with `claude-usage uninstall`.
 
 ## Screenshots
 
+Landscape is where it shines: stand the phone on your desk next to the keyboard.
+
+<p align="center">
+  <img src="docs/images/iphone-landscape-project.png" alt="A project's five-hour burn chart in landscape" width="640">
+</p>
+
 | iPhone | Apple Watch | Android desk phone |
 | :---: | :---: | :---: |
-| <img src="docs/images/iphone-project.png" alt="A project's sessions and five-hour burn chart" width="220"> | <img src="docs/images/watch-projects.png" alt="Projects list on the watch" width="160"> | <img src="docs/images/deck-wide-dock.png" alt="Landscape dock with every live session" width="300"> |
-| Drill into a project's sessions and burn rate | Projects at a glance | A wall or desk dashboard in landscape |
+| <img src="docs/images/iphone-ledger.png" alt="iPhone home: two accounts with 5-hour and 7-day rings, and live sessions" width="200"> | <img src="docs/images/watch-projects.png" alt="Projects list on the watch" width="160"> | <img src="docs/images/deck-wide-dock.png" alt="Landscape dock with every live session" width="300"> |
+| Portrait works too | Projects at a glance | A wall or desk dashboard in landscape |
 
 <p align="center">
   <img src="docs/images/widget-systemMedium.png" alt="Home Screen widget with both limit rings" width="330">
