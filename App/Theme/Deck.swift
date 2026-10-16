@@ -85,7 +85,7 @@ enum DeckMetrics {
 
 /// Copy and links shared by the empty state and the pairing screen.
 enum DeckLinks {
-    static let project = URL(string: "https://github.com/drmuzikbpn/claude-utilization-mcp")!
+    static let project = URL(string: "https://github.com/drmuzikbpn/usage-deck")!
     static let installCommands = """
     npm i -g @drmuzikbpn/claude-usage
     claude-usage install --lan

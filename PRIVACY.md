@@ -39,4 +39,4 @@ reports and basic usage information (such as sessions and device model) with the
 under Apple's own privacy policy. That data is collected by Apple, not by this app, and you can
 turn it off in TestFlight's settings.
 
-Questions: open an issue at <https://github.com/drmuzikbpn/claude-utilization-mcp>.
+Questions: open an issue at <https://github.com/drmuzikbpn/usage-deck>.

@@ -9,7 +9,7 @@ Code sessions are burning, and pause or freeze sessions — from your iPhone, yo
 your wrist.
 
 Usage Deck does not talk to Anthropic. It reads everything from
-[`claude-usage`](https://github.com/drmuzikbpn/claude-utilization-mcp), a small daemon you run on
+[`claude-usage`](https://github.com/drmuzikbpn/usage-deck), a small daemon you run on
 the computer where you use Claude Code (macOS or Linux), and talks only to that device.
 
 ## What it looks like
@@ -43,7 +43,7 @@ complications (circular, rectangular, corner, inline):
 ## Pair a device
 
 1. Install `claude-usage` on the device: see
-   <https://github.com/drmuzikbpn/claude-utilization-mcp>.
+   <https://github.com/drmuzikbpn/usage-deck>.
 2. Turn on local-network access: `claude-usage install --lan`.
 3. Run `claude-usage pair`. It opens a page with a QR code.
 4. Point the iPhone Camera at the QR and tap **Open in Usage Deck**. (Or scan it from inside the
