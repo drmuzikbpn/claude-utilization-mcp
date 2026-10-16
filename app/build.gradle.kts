@@ -39,7 +39,7 @@ android {
         buildConfigField(
             "String",
             "RELEASE_REPO",
-            "\"${System.getenv("RELEASE_REPO") ?: "drmuzikbpn/claude-utilization-mcp"}\""
+            "\"${System.getenv("RELEASE_REPO") ?: "drmuzikbpn/usage-deck"}\""
         )
     }
     // Release APKs leave Gradle unsigned: CI signs them with apksigner and app/signing/usage-deck.lineage

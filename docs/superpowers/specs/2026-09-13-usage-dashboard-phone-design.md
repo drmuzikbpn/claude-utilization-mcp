@@ -270,7 +270,7 @@ for numerals, IBM Plex Sans for text, IBM Plex Mono for data. Tabular numerals e
 
 - Every 10 min ±10 % (and on "check now"): `GET https://api.github.com/repos/${RELEASE_REPO}/releases/latest` where `RELEASE_REPO`
   is a `BuildConfig` value, default `drmuzikbpn/android-project` (owner confirmed 2026-09-13; the
-  daemon is `drmuzikbpn/claude-utilization-mcp`).
+  daemon is `drmuzikbpn/usage-deck`).
   Compare tag to `BuildConfig.VERSION_NAME`. Newer → download `usage-deck-<v>.apk` and
   `SHA256SUMS`, verify sha256, then `PackageInstaller` session with
   `setInstallReason(INSTALL_REASON_DEVICE_SETUP)`; Device Owner makes it silent.

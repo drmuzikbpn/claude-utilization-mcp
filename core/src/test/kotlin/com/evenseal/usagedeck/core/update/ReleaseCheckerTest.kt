@@ -24,7 +24,7 @@ class ReleaseCheckerTest {
     fun up() {
         server.start()
         checker = ReleaseChecker(
-            repo = "drmuzikbpn/claude-utilization-mcp",
+            repo = "drmuzikbpn/usage-deck",
             client = OkHttpClient(),
             baseUrl = server.url("/").toString().trimEnd('/')
         )
@@ -63,7 +63,7 @@ class ReleaseCheckerTest {
         assertEquals("usage-deck.apk", info.apkName)
         assertEquals(apkUrl, info.apkUrl)
         assertEquals(sumsUrl, info.sumsUrl)
-        assertEquals("/repos/drmuzikbpn/claude-utilization-mcp/releases?per_page=100", server.takeRequest().path)
+        assertEquals("/repos/drmuzikbpn/usage-deck/releases?per_page=100", server.takeRequest().path)
     }
 
     @Test

@@ -127,7 +127,7 @@ Before shipping a release that touches kiosk, wifi, pairing or update, run
 
 ## Releases
 
-The app lives on the `usage-android` branch of the daemon's repo, `drmuzikbpn/claude-utilization-mcp`.
+The app lives on the `usage-android` branch of the daemon's repo, `drmuzikbpn/usage-deck`.
 CI has two jobs. `test` runs for every pull request and push with a read-only token and no
 secrets: the public-repository check, ktlint, all JVM tests and the instrumented suite on an
 API 29 emulator. `release` runs only for a push to `usage-android`, after `test`, inside the
