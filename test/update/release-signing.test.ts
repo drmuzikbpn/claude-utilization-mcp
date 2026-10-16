@@ -219,11 +219,11 @@ describe('.github/workflows (§23.59)', () => {
     expect(build).toMatch(/npm audit --omit=dev/);
   });
 
-  it('the publish job needs build, runs on main only, in the release environment, and signs then verifies', () => {
+  it('the publish job needs build, runs on main only, in the release-daemon environment, and signs then verifies', () => {
     const publish = job('publish');
     expect(publish).toMatch(/needs: \[guard, build\]/);
     expect(publish).toMatch(/github\.ref == 'refs\/heads\/main'/);
-    expect(publish).toMatch(/environment: release\n/);
+    expect(publish).toMatch(/environment: release-daemon\n/);
     expect(publish).toMatch(/permissions:\n\s+contents: write\n/);
     expect(publish).not.toMatch(/npm (ci|install|run|test)/);
     const order = ['verify-release.mjs --no-placeholder', 'sign-release.mjs release/SHA256SUMS', 'verify-release.mjs release/SHA256SUMS', 'gh release create'].map((s) => publish.indexOf(s));
