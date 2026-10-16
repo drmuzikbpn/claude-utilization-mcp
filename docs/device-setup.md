@@ -183,7 +183,7 @@ grant it. The app dims to 30 % and slows sparkline redraws to every 10 s above 4
 The release key exists in two places only: the owner's password manager, and the GitHub Actions
 signing secrets that are copies of it (`SIGNING_KEYSTORE_B64`, `SIGNING_KEY_ALIAS`,
 `SIGNING_STORE_PASSWORD`; `SIGNING_KEY_PASSWORD` only if the key has its own password). Keep the
-secrets in the repository's `release` environment so only the release job can read them. Values
+secrets in the repository's `release-android` environment so only the release job can read them. Values
 were streamed through pipes into `gh secret set`, never typed as arguments.
 
 **The phone was provisioned with a debug-signed build**, so the release key is a *rotation* from

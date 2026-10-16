@@ -12,3 +12,4 @@ local.properties
 # Extra literals for scripts/public-check.sh to block; private to this checkout.
 .public-check.local
 .cache_ggshield
+.kotlin/

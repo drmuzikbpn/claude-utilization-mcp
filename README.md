@@ -131,7 +131,7 @@ The app lives on the `usage-android` branch of the daemon's repo, `drmuzikbpn/us
 CI has two jobs. `test` runs for every pull request and push with a read-only token and no
 secrets: the public-repository check, ktlint, all JVM tests and the instrumented suite on an
 API 29 emulator. `release` runs only for a push to `usage-android`, after `test`, inside the
-`release` environment: it assembles the release, signs it with `apksigner`, and publishes it with
+`release-android` environment: it assembles the release, signs it with `apksigner`, and publishes it with
 `gh release create` under the namespace the two updaters agreed on (daemon spec §23.17): tag
 `deck-<version>`, assets `usage-deck.apk` and `usage-deck.apk.sha256`, always flagged pre-release
 so the daemon's `/releases/latest` never returns an APK. Without the signing secrets it publishes
@@ -142,7 +142,7 @@ Versions are `0.MINOR.<commit-count>+<short-sha>`; `versionCode` is the commit c
 
 The workflow reads the signing secrets `SIGNING_KEYSTORE_B64`, `SIGNING_KEY_ALIAS` and
 `SIGNING_STORE_PASSWORD` (and `SIGNING_KEY_PASSWORD`, only if the key's password differs from the
-store's). Keep them in the `release` environment rather than at repository level, so only the
+store's). Keep them in the `release-android` environment rather than at repository level, so only the
 release job can read them. CI signs with `app/signing/usage-deck.lineage`, a rotation from the key
 the phone was first provisioned with, so releases install over it in place; the story is in
 [docs/device-setup.md](docs/device-setup.md) under *Release signing*.
