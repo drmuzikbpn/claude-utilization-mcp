@@ -36,11 +36,9 @@ private val deckColorScheme = darkColorScheme(
  */
 @Composable
 fun DeckTheme(dimLevel: Float = 1f, content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = deckColorScheme, typography = deckTypography) {
+    DeckColorsTheme {
         Box(modifier = Modifier.fillMaxSize().background(DeckColors.bg)) {
-            CompositionLocalProvider(LocalContentColor provides DeckColors.fg) {
-                content()
-            }
+            content()
             val scrim = (1f - dimLevel).coerceIn(0f, 1f)
             if (scrim > 0f) {
                 Box(
@@ -50,5 +48,17 @@ fun DeckTheme(dimLevel: Float = 1f, content: @Composable () -> Unit) {
                 )
             }
         }
+    }
+}
+
+/**
+ * The deck's colours and type with no backdrop. Anything composed outside [DeckTheme] needs it:
+ * without it a dialog falls back to Material's light scheme, so a text field draws dark text on
+ * the deck's dark surface and typing looks like it does nothing.
+ */
+@Composable
+fun DeckColorsTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = deckColorScheme, typography = deckTypography) {
+        CompositionLocalProvider(LocalContentColor provides DeckColors.fg, content = content)
     }
 }
