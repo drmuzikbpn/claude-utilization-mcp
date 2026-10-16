@@ -12,7 +12,8 @@ Tick each line, or write down what happened instead.
 - [ ] Lock task holds: pressing Home and Recents does nothing, and the status and navigation bars
       are gone.
 - [ ] Rebooting the phone comes straight back into the deck with no launcher picker.
-- [ ] Long-pressing the top-left corner for 3 s opens the PIN dialog; a wrong PIN counts down
+- [ ] With no PIN set, holding the top-left corner for 3 s leaves lock task at once.
+- [ ] With a PIN set, the same hold opens the PIN dialog; a wrong PIN counts down
       remaining attempts; the right one leaves lock task.
 - [ ] Within 10 minutes of that exit the deck re-pins itself without being touched.
 - [ ] Battery-optimisation exemption is still granted (Machine screen, or
@@ -31,8 +32,10 @@ Tick each line, or write down what happened instead.
 
 ## Exit PIN and storage
 
-- [ ] A freshly provisioned deck asks for the exit PIN (twice) before anything else can be tapped.
-- [ ] *Settings → Kiosk exit PIN* refuses a new PIN without the current one, and five wrong
+- [ ] A freshly provisioned deck does not ask for a PIN; *Settings → Kiosk exit PIN* says Off.
+- [ ] *Turn on* stays disabled until both entries match; the keyboard's Next key moves to *Again*.
+- [ ] *Remove PIN* needs the current PIN and puts the corner gate back to hold-only.
+- [ ] *Settings → Kiosk exit PIN* refuses a new PIN or removal without the current one, and five wrong
       "current" entries lock the corner gate too.
 - [ ] During a lockout, changing the phone's date forward does not unlock the gate.
 - [ ] `adb shell bmgr backupnow com.evenseal.usagedeck` reports the package is not allowed to back up.

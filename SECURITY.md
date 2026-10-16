@@ -47,10 +47,11 @@ the self-update path, and the CI that signs releases.
   AndroidKeyStore. If the keystore cannot open the store, a release build shows a storage error
   and does not start; it never falls back to an unencrypted file. Backups and device-to-device
   transfer are off.
-- The kiosk exit PIN is stored with PBKDF2-HMAC-SHA256. Five wrong attempts lock the gate for five
-  minutes, doubling each round, timed on a monotonic clock so changing the date does not end it.
-  Changing the PIN requires the current one, counted against the same lockout. A provisioned
-  kiosk asks for a PIN the first time it starts.
+- The kiosk exit PIN is optional and off by default: without one, anyone who holds the top-left
+  corner for 3 s leaves the kiosk. Set one where the deck sits somewhere public. It is stored with
+  PBKDF2-HMAC-SHA256. Five wrong attempts lock the gate for five minutes, doubling each round,
+  timed on a monotonic clock so changing the date does not end it. Changing or removing the PIN
+  requires the current one, counted against the same lockout.
 - Only the launcher activity and the device-admin receiver (system-only) are exported.
 
 **Updates and releases**

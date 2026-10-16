@@ -34,13 +34,13 @@ class AndroidUptime(private val context: Context) : Uptime {
 }
 
 /**
- * The maintenance-exit PIN (spec §4): six digits, five wrong attempts buy a five-minute lockout
- * that doubles on every further round.
+ * The maintenance-exit PIN (spec §4): optional, six digits, five wrong attempts buy a five-minute
+ * lockout that doubles on every further round. With no PIN the corner gate opens on the hold alone.
  *
- * - **Changing it needs the current one.** [set] only works while no PIN exists; afterwards the
- *   only way to a new PIN is [change], which runs the current PIN through [verify] — so guessing
- *   by "changing" meets the same counters and lockout as guessing at the gate, and nobody at the
- *   Settings screen can replace a PIN they do not know.
+ * - **Changing or removing it needs the current one.** [set] only works while no PIN exists;
+ *   afterwards [change] and [clear] run the current PIN through [verify] — so guessing by
+ *   "changing" meets the same counters and lockout as guessing at the gate, and nobody at the
+ *   Settings screen can replace or remove a PIN they do not know.
  * - **Stored with PBKDF2-HMAC-SHA256** (the strongest KDF on API 29 without a new dependency),
  *   salted, inside the encrypted prefs. Six digits are only a million possibilities, so the KDF
  *   buys time against an offline copy rather than safety; the lockout is what protects the gate.
@@ -94,6 +94,19 @@ class ExitPin(
         requireWellFormed(new)
         val verdict = verify(current)
         if (verdict == Result.Ok) store(new)
+        return verdict
+    }
+
+    /**
+     * Removes the PIN, if [current] is right, so the gate opens on the hold alone. Anything but
+     * [Result.Ok] means nothing changed; a wrong [current] counts as a wrong attempt.
+     */
+    @Synchronized
+    fun clear(current: String): Result {
+        val verdict = verify(current)
+        if (verdict == Result.Ok) {
+            prefs.edit().remove(KEY_SALT).remove(KEY_HASH).remove(KEY_KDF).remove(KEY_ITERATIONS).apply()
+        }
         return verdict
     }
 

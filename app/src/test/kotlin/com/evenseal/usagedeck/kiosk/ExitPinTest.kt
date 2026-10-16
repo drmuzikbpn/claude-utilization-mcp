@@ -244,4 +244,29 @@ class ExitPinTest {
         assertEquals(t0.plusSeconds(300L shl 7), locked.until)
         assertFalse(prefs.contains("exit_pin_locked_until"))
     }
+
+    @Test
+    fun `clear with the right pin removes it`() {
+        pin.set("123456")
+        assertEquals(ExitPin.Result.Ok, pin.clear("123456"))
+        assertFalse(pin.isSet())
+        pin.set("654321")
+        assertEquals(ExitPin.Result.Ok, pin.verify("654321"))
+    }
+
+    @Test
+    fun `clear with a wrong pin keeps it and counts the attempt`() {
+        pin.set("123456")
+        assertEquals(ExitPin.Result.Wrong(4), pin.clear("000000"))
+        assertTrue(pin.isSet())
+        assertEquals(ExitPin.Result.Wrong(3), pin.verify("000000"))
+    }
+
+    @Test
+    fun `clear is refused during a lockout`() {
+        pin.set("123456")
+        lockOut()
+        assertTrue(pin.clear("123456") is ExitPin.Result.LockedOut)
+        assertTrue(pin.isSet())
+    }
 }

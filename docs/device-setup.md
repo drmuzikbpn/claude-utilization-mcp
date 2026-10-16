@@ -155,9 +155,9 @@ Long-press the top-left corner for 3 s → PIN → lock task stops for 10 minute
 alarm owned by the app re-pins afterwards regardless of which app is in front, and a reboot inside
 the window boots locked.
 
-A provisioned kiosk asks for the exit PIN (six digits, entered twice) the first time it starts;
-choose it then, before the deck is left unattended. Changing it later, in *Settings → Kiosk exit
-PIN*, needs the current PIN. Five wrong attempts — at the gate or in Settings — lock both for five
+The exit PIN is optional and off by default: holding the top-left corner for 3 s leaves the
+kiosk. To require a PIN, set one in *Settings → Kiosk exit PIN* (six digits, entered twice) before
+the deck is left unattended. Changing or removing it needs the current PIN. Five wrong attempts — at the gate or in Settings — lock both for five
 minutes, doubling each round, and neither changing the clock nor rebooting shortens it.
 
 Forgotten-PIN recovery is `adb shell`; USB debugging stays enabled on this device on purpose. That

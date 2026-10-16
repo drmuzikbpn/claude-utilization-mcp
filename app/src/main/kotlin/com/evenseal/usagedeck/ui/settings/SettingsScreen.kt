@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,6 +58,7 @@ fun SettingsScreen(
     updateState: String,
     onUpdate: ((Settings) -> Settings) -> Unit,
     onSetPin: (current: String?, new: String) -> String?,
+    onRemovePin: (current: String) -> String? = { null },
     onCheckUpdate: () -> Unit,
     onBack: () -> Unit,
     wifiLabel: String = "",
@@ -230,7 +232,7 @@ fun SettingsScreen(
         )
 
         Section("Kiosk exit PIN")
-        PinField(isSet = settings.pinSet, onSetPin = onSetPin)
+        PinField(isSet = settings.pinSet, onSetPin = onSetPin, onRemovePin = onRemovePin)
 
         Section("Updates")
         Text(
@@ -376,55 +378,65 @@ private fun HourPicker(label: String, time: LocalTime, onChange: (LocalTime) -> 
 }
 
 /**
- * The first PIN needs only itself. Changing one needs the current PIN as well: [onSetPin] gets
- * it, checks it under the gate's own attempt counter, and returns what to show if it refused.
+ * The optional kiosk exit PIN. Off, the corner hold alone leaves the kiosk; turning it on asks
+ * for the PIN twice. Changing or removing it needs the current PIN, which [onSetPin] and
+ * [onRemovePin] check under the gate's own attempt counter; each returns what to show if it
+ * refused, or null.
  */
 @Composable
-private fun PinField(isSet: Boolean, onSetPin: (current: String?, new: String) -> String?) {
+private fun PinField(
+    isSet: Boolean,
+    onSetPin: (current: String?, new: String) -> String?,
+    onRemovePin: (current: String) -> String?
+) {
     var current by remember { mutableStateOf("") }
     var entry by remember { mutableStateOf("") }
+    var again by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
+    fun clear() {
+        current = ""
+        entry = ""
+        again = ""
+    }
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)) {
         Text(
             text = if (isSet) {
-                "A PIN is set. To change it, enter the current PIN, then six new digits."
+                "On: the corner exit asks for this PIN. Changing or removing it needs the current one."
             } else {
-                "No PIN set yet. Set one now: until then anyone at this screen can choose it."
+                "Off: holding the top-left corner for 3 s leaves the kiosk. Set a PIN to require it."
             },
             color = DeckColors.muted,
             fontFamily = DeckType.text,
             fontSize = 12.sp
         )
         if (isSet) {
-            OutlinedTextField(
-                modifier = Modifier.semantics { contentDescription = CURRENT_PIN_FIELD },
-                value = current,
-                onValueChange = { current = it.filter(Char::isDigit).take(PIN_LENGTH) },
-                label = { Text("Current PIN") },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
-            )
+            PinInput(CURRENT_PIN_FIELD, "Current PIN", current, last = false) { current = it }
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                modifier = Modifier.semantics { contentDescription = PIN_FIELD },
-                value = entry,
-                onValueChange = { entry = it.filter(Char::isDigit).take(PIN_LENGTH) },
-                label = { Text(if (isSet) "New PIN" else "PIN") },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
-            )
+        PinInput(PIN_FIELD, if (isSet) "New PIN" else "PIN", entry, last = isSet) { entry = it }
+        if (!isSet) {
+            PinInput(PIN_AGAIN_FIELD, "Again", again, last = true) { again = it }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(
-                enabled = entry.length == PIN_LENGTH && (!isSet || current.length == PIN_LENGTH),
+                enabled = entry.length == PIN_LENGTH &&
+                    if (isSet) current.length == PIN_LENGTH else again == entry,
                 onClick = {
                     message = onSetPin(current.takeIf { isSet }, entry) ?: "PIN saved."
-                    entry = ""
-                    current = ""
+                    clear()
                 }
             ) {
-                Text("Save", color = DeckColors.accent, fontFamily = DeckType.text)
+                Text(if (isSet) "Save" else "Turn on", color = DeckColors.accent, fontFamily = DeckType.text)
+            }
+            if (isSet) {
+                TextButton(
+                    enabled = current.length == PIN_LENGTH,
+                    onClick = {
+                        message = onRemovePin(current) ?: "PIN removed: the corner hold alone exits."
+                        clear()
+                    }
+                ) {
+                    Text("Remove PIN", color = DeckColors.crit, fontFamily = DeckType.text)
+                }
             }
         }
         message?.let {
@@ -439,11 +451,32 @@ private fun PinField(isSet: Boolean, onSetPin: (current: String?, new: String) -
     }
 }
 
+/**
+ * One PIN entry. All but the [last] get the keyboard's Next key, which moves to the field below:
+ * the keyboard covers that field, so tapping it is not an option.
+ */
+@Composable
+private fun PinInput(description: String, label: String, value: String, last: Boolean, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        modifier = Modifier.fillMaxWidth().semantics { contentDescription = description },
+        value = value,
+        onValueChange = { onChange(it.filter(Char::isDigit).take(PIN_LENGTH)) },
+        label = { Text(label) },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.NumberPassword,
+            imeAction = if (last) ImeAction.Done else ImeAction.Next
+        )
+    )
+}
+
 const val WARN_SLIDER = "warn threshold"
 const val CRITICAL_SLIDER = "critical threshold"
 const val DIM_SLIDER = "night dim"
 const val PIN_FIELD = "exit pin field"
 const val CURRENT_PIN_FIELD = "current exit pin field"
+const val PIN_AGAIN_FIELD = "exit pin again field"
 const val PIN_MESSAGE = "exit pin message"
 
 private const val PIN_LENGTH = 6

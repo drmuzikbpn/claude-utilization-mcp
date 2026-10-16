@@ -70,6 +70,7 @@ internal fun SettingsRoute(graph: DeckGraph, onBack: () -> Unit, onWifi: () -> U
         updateState = label,
         onUpdate = { transform -> graph.settings.update(transform) },
         onSetPin = { current, new -> setOrChangePin(graph, current, new) },
+        onRemovePin = { current -> removePin(graph, current) },
         onCheckUpdate = { checks?.let { c -> scope.launch { c.checkNow() } } },
         onBack = onBack,
         wifiLabel = if (wifi.connected) wifi.ssid.orEmpty() else "not connected",
@@ -138,7 +139,7 @@ private suspend fun redeem(graph: DeckGraph, invite: PairingInvite, replacing: S
     }
 
 /**
- * The first PIN is simply set. After that the current PIN is required, and it goes through
+ * The first PIN is simply set (the PIN is optional, so whoever turns it on chooses it). After that the current PIN is required, and it goes through
  * `ExitPin.verify`, so guessing here is counted and locked out exactly like guessing at the gate.
  * Returns what to tell the user, or null when the new PIN is saved.
  */
@@ -157,6 +158,16 @@ internal fun setOrChangePin(graph: DeckGraph, current: String?, new: String): St
         is ExitPin.Result.Wrong -> "Current PIN is wrong · ${verdict.remaining} left"
         is ExitPin.Result.LockedOut -> "Locked out for ${Format.countdown(verdict.until, graph.clock.now())}"
     }
+}
+
+/** Removes the PIN if [current] is right. Returns what to tell the user, or null once it is gone. */
+internal fun removePin(graph: DeckGraph, current: String): String? = when (val verdict = graph.exitPin.clear(current)) {
+    ExitPin.Result.Ok -> {
+        graph.settings.update { it.copy(pinSet = false) }
+        null
+    }
+    is ExitPin.Result.Wrong -> "Current PIN is wrong · ${verdict.remaining} left"
+    is ExitPin.Result.LockedOut -> "Locked out for ${Format.countdown(verdict.until, graph.clock.now())}"
 }
 
 private fun Context.openCaptivePortal() {

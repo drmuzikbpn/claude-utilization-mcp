@@ -23,10 +23,8 @@ import com.evenseal.usagedeck.service.DeckService
 import com.evenseal.usagedeck.ui.DeckNav
 import com.evenseal.usagedeck.ui.alerts.AlertOverlay
 import com.evenseal.usagedeck.ui.kiosk.ExitGate
-import com.evenseal.usagedeck.ui.kiosk.FirstPinDialog
 import com.evenseal.usagedeck.ui.kiosk.StorageErrorScreen
 import com.evenseal.usagedeck.ui.pairing.ImportConfirmDialog
-import com.evenseal.usagedeck.ui.setOrChangePin
 import com.evenseal.usagedeck.ui.theme.DeckColorsTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -103,12 +101,6 @@ class MainActivity : ComponentActivity() {
                             onReplace = { graph.imports.confirm() },
                             onCancel = { graph.imports.decline() }
                         )
-                    }
-
-                    // A locked kiosk never runs without an exit PIN: whoever provisions it chooses one.
-                    val prefs by graph.settings.settings.collectAsStateWithLifecycle()
-                    if (graph.kiosk.isDeviceOwner && !prefs.pinSet && !graph.exitPin.isSet()) {
-                        FirstPinDialog(onSet = { setOrChangePin(graph, null, it) })
                     }
 
                     ExitGate(
