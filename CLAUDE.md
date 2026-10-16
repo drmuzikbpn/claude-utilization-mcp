@@ -165,7 +165,7 @@ daemon's repo; renamed from `usage-deck` on 2026-10-01); the iPhone + Apple Watc
 `usage-ios`. Do not `git push` without explicit approval in the session. CI (`.github/workflows/ci.yml`)
 has a `test` job (pull requests and pushes; read-only token, no secrets) and a `release` job
 (`needs: test`, pushes to `usage-android` only — never a wildcard, the daemon's release job runs on
-`main` — in the `release` environment, `contents: write`) that signs with `apksigner` and publishes
+`main` — in the `release-android` environment, `contents: write`) that signs with `apksigner` and publishes
 a `deck-<version>` pre-release with `gh release create` once the signing secrets
 (`SIGNING_KEYSTORE_B64`, `SIGNING_KEY_ALIAS`, `SIGNING_STORE_PASSWORD`, optional
 `SIGNING_KEY_PASSWORD`) exist. Keep every `uses:` pinned to a full commit SHA with the version in

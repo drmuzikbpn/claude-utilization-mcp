@@ -67,14 +67,14 @@ jobs:
           script: ./gradlew :app:connectedDebugAndroidTest
 
   # Builds, signs and publishes — only for a push to usage-android, only after `test` is green,
-  # and only inside the `release` environment, which is where the signing secrets belong (and
+  # and only inside the `release-android` environment, which is where the signing secrets belong (and
   # where the owner can require an approval). First-party steps only: nothing here but GitHub's
   # own actions, the Android SDK's apksigner and the `gh` CLI ever sees a secret or the write token.
   release:
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/usage-android'
     runs-on: ubuntu-latest
-    environment: release
+    environment: release-android
     concurrency: { group: deck-release, cancel-in-progress: false }
     permissions:
       contents: write
