@@ -291,7 +291,7 @@ but the `release` environment.
 
 Please **do not** open a public GitHub issue for a vulnerability. Use GitHub's private
 vulnerability reporting on
-<https://github.com/drmuzikbpn/claude-utilization-mcp> (Security → Report a
+<https://github.com/drmuzikbpn/usage-deck> (Security → Report a
 vulnerability), which reaches the maintainers privately.
 
 Useful things to include: the version (`claude-usage --version`), your platform, whether

@@ -46,8 +46,8 @@ You need **Node 20 or newer** and **Claude Code** signed in on this machine.
 **1. Install.**
 
 ```bash
-git clone https://github.com/drmuzikbpn/claude-utilization-mcp.git
-cd claude-utilization-mcp
+git clone https://github.com/drmuzikbpn/usage-deck.git
+cd usage-deck
 npm ci && npm run build
 node bin/claude-usage install
 ```
@@ -341,7 +341,7 @@ for when you are away from home.
 - **iPhone + Apple Watch:** **Usage Deck**, in TestFlight (invite only for now; ask the
   maintainer). The watch app installs with it.
 - **Android:** the **Usage Deck** dashboard, a kiosk build for a wall or desk phone. APKs are
-  the `deck-` [pre-releases](https://github.com/drmuzikbpn/claude-utilization-mcp/releases)
+  the `deck-` [pre-releases](https://github.com/drmuzikbpn/usage-deck/releases)
   of this repo, and the app updates itself after that.
 
 ### Pair a phone
@@ -486,7 +486,7 @@ load/save round-trip. An invalid value is an error naming the key.
 | `integrations.statusline` | `false` | install turns it on (the limits feed) unless `--no-statusline` |
 | `autoUpdate.enabled` | `true` | auto-update on/off |
 | `autoUpdate.intervalMs` | `600000` | release-check interval (1 000 – 86 400 000) |
-| `autoUpdate.repo` | `drmuzikbpn/claude-utilization-mcp` | release source; override for forks |
+| `autoUpdate.repo` | `drmuzikbpn/usage-deck` | release source; override for forks |
 | `events.maxClients` | `16` | concurrent SSE streams (1–4096) |
 | `tls.port` | `null` | HTTPS port for non-loopback addresses; `null` means `port + 1` |
 | `tls.loopback` | `false` | also serve HTTPS on loopback (tests and CI only) |

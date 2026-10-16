@@ -8,7 +8,7 @@
 **Know how close your Claude account is to its limits — in your terminal, inside Claude Code,
 and on your phone and wrist.**
 
-[![CI](https://github.com/drmuzikbpn/claude-utilization-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/drmuzikbpn/claude-utilization-mcp/actions/workflows/ci.yml)
+[![CI](https://github.com/drmuzikbpn/usage-deck/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/drmuzikbpn/usage-deck/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![macOS | Linux](https://img.shields.io/badge/runs%20on-macOS%20%7C%20Linux-555)
 ![Node 20+](https://img.shields.io/badge/node-20%2B-339933)
@@ -49,8 +49,8 @@ to the daemon's certificate.
 You need **Node 20+** and **Claude Code** signed in on the machine.
 
 ```bash
-git clone https://github.com/drmuzikbpn/claude-utilization-mcp.git
-cd claude-utilization-mcp
+git clone https://github.com/drmuzikbpn/usage-deck.git
+cd usage-deck
 npm ci && npm run build
 node bin/claude-usage install
 ```
@@ -72,7 +72,7 @@ Remove everything again with `claude-usage uninstall`.
 1. Get the app:
    - **iPhone + Apple Watch** — *Usage Deck* on TestFlight (invite only for now; ask the
      maintainer). The watch app comes with it.
-   - **Android** — the *Usage Deck* APK from the [`deck-` releases](https://github.com/drmuzikbpn/claude-utilization-mcp/releases).
+   - **Android** — the *Usage Deck* APK from the [`deck-` releases](https://github.com/drmuzikbpn/usage-deck/releases).
      It updates itself after that.
 2. On each machine you want to see, run:
 
@@ -109,8 +109,8 @@ All screenshots use made-up demo data.
 | [**Full guide**](docs/guide.md) | Every command, the hook, MCP tools, status line, configuration, auto-update, troubleshooting |
 | [**Security model**](docs/security.md) · [**SECURITY.md**](SECURITY.md) | What the token protects, pinning, signed releases, how to report a vulnerability |
 | [**HTTP API**](docs/api.md) | Every endpoint, error envelope and the live event stream, for building your own client |
-| [**iPhone & Apple Watch app**](https://github.com/drmuzikbpn/claude-utilization-mcp/tree/usage-ios) | Source on the `usage-ios` branch |
-| [**Android app**](https://github.com/drmuzikbpn/claude-utilization-mcp/tree/usage-android) | Source on the `usage-android` branch |
+| [**iPhone & Apple Watch app**](https://github.com/drmuzikbpn/usage-deck/tree/usage-ios) | Source on the `usage-ios` branch |
+| [**Android app**](https://github.com/drmuzikbpn/usage-deck/tree/usage-android) | Source on the `usage-android` branch |
 | [**Contributing**](CONTRIBUTING.md) · [**Changelog**](CHANGELOG.md) | How to build, test and send a change |
 
 ## License
