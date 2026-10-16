@@ -30,6 +30,22 @@ final class TryTheDemoTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Adam"].exists)
     }
 
+    /// The demo has no daemon behind it, yet its pause controls must work as a real pause does,
+    /// not answer with a network error.
+    @MainActor
+    func testPauseAllWorksInTheDemo() throws {
+        guard app.staticTexts["No paired devices"].waitForExistence(timeout: 10) else {
+            throw XCTSkip("this simulator has a paired device")
+        }
+        app.buttons["Try the demo"].tap()
+        XCTAssertTrue(app.staticTexts["Adam"].waitForExistence(timeout: 5))
+        app.buttons["Pause all"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Resume all"].firstMatch.waitForExistence(timeout: 3))
+        app.buttons["Resume all"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Pause all"].firstMatch.waitForExistence(timeout: 3))
+        app.buttons["Leave"].tap()
+    }
+
     @MainActor
     func testPairingFromTheDemoLeavesIt() throws {
         guard app.staticTexts["No paired devices"].waitForExistence(timeout: 10) else {
