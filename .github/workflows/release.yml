@@ -16,7 +16,8 @@ name: Release
 # The signing key is the secret RELEASE_SIGNING_KEY of the `release-daemon` environment, which
 # holds nothing else and is restricted to the `main` branch in the repository settings. The
 # Android and iOS builds sign in their own environments (`release-android`, `release-ios`), so
-# no Gradle or Xcode build ever runs where this key can be read.
+# no Gradle or Xcode build ever runs where this key can be read. The environment has the owner
+# as a required reviewer: `publish` waits for that approval on every run.
 on:
   push: { branches: [main] }
   workflow_dispatch:
