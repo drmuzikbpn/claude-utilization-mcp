@@ -23,6 +23,14 @@ and on your phone and wrist.**
 
 </div>
 
+### Launch video
+
+https://github.com/user-attachments/assets/4150c424-cedb-4235-abfb-f23ec402f18e
+
+### Walkthrough: the iPhone app in 30 seconds
+
+https://github.com/user-attachments/assets/0f93ea22-bf9a-4794-9a2e-3a686739377d
+
 ---
 
 `claude-usage` is a small background service for macOS and Linux. It reads the same usage
