@@ -10,7 +10,13 @@ your wrist.
 
 Usage Deck does not talk to Anthropic. It reads everything from
 [`claude-usage`](https://github.com/drmuzikbpn/usage-deck), a small daemon you run on
-the computer where you use Claude Code (macOS or Linux), and talks only to that device.
+the computer where you use Claude Code (macOS or Linux), and talks only to that computer.
+
+## Get it
+
+Usage Deck is free on the App Store (in App Review now). It runs on iOS 18 or later; the Apple
+Watch app needs watchOS 11 or later and installs with it. Nothing to pair yet? Tap
+**Try the demo** to explore it with made-up data.
 
 ## What it looks like
 
@@ -40,16 +46,17 @@ complications (circular, rectangular, corner, inline):
 
 <img src="docs/images/complication-accessoryCircular.png" width="50" alt="Circular complication"> <img src="docs/images/complication-accessoryRectangular.png" width="150" alt="Rectangular complication"> <img src="docs/images/complication-accessoryCorner.png" width="44" alt="Corner complication"> <img src="docs/images/complication-accessoryInline.png" width="150" alt="Inline complication">
 
-## Pair a device
+## Pair a computer
 
-1. Install `claude-usage` on the device: see
+1. Install `claude-usage` on the computer: see
    <https://github.com/drmuzikbpn/usage-deck>.
-2. Turn on local-network access: `claude-usage install --lan`.
+2. Turn on local-network access: `claude-usage configure lan on` (or answer yes when `install`
+   asks).
 3. Run `claude-usage pair`. It opens a page with a QR code.
 4. Point the iPhone Camera at the QR and tap **Open in Usage Deck**. (Or scan it from inside the
    app.)
 
-Pairing happens over HTTPS pinned to the device's own certificate, and the QR holds a one-time
+Pairing happens over HTTPS pinned to the computer's own certificate, and the QR holds a one-time
 code that expires after five minutes — it never contains your access token. When you re-pair a
 device and the code carries a different certificate from the one you paired, the app says so
 before it replaces anything: continue only if you ran `claude-usage pair` on that device yourself. Your iPhone and the
