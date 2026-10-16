@@ -191,6 +191,10 @@ struct NoDevicesView: View {
             }
             .buttonStyle(.plain)
             .padding(.top, 8)
+            Button("Try the demo") { store.startDemo() }
+                .font(DeckFont.text(14, .medium))
+                .foregroundStyle(DeckColor.accent)
+                .accessibilityHint("Shows made-up devices and sessions, with nothing paired")
             InstallLinks()
         }
     }

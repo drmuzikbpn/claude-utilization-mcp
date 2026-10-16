@@ -28,10 +28,13 @@ Usage Deck collects nothing.
   you send unless you turn off "Hide device names and addresses". The log never contains access
   tokens, pairing codes, certificate fingerprints, project names, session titles or usage
   figures.
+- **Try the demo:** shows made-up devices and sessions generated on the iPhone. Nothing is
+  fetched or saved, and it ends when you leave it, pair a device or quit the app.
 - **Camera:** used only to scan a pairing QR code when you choose to; no image is stored.
 - **Local network:** used only to reach the devices you pair.
 
-**TestFlight:** while you test a TestFlight build, Apple's TestFlight service may share crash
+**Apple:** if you share analytics with app developers in iOS Settings, Apple may pass crash
+reports to the developer. While you test a TestFlight build, Apple's TestFlight service may share crash
 reports and basic usage information (such as sessions and device model) with the developer,
 under Apple's own privacy policy. That data is collected by Apple, not by this app, and you can
 turn it off in TestFlight's settings.

@@ -14,6 +14,7 @@ struct LedgerView: View {
         let empty = HomeEmpty.of(team)
         VStack(spacing: 0) {
             StatusBar(store: store)
+            DemoBanner(store: store)
             RepairBanners(store: store)
             if !team.usersWithData.isEmpty {
                 VStack(spacing: 0) {

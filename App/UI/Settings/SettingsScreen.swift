@@ -32,6 +32,10 @@ struct SettingsScreen: View {
                 }
                 Button("Pair a device") { store.beginPairing() }
                     .foregroundStyle(DeckColor.accent)
+                if store.isDemo {
+                    Button("Leave the demo") { store.endDemo() }
+                        .foregroundStyle(DeckColor.accent)
+                }
             }
             .listRowBackground(DeckColor.surface)
 
