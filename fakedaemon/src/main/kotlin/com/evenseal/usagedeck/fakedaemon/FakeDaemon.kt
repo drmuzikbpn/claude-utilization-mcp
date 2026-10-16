@@ -34,8 +34,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
 import io.ktor.server.cio.CIO
-import io.ktor.server.engine.ApplicationEngine
-import io.ktor.server.engine.applicationEngineEnvironment
+import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.connector
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.request.receiveText
@@ -43,6 +42,7 @@ import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.response.respondTextWriter
+import io.ktor.server.routing.RoutingContext
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -368,7 +368,7 @@ class FakeDaemon(
     private val clients = CopyOnWriteArrayList<Channel<String>>()
     private val steps = AtomicInteger(0)
     private var scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var engine: ApplicationEngine? = null
+    private var engine: EmbeddedServer<*, *>? = null
     private var tlsFront: TlsFront? = null
 
     /** Where the TLS front forwards to; only requests arriving here may redeem a pairing code. */
@@ -387,20 +387,22 @@ class FakeDaemon(
         if (demo) state.applyDemoPersona()
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         tlsBackendPort = freePort()
-        val environment = applicationEngineEnvironment {
-            connector {
-                host = LOOPBACK
-                port = this@FakeDaemon.port
-            }
-            connector {
-                host = LOOPBACK
-                port = tlsBackendPort
-            }
-            module { routes() }
-        }
-        val server = embeddedServer(CIO, environment)
+        val server = embeddedServer(
+            CIO,
+            configure = {
+                connector {
+                    host = LOOPBACK
+                    port = this@FakeDaemon.port
+                }
+                connector {
+                    host = LOOPBACK
+                    port = tlsBackendPort
+                }
+            },
+            module = { routes() }
+        )
         server.start(wait = false)
-        runBlocking { server.resolvedConnectors() }
+        runBlocking { server.engine.resolvedConnectors() }
         engine = server
         tlsFront = TlsFront(certificate, bind, tlsPort, tlsBackendPort).also {
             it.start()
@@ -688,9 +690,7 @@ class FakeDaemon(
         return MessageDigest.isEqual(offered, "Bearer $token".toByteArray(Charsets.UTF_8))
     }
 
-    private suspend fun io.ktor.util.pipeline.PipelineContext<Unit, ApplicationCall>.guarded(
-        block: suspend () -> Unit
-    ) {
+    private suspend fun RoutingContext.guarded(block: suspend () -> Unit) {
         if (!authorized(call)) {
             call.error(HttpStatusCode.Unauthorized, "unauthorized", "Bearer token missing or invalid")
             return
