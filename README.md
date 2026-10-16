@@ -3,10 +3,13 @@
 
 <div align="center">
 
-# claude-usage
+# Usage Deck
 
 **Know how close your Claude account is to its limits — in your terminal, inside Claude Code,
 and on your phone and wrist.**
+
+The open-source `claude-usage` service, plus the Usage Deck dashboards for iPhone, Apple Watch
+and Android.
 
 [![CI](https://github.com/drmuzikbpn/usage-deck/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/drmuzikbpn/usage-deck/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -33,7 +36,7 @@ https://github.com/user-attachments/assets/0f93ea22-bf9a-4794-9a2e-3a686739377d
 
 ---
 
-`claude-usage` is a small background service for macOS and Linux. It reads the same usage
+`claude-usage` is the small background service at the heart of Usage Deck, for macOS and Linux. It reads the same usage
 numbers `/usage` shows, adds up the tokens your Claude Code sessions spend, and puts both
 where you need them:
 
@@ -54,7 +57,8 @@ to the daemon's certificate.
 
 ## Install
 
-You need **Node 20+** and **Claude Code** signed in on the machine.
+You need **Node 20+** (22 or later to build without engine warnings) and **Claude Code** signed
+in on the machine.
 
 ```bash
 git clone https://github.com/drmuzikbpn/usage-deck.git
@@ -86,7 +90,7 @@ Remove everything again with `claude-usage uninstall`.
      stay pinned on screen and update itself). That is why it asks for location (Android
      requires it to read the Wi-Fi network name) and permission to install packages (its own
      signed updates). Set-up: [device setup guide](https://github.com/drmuzikbpn/usage-deck/blob/usage-android/docs/device-setup.md);
-     APK from the [`deck-` releases](https://github.com/drmuzikbpn/usage-deck/releases).
+     APK from the [`deck-` releases](https://github.com/drmuzikbpn/usage-deck/releases?q=deck-&expanded=true).
 2. On each machine you want to see, turn on LAN access (an interactive install offers it), then
    pair:
 
