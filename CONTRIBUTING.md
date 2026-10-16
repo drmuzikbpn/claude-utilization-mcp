@@ -30,8 +30,8 @@ even if you are not using Claude Code.
 
 ## Style
 
-- `./gradlew ktlintFormat` before every commit; lefthook runs `ktlintCheck` and `:core:test` on
-  pre-commit (`lefthook install`).
+- `./gradlew ktlintFormat` before every commit; lefthook runs `scripts/public-check.sh`, ggshield (when
+  installed), `ktlintCheck` and `:core:test` on pre-commit (`lefthook install`).
 - Conventional commit messages: `feat(widedock): …`, `fix(pause): …`, `docs: …`.
 - Every behaviour change comes with a test. Core logic is tested on the JVM; anything Compose gets
   an instrumented test. Nothing may be `@Ignore`d and no `TODO`/`FIXME` lands.

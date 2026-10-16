@@ -1,11 +1,11 @@
-# Usage Deck
+# Usage Deck for Android
 
 Not affiliated with Anthropic.
 
 A Nexus 5X running LineageOS, bolted to a shelf, showing what every Claude Code session on the
 team is burning right now — and letting you stop one with a thumb.
 
-It is a Device Owner kiosk launcher: it streams from N `claude-usage` daemons over Tailscale,
+It is a Device Owner kiosk launcher: it streams from N `claude-usage` daemons over your LAN (or Tailscale when away),
 merges them into one view, and can soft-pause or hard-freeze a session, a project, or everything
 at once.
 
@@ -48,7 +48,7 @@ synthetic.*
 | Module | What it is | Tests |
 | --- | --- | --- |
 | `core` | Pure Kotlin/JVM: model, daemon client, SSE, pinned TLS + pairing redeem, team merge, pause state machine, alerts, update check | 242 |
-| `app` | Android: kiosk, wifi, pairing, Compose UI, foreground service, installer | 239 unit + 69 instrumented |
+| `app` | Android: kiosk, wifi, pairing, Compose UI, foreground service, installer | 248 unit + 69 instrumented |
 | `fakedaemon` | Ktor server implementing the daemon contract (pinned HTTPS, pairing) with scripted scenarios | 30 |
 
 ## Build and run
@@ -86,20 +86,20 @@ pairing link, and generates a fresh token for every run; there is no fixed token
 refuses any serial that is not an emulator. To let a device on the network reach the fake, opt in
 explicitly: `BIND=0.0.0.0 ADDRS=<this machine's address> scripts/fakedaemon.sh`.
 
-## Pairing a Mac
+## Pairing a computer
 
-On any Mac running the `claude-usage` daemon (from `main` of this repo, reachable on the LAN or
-over Tailscale):
+On any computer running the `claude-usage` daemon (from `main` of this repo), turn on LAN access
+once with `claude-usage configure lan on` (or `install --tailscale` for the tailnet), then run:
 
 ```bash
 claude-usage pair
 ```
 
-That prints a QR code. On the deck, tap **Pair** on the home screen (or, once a machine is paired, *Settings › Pair a machine*), then **Scan QR**, and hold the phone up
-to the Mac's screen. The QR carries no token: it holds the daemon's addresses, its HTTPS port,
+That opens a one-time page in your browser with a QR code. On the deck, tap **Pair** on the home screen (or, once a machine is paired, *Settings › Pair a machine*), then **Scan QR**, and hold the phone up
+to the computer's screen. The QR carries no token: it holds the daemon's addresses, its HTTPS port,
 the SHA-256 pin of its certificate and a one-time code that expires after five minutes. The deck
 redeems the code over HTTPS pinned to that certificate (`POST /v1/pair`, daemon §23.47), and from
-then on talks to that Mac over pinned HTTPS only, falling back across its LAN, `.local` and
+then on talks to that computer over pinned HTTPS only, falling back across its LAN, `.local` and
 tailnet addresses.
 
 There is no other way to pair. The older `claude-usage configure pairing` QR, which carried the
