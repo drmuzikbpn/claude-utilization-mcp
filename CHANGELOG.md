@@ -25,7 +25,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   with `npm ci` from the shrinkwrap inside the signed tarball; the archive is checked for
   unsafe members (§23.59, §23.60).
 - The release workflow builds with a read-only token and signs in a separate `release-daemon`
-  environment job, which waits for the owner's approval; every action is pinned to a commit SHA; nothing is published to npm and
+  environment job, restricted to `main`; every action is pinned to a commit SHA; nothing is published to npm and
   the package is `private`.
 - `configure rotate-token` also reaches a daemon run in the foreground, and says so plainly if
   it did not take (§23.58).
