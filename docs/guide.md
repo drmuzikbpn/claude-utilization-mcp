@@ -519,7 +519,7 @@ is genuinely off — no `current` symlink, or `configure autoupdate off`.
 - Versioning `MAJOR.MINOR.<commit-count>+<short-sha>`, computed in CI from
   `git rev-list --count HEAD` on `main`.
 - Every push to `main` runs the release workflow: it re-runs lint, typecheck, tests and build,
-  then, once the owner approves the `release-daemon` deployment, tags `v<version>` and
+  then signs in the `release-daemon` environment, tags `v<version>` and
   publishes a GitHub Release with the
   `npm pack` tarball (which carries its own `npm-shrinkwrap.json`), `SHA256SUMS` and
   `SHA256SUMS.sig`, an Ed25519 signature over `SHA256SUMS`. The package is not published to

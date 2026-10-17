@@ -288,9 +288,8 @@ Additional refusals, checked *before* any rule is created:
 installation that has auto-update on. That is the point of the key; keep it out of anywhere
 but the `release-daemon` environment. The signature protects the release files from
 tampering, not from the account that publishes them: anyone who can merge to `main`, which
-today means the owner's GitHub account, can start a release. The `release-daemon` environment
-then holds it until the owner approves that run by hand (a required reviewer), so a stolen
-token alone cannot publish silently. Run `claude-usage configure autoupdate off` if you would rather review
+today means the owner's GitHub account, publishes a release: there is no separate manual
+approval, so protect that account with two-factor authentication. Run `claude-usage configure autoupdate off` if you would rather review
 and update by hand.
 
 ## Reporting a security issue

@@ -14,8 +14,7 @@ section covering anything you are about to change.
 - **Pull requests only.** `main` does not accept direct pushes. Fork, branch from `main`, open a
   PR against `main`.
 - **CI must be green.** `test (ubuntu-latest)` and `test (macos-latest)` are required. Every merge
-  to `main` builds a release, which re-runs these checks and publishes only after the owner
-  approves the `release-daemon` deployment.
+  to `main` builds a release, which re-runs these checks and then publishes on its own.
 - **Tests are TDD, and a new test must fail first.** Write it, watch it fail against the unfixed
   code, then fix. Several bugs in Part III were introduced by tests that passed against a fake
   which never returned an error — a test that has never failed has not been tested.

@@ -12,8 +12,8 @@ dashboard lives on orphan branch `usage-android` of this repo; the iOS/watch app
 - **`main` is protected: changes land through a pull request** (ruleset "daemon: main via pull
   request"; required checks `test (ubuntu-latest)` + `test (macos-latest)`). Never push to
   `main` directly, even though admin rights would bypass it. Branch, `gh pr create`, then
-  `gh pr checks --watch && gh pr merge --squash`. Each merge to `main` builds a release, which publishes only after the owner approves the
-  `release-daemon` deployment on the run (required reviewer).
+  `gh pr checks --watch && gh pr merge --squash`. Each merge to `main` builds, signs and publishes a release on its own (the `release-daemon`
+  environment is restricted to `main`; no manual approval).
 
 ## Invariants (violations are silent)
 - Never print, log or serialize credential values (`accessToken`, `refreshToken`, bearer token).
